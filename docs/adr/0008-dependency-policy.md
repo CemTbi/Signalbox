@@ -1,6 +1,6 @@
 # 0008. Dependency policy
 
-- Status: Accepted
+- Status: Accepted; amended by [ADR-0011](0011-public-domain-dependencies.md)
 - Date: 2026-10-16
 - Deciders: project lead
 

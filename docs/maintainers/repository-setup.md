@@ -15,7 +15,7 @@ How the GitHub repository is configured, and what changes when it goes public. S
 Create a ruleset under **Settings → Rules → Rulesets** that targets the default branch:
 
 - Require a pull request before merging, with one approval once there is a second maintainer.
-- Require these status checks: `Go`, `Web app`, `Container image and Compose smoke test` and `DCO`. Add `Analyze go` and `Analyze javascript-typescript` once CodeQL runs (see below).
+- Require these status checks: `Go`, `Web app`, `Image, Compose stack and end-to-end tests` and `DCO`. Add `Analyze go` and `Analyze javascript-typescript` once CodeQL runs (see below).
 - Require branches to be up to date before merging.
 - Block force pushes and deletion.
 - Allow squash merging only, so `main` reads as one Conventional Commit per pull request.
@@ -24,7 +24,7 @@ Create a ruleset under **Settings → Rules → Rulesets** that targets the defa
 
 - **Workflow permissions:** read-only by default. Each workflow asks for the extra permissions it needs.
 - **Action pinning:** every action is pinned to a full commit SHA with its version in a comment. Renovate keeps them current. Turn on **Require actions to be pinned to a full-length commit SHA** so a new workflow can't skip this.
-- **Minutes:** a private repository spends the account's included Actions minutes. One CI run takes about 15 minutes of runner time.
+- **Minutes:** a private repository spends the account's included Actions minutes. One CI run takes about 30 minutes of runner time, less when the Go build cache is warm.
 
 ## Security settings
 

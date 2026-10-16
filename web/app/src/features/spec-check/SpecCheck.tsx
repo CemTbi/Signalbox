@@ -88,7 +88,7 @@ export function SpecCheck({ client = api }: { client?: ApiClient }) {
     <div className="spec-check">
       <section className="panel editor-panel" aria-labelledby={`${ids.editor}-title`}>
         <div className="panel-head">
-          <h1 id={`${ids.editor}-title`}>Check an OpenAPI document</h1>
+          <h2 id={`${ids.editor}-title`}>Check an OpenAPI document</h2>
           <p className="lede">
             Paste a Swagger 2.0 or OpenAPI 3.0, 3.1 or 3.2 document. Signalbox validates it against the official
             schema, resolves every <code>$ref</code> and applies the lint rules you choose.

@@ -21,12 +21,21 @@ help: ## List the available tasks
 build: ## Build bin/signalbox and bin/signalbox-server
 	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o bin/ ./cmd/...
 
+# The database that `make dev-db` starts. Override it to use another one.
+SIGNALBOX_DATABASE_URL ?= postgres://signalbox:signalbox@localhost:5432/signalbox?sslmode=disable
+export SIGNALBOX_DATABASE_URL
+COMPOSE := docker compose -f deploy/compose/compose.yaml
+
+.PHONY: dev-db
+dev-db: ## Start PostgreSQL on localhost:5432 for `make run`
+	$(COMPOSE) -f deploy/compose/compose.dev.yaml up -d --wait postgres
+
 .PHONY: run
-run: ## Run the server on :8080 with readable logs
+run: ## Run the server on :8080 with readable logs (needs `make dev-db`)
 	$(GO) run ./cmd/signalbox-server serve --log-format text
 
 .PHONY: test
-test: ## Run Go tests with the race detector
+test: ## Run Go tests with the race detector (database tests need Docker)
 	$(GO) test -race ./...
 
 .PHONY: test-short
@@ -63,11 +72,11 @@ image: ## Build the signalbox-server container image
 
 .PHONY: up
 up: ## Start Signalbox, PostgreSQL and ClickHouse with Docker Compose
-	docker compose -f deploy/compose/compose.yaml up -d --build
+	$(COMPOSE) up -d --build
 
 .PHONY: down
 down: ## Stop the Docker Compose stack
-	docker compose -f deploy/compose/compose.yaml down
+	$(COMPOSE) down
 
 .PHONY: clean
 clean: ## Remove build output

@@ -150,8 +150,6 @@ paths:
         Checks the document sent as the request body and returns every problem with its line and column. Nothing is stored.
 
         A document with errors still gets a `200` response: the check worked, and the report lists the errors. File and remote `$ref`s are never followed.
-
-        Pre-alpha builds don't enforce authentication yet.
       tags: [Spec checks]
       parameters:
         - name: ruleSets
@@ -202,6 +200,7 @@ paths:
                 counts: {errors: 1, warnings: 0, infos: 0, hints: 0}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
         '413': {$ref: '#/components/responses/ContentTooLarge'}
         '422':
           description: The document took longer than 30 seconds to check.
@@ -220,14 +219,100 @@ paths:
         '429': {$ref: '#/components/responses/TooManyRequests'}
         default: {$ref: '#/components/responses/Error'}
 
+  /api/v1/setup:
+    get:
+      operationId: getSetupStatus
+      summary: Check whether first-run setup is needed
+      description: A new installation has no accounts. Until someone completes setup, `required` is true and the web app shows the setup page.
+      tags: [Sessions]
+      security: []
+      responses:
+        '200':
+          description: Whether setup is needed.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SetupStatus'}
+              example: {required: true}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: completeSetup
+      summary: Create the first admin account
+      description: |
+        Creates the installation's first account, an admin, and signs it in. It needs the setup code that the server writes to its log at startup, or the one set in `SIGNALBOX_SETUP_CODE`, so that whoever reaches a new installation first can't claim it.
+
+        Works only while the installation has no accounts.
+      tags: [Sessions]
+      security: []
+      requestBody:
+        required: true
+        description: The setup code and the first admin's details.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SetupCreate'}
+            example:
+              setupCode: K7QM-2XWP-9D4H-TR6B
+              name: Ada Lovelace
+              email: ada@example.com
+              password: correct horse battery staple
+      responses:
+        '201':
+          description: Setup is complete and the admin is signed in.
+          headers:
+            Set-Cookie:
+              description: The new admin's session cookie.
+              schema: {type: string}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Session'}
+              example:
+                user: {id: usr_01j9z3kq4m8r2t6v0x5w7y9a1b, email: ada@example.com, name: Ada Lovelace}
+                expiresAt: '2026-10-23T12:00:00Z'
+                csrfToken: Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403':
+          description: The setup code is wrong, or the request came from another site.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                detail: The setup code is wrong. The server writes it to its log at startup.
+                code: invalid-setup-code
+                requestId: 9f8e7d6c5b4a39281706f5e4
+        '409':
+          description: The installation already has accounts. Sign in instead.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example:
+                type: about:blank
+                title: Conflict
+                status: 409
+                detail: Signalbox is already set up. Sign in instead.
+                code: setup-complete
+                requestId: 9f8e7d6c5b4a39281706f5e4
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        default: {$ref: '#/components/responses/Error'}
+
   /api/v1/sessions:
     post:
       operationId: createSession
       summary: Sign in
-      description: Signs in with an email address and password, and sets the session cookie. Accounts with a second factor get `mfaRequired` and finish signing in with the factor.
+      description: |
+        Signs in with an email address and password, and sets the session cookie. Accounts with a second factor get `mfaRequired` and finish signing in with the factor.
+
+        Browsers send the `Origin` header themselves. Other clients must send `Origin` with the installation's public URL, such as `https://signalbox.example.com`.
       tags: [Sessions]
       security: []
-      x-signalbox-status: planned
       requestBody:
         required: true
         description: The email address and password to sign in with.
@@ -242,7 +327,7 @@ paths:
           description: Signed in.
           headers:
             Set-Cookie:
-              description: The `__Host-sbx_session` cookie.
+              description: The session cookie.
               schema: {type: string}
             X-Request-Id: {$ref: '#/components/headers/RequestId'}
           content:
@@ -251,25 +336,58 @@ paths:
               example:
                 user: {id: usr_01j9z3kq4m8r2t6v0x5w7y9a1b, email: ada@example.com, name: Ada Lovelace}
                 expiresAt: '2026-10-23T12:00:00Z'
-                csrfToken: 3q2+7wAAAAAAAAAAAAAAAA
+                csrfToken: Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8
         '400': {$ref: '#/components/responses/BadRequest'}
-        '401': {$ref: '#/components/responses/Unauthorized'}
+        '401':
+          description: The email address or password is wrong.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example:
+                type: about:blank
+                title: Unauthorized
+                status: 401
+                detail: The email address or password is wrong.
+                code: invalid-credentials
+                requestId: 9f8e7d6c5b4a39281706f5e4
+        '403': {$ref: '#/components/responses/Forbidden'}
         '429': {$ref: '#/components/responses/TooManyRequests'}
         default: {$ref: '#/components/responses/Error'}
 
   /api/v1/sessions/current:
+    get:
+      operationId: getCurrentSession
+      summary: Get the current session
+      description: Returns the signed-in session with its CSRF token. The web app calls this when it loads, because the session cookie itself can't be read by scripts.
+      tags: [Sessions]
+      responses:
+        '200':
+          description: The current session.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Session'}
+              example:
+                user: {id: usr_01j9z3kq4m8r2t6v0x5w7y9a1b, email: ada@example.com, name: Ada Lovelace}
+                expiresAt: '2026-10-23T12:00:00Z'
+                csrfToken: Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        default: {$ref: '#/components/responses/Error'}
     delete:
       operationId: deleteCurrentSession
       summary: Sign out
       description: Ends the current session on the server and clears the cookie.
       tags: [Sessions]
-      x-signalbox-status: planned
       responses:
         '204':
           description: Signed out.
           headers:
             X-Request-Id: {$ref: '#/components/headers/RequestId'}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
         default: {$ref: '#/components/responses/Error'}
 
   /api/v1/me:
@@ -278,7 +396,6 @@ paths:
       summary: Get the signed-in user
       description: Returns the user that the session or token belongs to.
       tags: [Sessions]
-      x-signalbox-status: planned
       responses:
         '200':
           description: The signed-in user.
@@ -297,7 +414,6 @@ paths:
       summary: List workspaces
       description: Lists the workspaces the caller is a member of, oldest first.
       tags: [Workspaces]
-      x-signalbox-status: planned
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
@@ -314,6 +430,7 @@ paths:
                   - id: ws_01j9z3kq4m8r2t6v0x5w7y9a1b
                     name: Payments
                     slug: payments
+                    role: owner
                     createdAt: '2026-10-16T12:00:00Z'
                     updatedAt: '2026-10-16T12:00:00Z'
                 nextCursor: eyJpZCI6IndzXzAxajl6M2txNG04cjJ0NnYweDV3N3k5YTFiIn0
@@ -324,7 +441,6 @@ paths:
       summary: Create a workspace
       description: Creates a workspace and makes the caller its owner.
       tags: [Workspaces]
-      x-signalbox-status: planned
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -348,10 +464,12 @@ paths:
                 id: ws_01j9z3kq4m8r2t6v0x5w7y9a1b
                 name: Payments
                 slug: payments
+                role: owner
                 createdAt: '2026-10-16T12:00:00Z'
                 updatedAt: '2026-10-16T12:00:00Z'
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Conflict'}
         default: {$ref: '#/components/responses/Error'}
 
@@ -363,7 +481,6 @@ paths:
       summary: Get a workspace
       description: Returns one workspace.
       tags: [Workspaces]
-      x-signalbox-status: planned
       responses:
         '200':
           description: The workspace.
@@ -377,6 +494,7 @@ paths:
                 id: ws_01j9z3kq4m8r2t6v0x5w7y9a1b
                 name: Payments
                 slug: payments
+                role: owner
                 createdAt: '2026-10-16T12:00:00Z'
                 updatedAt: '2026-10-16T12:00:00Z'
         '401': {$ref: '#/components/responses/Unauthorized'}
@@ -387,7 +505,6 @@ paths:
       summary: Update a workspace
       description: Changes the fields that are sent and leaves the others as they are.
       tags: [Workspaces]
-      x-signalbox-status: planned
       parameters:
         - $ref: '#/components/parameters/IfMatch'
       requestBody:
@@ -410,6 +527,7 @@ paths:
                 id: ws_01j9z3kq4m8r2t6v0x5w7y9a1b
                 name: Payments platform
                 slug: payments
+                role: owner
                 createdAt: '2026-10-16T12:00:00Z'
                 updatedAt: '2026-10-17T09:30:00Z'
         '400': {$ref: '#/components/responses/BadRequest'}
@@ -423,7 +541,6 @@ paths:
       summary: Delete a workspace
       description: Deletes the workspace with all its projects. Only owners can do this.
       tags: [Workspaces]
-      x-signalbox-status: planned
       parameters:
         - $ref: '#/components/parameters/IfMatch'
       responses:
@@ -445,7 +562,6 @@ paths:
       summary: List a workspace's projects
       description: Lists the projects in a workspace, oldest first.
       tags: [Projects]
-      x-signalbox-status: planned
       parameters:
         - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Cursor'
@@ -473,7 +589,6 @@ paths:
       summary: Create a project
       description: Creates a project, with development, staging and production environments.
       tags: [Projects]
-      x-signalbox-status: planned
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -514,7 +629,6 @@ paths:
       summary: Get a project
       description: Returns one project.
       tags: [Projects]
-      x-signalbox-status: planned
       responses:
         '200':
           description: The project.
@@ -539,7 +653,6 @@ paths:
       summary: Update a project
       description: Changes the project fields that are sent; the others stay as they are.
       tags: [Projects]
-      x-signalbox-status: planned
       parameters:
         - $ref: '#/components/parameters/IfMatch'
       requestBody:
@@ -576,7 +689,6 @@ paths:
       summary: Delete a project
       description: Deletes the project with its environments, services and specs.
       tags: [Projects]
-      x-signalbox-status: planned
       parameters:
         - $ref: '#/components/parameters/IfMatch'
       responses:
@@ -1268,7 +1380,10 @@ components:
       type: apiKey
       in: cookie
       name: __Host-sbx_session
-      description: The browser session cookie set by `createSession`. Unsafe methods also need the `X-CSRF-Token` header from the session.
+      description: |
+        The browser session cookie set by `createSession`. Unsafe methods also need the `X-CSRF-Token` header from the session and an `Origin` header that matches the installation's public URL.
+
+        Installations served over plain HTTP name the cookie `sbx_session` instead, because browsers drop cookies with the `__Host-` prefix there.
     bearerToken:
       type: http
       scheme: bearer
@@ -1343,7 +1458,11 @@ components:
       name: Idempotency-Key
       in: header
       required: false
-      description: A unique key for this request. Repeating a request with the same key within 24 hours returns the first result instead of creating a duplicate.
+      description: |
+        A unique key for this request. Repeating a request with the same key within 24 hours returns the first result instead of creating a duplicate.
+
+        Planned: the server accepts the header but doesn't deduplicate requests yet.
+      x-signalbox-status: planned
       schema: {type: string, minLength: 8, maxLength: 128}
       example: 3f1c2b8e-6d4a-4c1e-9b7a-2e5f8d0c1a94
 
@@ -1877,17 +1996,66 @@ components:
           type: boolean
           description: True when the account must confirm a second factor before the session is usable.
           examples: [false]
+    SetupStatus:
+      type: object
+      description: Whether the installation still needs its first account.
+      required: [required]
+      properties:
+        required:
+          type: boolean
+          description: True until someone completes first-run setup.
+          examples: [true]
+    SetupCreate:
+      type: object
+      description: The setup code and the details of the first admin account.
+      required: [setupCode, name, email, password]
+      additionalProperties: false
+      properties:
+        setupCode:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: The code from the server log or from `SIGNALBOX_SETUP_CODE`. Case, spaces and hyphens don't matter.
+          examples: [K7QM-2XWP-9D4H-TR6B]
+        name: {$ref: '#/components/schemas/Name'}
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: The admin's email address, used to sign in.
+          examples: [ada@example.com]
+        password: {$ref: '#/components/schemas/NewPassword'}
+    NewPassword:
+      type: string
+      format: password
+      minLength: 12
+      maxLength: 1024
+      writeOnly: true
+      description: A new password of at least 12 characters. A few unrelated words make a strong one.
+      examples: [correct horse battery staple]
 
     Workspace:
       type: object
       description: A workspace groups the projects, members and rules of one team or organization unit.
-      required: [id, name, slug, createdAt, updatedAt]
+      required: [id, name, slug, role, createdAt, updatedAt]
       properties:
         id: {$ref: '#/components/schemas/WorkspaceId'}
         name: {$ref: '#/components/schemas/Name'}
         slug: {$ref: '#/components/schemas/Slug'}
+        role: {$ref: '#/components/schemas/WorkspaceRole'}
         createdAt: {$ref: '#/components/schemas/Timestamp'}
         updatedAt: {$ref: '#/components/schemas/Timestamp'}
+    WorkspaceRole:
+      type: string
+      description: |
+        The caller's role in the workspace:
+
+        - `owner` can do everything, including deleting the workspace.
+        - `admin` can change the workspace and manage its projects.
+        - `editor` can create and change projects.
+        - `viewer` can read everything in the workspace.
+      enum: [owner, admin, editor, viewer]
+      examples: [owner]
     WorkspaceCreate:
       type: object
       description: A new workspace.
@@ -1915,7 +2083,7 @@ components:
           maxItems: 200
           items: {$ref: '#/components/schemas/Workspace'}
           examples:
-            - - {id: ws_01j9z3kq4m8r2t6v0x5w7y9a1b, name: Payments, slug: payments, createdAt: '2026-10-16T12:00:00Z', updatedAt: '2026-10-16T12:00:00Z'}
+            - - {id: ws_01j9z3kq4m8r2t6v0x5w7y9a1b, name: Payments, slug: payments, role: owner, createdAt: '2026-10-16T12:00:00Z', updatedAt: '2026-10-16T12:00:00Z'}
         nextCursor: {$ref: '#/components/schemas/NextCursor'}
     NextCursor:
       type: string
@@ -1949,7 +2117,12 @@ components:
       additionalProperties: false
       properties:
         name: {$ref: '#/components/schemas/Name'}
-        description: {$ref: '#/components/schemas/Description'}
+        description:
+          description: The new description. Send `null` or an empty string to remove it.
+          examples: ['Checkout, orders, payments and refunds.']
+          anyOf:
+            - {$ref: '#/components/schemas/Description'}
+            - {type: 'null'}
     ProjectPage:
       type: object
       description: One page of the project list, with a cursor for the next page.

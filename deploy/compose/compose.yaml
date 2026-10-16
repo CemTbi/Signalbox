@@ -3,12 +3,14 @@
 #
 #   docker compose -f deploy/compose/compose.yaml up -d --build
 #
-# Then open http://localhost:8080. Set POSTGRES_PASSWORD and
-# CLICKHOUSE_PASSWORD in a .env file next to this one for anything beyond a
-# local trial.
+# Then open http://localhost:8080 and create the first admin account with the
+# setup code from the server log:
 #
-# Pre-alpha: the server doesn't read the database settings yet. They are here
-# so the stack and its volumes stay the same when storage lands.
+#   docker compose -f deploy/compose/compose.yaml logs signalbox | grep setup_code
+#
+# For anything beyond a local trial, put a .env file next to this one with at
+# least POSTGRES_PASSWORD, CLICKHOUSE_PASSWORD and SIGNALBOX_PUBLIC_URL, the
+# address people will open, such as https://signalbox.example.com.
 
 name: signalbox
 
@@ -23,9 +25,14 @@ services:
       SIGNALBOX_ROLES: all
       SIGNALBOX_HTTP_ADDR: ":8080"
       SIGNALBOX_OPS_ADDR: ":9090"
+      SIGNALBOX_PUBLIC_URL: ${SIGNALBOX_PUBLIC_URL:-http://localhost:8080}
+      # Empty means the server logs a random setup code at startup.
+      SIGNALBOX_SETUP_CODE: ${SIGNALBOX_SETUP_CODE:-}
+      SIGNALBOX_TRUSTED_PROXIES: ${SIGNALBOX_TRUSTED_PROXIES:-}
       SIGNALBOX_LOG_FORMAT: json
       SIGNALBOX_DRAIN_DELAY: 2s
       SIGNALBOX_DATABASE_URL: postgres://signalbox:${POSTGRES_PASSWORD:-signalbox}@postgres:5432/signalbox?sslmode=disable
+      # Not read yet; tracing storage arrives with the ingest role.
       SIGNALBOX_CLICKHOUSE_URL: clickhouse://signalbox:${CLICKHOUSE_PASSWORD:-signalbox}@clickhouse:9000/signalbox
     ports:
       - "8080:8080"

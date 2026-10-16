@@ -78,10 +78,34 @@ export interface paths {
          * @description Checks the document sent as the request body and returns every problem with its line and column. Nothing is stored.
          *
          *     A document with errors still gets a `200` response: the check worked, and the report lists the errors. File and remote `$ref`s are never followed.
-         *
-         *     Pre-alpha builds don't enforce authentication yet.
          */
         post: operations["checkSpec"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Check whether first-run setup is needed
+         * @description A new installation has no accounts. Until someone completes setup, `required` is true and the web app shows the setup page.
+         */
+        get: operations["getSetupStatus"];
+        put?: never;
+        /**
+         * Create the first admin account
+         * @description Creates the installation's first account, an admin, and signs it in. It needs the setup code that the server writes to its log at startup, or the one set in `SIGNALBOX_SETUP_CODE`, so that whoever reaches a new installation first can't claim it.
+         *
+         *     Works only while the installation has no accounts.
+         */
+        post: operations["completeSetup"];
         delete?: never;
         options?: never;
         head?: never;
@@ -100,6 +124,8 @@ export interface paths {
         /**
          * Sign in
          * @description Signs in with an email address and password, and sets the session cookie. Accounts with a second factor get `mfaRequired` and finish signing in with the factor.
+         *
+         *     Browsers send the `Origin` header themselves. Other clients must send `Origin` with the installation's public URL, such as `https://signalbox.example.com`.
          */
         post: operations["createSession"];
         delete?: never;
@@ -115,7 +141,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Get the current session
+         * @description Returns the signed-in session with its CSRF token. The web app calls this when it loads, because the session cookie itself can't be read by scripts.
+         */
+        get: operations["getCurrentSession"];
         put?: never;
         post?: never;
         /**
@@ -934,14 +964,56 @@ export interface components {
              */
             mfaRequired?: boolean;
         };
+        /** @description Whether the installation still needs its first account. */
+        SetupStatus: {
+            /**
+             * @description True until someone completes first-run setup.
+             * @example true
+             */
+            required: boolean;
+        };
+        /** @description The setup code and the details of the first admin account. */
+        SetupCreate: {
+            /**
+             * @description The code from the server log or from `SIGNALBOX_SETUP_CODE`. Case, spaces and hyphens don't matter.
+             * @example K7QM-2XWP-9D4H-TR6B
+             */
+            setupCode: string;
+            name: components["schemas"]["Name"];
+            /**
+             * Format: email
+             * @description The admin's email address, used to sign in.
+             * @example ada@example.com
+             */
+            email: string;
+            password: components["schemas"]["NewPassword"];
+        };
+        /**
+         * Format: password
+         * @description A new password of at least 12 characters. A few unrelated words make a strong one.
+         * @example correct horse battery staple
+         */
+        NewPassword: string;
         /** @description A workspace groups the projects, members and rules of one team or organization unit. */
         Workspace: {
             id: components["schemas"]["WorkspaceId"];
             name: components["schemas"]["Name"];
             slug: components["schemas"]["Slug"];
+            role: components["schemas"]["WorkspaceRole"];
             createdAt: components["schemas"]["Timestamp"];
             updatedAt: components["schemas"]["Timestamp"];
         };
+        /**
+         * @description The caller's role in the workspace:
+         *
+         *     - `owner` can do everything, including deleting the workspace.
+         *     - `admin` can change the workspace and manage its projects.
+         *     - `editor` can create and change projects.
+         *     - `viewer` can read everything in the workspace.
+         * @example owner
+         * @enum {string}
+         */
+        WorkspaceRole: "owner" | "admin" | "editor" | "viewer";
         /** @description A new workspace. */
         WorkspaceCreate: {
             name: components["schemas"]["Name"];
@@ -961,6 +1033,7 @@ export interface components {
              *         "id": "ws_01j9z3kq4m8r2t6v0x5w7y9a1b",
              *         "name": "Payments",
              *         "slug": "payments",
+             *         "role": "owner",
              *         "createdAt": "2026-10-16T12:00:00Z",
              *         "updatedAt": "2026-10-16T12:00:00Z"
              *       }
@@ -991,7 +1064,11 @@ export interface components {
         /** @description Changes to a project. Fields that aren't sent keep their value. */
         ProjectUpdate: {
             name?: components["schemas"]["Name"];
-            description?: components["schemas"]["Description"];
+            /**
+             * @description The new description. Send `null` or an empty string to remove it.
+             * @example Checkout, orders, payments and refunds.
+             */
+            description?: components["schemas"]["Description"] | null;
         };
         /** @description One page of the project list, with a cursor for the next page. */
         ProjectPage: {
@@ -1496,6 +1573,8 @@ export interface components {
         IfMatchRequired: string;
         /**
          * @description A unique key for this request. Repeating a request with the same key within 24 hours returns the first result instead of creating a duplicate.
+         *
+         *     Planned: the server accepts the header but doesn't deduplicate requests yet.
          * @example 3f1c2b8e-6d4a-4c1e-9b7a-2e5f8d0c1a94
          */
         IdempotencyKey: string;
@@ -1722,6 +1801,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             413: components["responses"]["ContentTooLarge"];
             /** @description The document took longer than 30 seconds to check. */
             422: {
@@ -1737,6 +1817,123 @@ export interface operations {
                      *       "status": 422,
                      *       "detail": "Checking the document took longer than 30s.",
                      *       "code": "check-timeout",
+                     *       "requestId": "9f8e7d6c5b4a39281706f5e4"
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getSetupStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Whether setup is needed. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "required": true
+                     *     }
+                     */
+                    "application/json": components["schemas"]["SetupStatus"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    completeSetup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The setup code and the first admin's details. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "setupCode": "K7QM-2XWP-9D4H-TR6B",
+                 *       "name": "Ada Lovelace",
+                 *       "email": "ada@example.com",
+                 *       "password": "correct horse battery staple"
+                 *     }
+                 */
+                "application/json": components["schemas"]["SetupCreate"];
+            };
+        };
+        responses: {
+            /** @description Setup is complete and the admin is signed in. */
+            201: {
+                headers: {
+                    /** @description The new admin's session cookie. */
+                    "Set-Cookie"?: string;
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "user": {
+                     *         "id": "usr_01j9z3kq4m8r2t6v0x5w7y9a1b",
+                     *         "email": "ada@example.com",
+                     *         "name": "Ada Lovelace"
+                     *       },
+                     *       "expiresAt": "2026-10-23T12:00:00Z",
+                     *       "csrfToken": "Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description The setup code is wrong, or the request came from another site. */
+            403: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Forbidden",
+                     *       "status": 403,
+                     *       "detail": "The setup code is wrong. The server writes it to its log at startup.",
+                     *       "code": "invalid-setup-code",
+                     *       "requestId": "9f8e7d6c5b4a39281706f5e4"
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The installation already has accounts. Sign in instead. */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Conflict",
+                     *       "status": 409,
+                     *       "detail": "Signalbox is already set up. Sign in instead.",
+                     *       "code": "setup-complete",
                      *       "requestId": "9f8e7d6c5b4a39281706f5e4"
                      *     }
                      */
@@ -1770,7 +1967,7 @@ export interface operations {
             /** @description Signed in. */
             201: {
                 headers: {
-                    /** @description The `__Host-sbx_session` cookie. */
+                    /** @description The session cookie. */
                     "Set-Cookie"?: string;
                     "X-Request-Id": components["headers"]["RequestId"];
                     [name: string]: unknown;
@@ -1784,15 +1981,69 @@ export interface operations {
                      *         "name": "Ada Lovelace"
                      *       },
                      *       "expiresAt": "2026-10-23T12:00:00Z",
-                     *       "csrfToken": "3q2+7wAAAAAAAAAAAAAAAA"
+                     *       "csrfToken": "Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8"
                      *     }
                      */
                     "application/json": components["schemas"]["Session"];
                 };
             };
             400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthorized"];
+            /** @description The email address or password is wrong. */
+            401: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Unauthorized",
+                     *       "status": 401,
+                     *       "detail": "The email address or password is wrong.",
+                     *       "code": "invalid-credentials",
+                     *       "requestId": "9f8e7d6c5b4a39281706f5e4"
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
             429: components["responses"]["TooManyRequests"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getCurrentSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current session. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "user": {
+                     *         "id": "usr_01j9z3kq4m8r2t6v0x5w7y9a1b",
+                     *         "email": "ada@example.com",
+                     *         "name": "Ada Lovelace"
+                     *       },
+                     *       "expiresAt": "2026-10-23T12:00:00Z",
+                     *       "csrfToken": "Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
             default: components["responses"]["Error"];
         };
     };
@@ -1814,6 +2065,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             default: components["responses"]["Error"];
         };
     };
@@ -1881,6 +2133,7 @@ export interface operations {
                      *           "id": "ws_01j9z3kq4m8r2t6v0x5w7y9a1b",
                      *           "name": "Payments",
                      *           "slug": "payments",
+                     *           "role": "owner",
                      *           "createdAt": "2026-10-16T12:00:00Z",
                      *           "updatedAt": "2026-10-16T12:00:00Z"
                      *         }
@@ -1901,6 +2154,8 @@ export interface operations {
             header?: {
                 /**
                  * @description A unique key for this request. Repeating a request with the same key within 24 hours returns the first result instead of creating a duplicate.
+                 *
+                 *     Planned: the server accepts the header but doesn't deduplicate requests yet.
                  * @example 3f1c2b8e-6d4a-4c1e-9b7a-2e5f8d0c1a94
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
@@ -1935,6 +2190,7 @@ export interface operations {
                      *       "id": "ws_01j9z3kq4m8r2t6v0x5w7y9a1b",
                      *       "name": "Payments",
                      *       "slug": "payments",
+                     *       "role": "owner",
                      *       "createdAt": "2026-10-16T12:00:00Z",
                      *       "updatedAt": "2026-10-16T12:00:00Z"
                      *     }
@@ -1944,6 +2200,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             409: components["responses"]["Conflict"];
             default: components["responses"]["Error"];
         };
@@ -1973,6 +2230,7 @@ export interface operations {
                      *       "id": "ws_01j9z3kq4m8r2t6v0x5w7y9a1b",
                      *       "name": "Payments",
                      *       "slug": "payments",
+                     *       "role": "owner",
                      *       "createdAt": "2026-10-16T12:00:00Z",
                      *       "updatedAt": "2026-10-16T12:00:00Z"
                      *     }
@@ -2059,6 +2317,7 @@ export interface operations {
                      *       "id": "ws_01j9z3kq4m8r2t6v0x5w7y9a1b",
                      *       "name": "Payments platform",
                      *       "slug": "payments",
+                     *       "role": "owner",
                      *       "createdAt": "2026-10-16T12:00:00Z",
                      *       "updatedAt": "2026-10-17T09:30:00Z"
                      *     }
@@ -2132,6 +2391,8 @@ export interface operations {
             header?: {
                 /**
                  * @description A unique key for this request. Repeating a request with the same key within 24 hours returns the first result instead of creating a duplicate.
+                 *
+                 *     Planned: the server accepts the header but doesn't deduplicate requests yet.
                  * @example 3f1c2b8e-6d4a-4c1e-9b7a-2e5f8d0c1a94
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
@@ -2372,6 +2633,8 @@ export interface operations {
             header?: {
                 /**
                  * @description A unique key for this request. Repeating a request with the same key within 24 hours returns the first result instead of creating a duplicate.
+                 *
+                 *     Planned: the server accepts the header but doesn't deduplicate requests yet.
                  * @example 3f1c2b8e-6d4a-4c1e-9b7a-2e5f8d0c1a94
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
@@ -2624,6 +2887,8 @@ export interface operations {
             header?: {
                 /**
                  * @description A unique key for this request. Repeating a request with the same key within 24 hours returns the first result instead of creating a duplicate.
+                 *
+                 *     Planned: the server accepts the header but doesn't deduplicate requests yet.
                  * @example 3f1c2b8e-6d4a-4c1e-9b7a-2e5f8d0c1a94
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
@@ -2883,6 +3148,8 @@ export interface operations {
             header?: {
                 /**
                  * @description A unique key for this request. Repeating a request with the same key within 24 hours returns the first result instead of creating a duplicate.
+                 *
+                 *     Planned: the server accepts the header but doesn't deduplicate requests yet.
                  * @example 3f1c2b8e-6d4a-4c1e-9b7a-2e5f8d0c1a94
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
@@ -3137,6 +3404,8 @@ export interface operations {
                 "If-Match": components["parameters"]["IfMatchRequired"];
                 /**
                  * @description A unique key for this request. Repeating a request with the same key within 24 hours returns the first result instead of creating a duplicate.
+                 *
+                 *     Planned: the server accepts the header but doesn't deduplicate requests yet.
                  * @example 3f1c2b8e-6d4a-4c1e-9b7a-2e5f8d0c1a94
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];

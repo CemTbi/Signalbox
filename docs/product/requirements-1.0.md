@@ -131,11 +131,15 @@ Dates assume the core team starts on 2 November 2026.
 | Spec engine (spike 1): parse, validate and lint 2.0 to 3.2 with positions, 10,000 lines in 0.19 s | Done |
 | `signalbox lint` | Done |
 | `signalbox-server` api role, health endpoints, spec checks over HTTP | Done |
-| ADR-0001 to ADR-0008 | Done |
+| ADR-0001 to ADR-0011 | Done |
 | `api/openapi.yaml` v0 | Done |
 | Spikes 2 to 5: ClickHouse span schema, canvas with 200 live nodes, Sobek with Postman scripts, runner safe dialer | Not started |
-| Sign-in, workspaces and projects backed by PostgreSQL | Not started |
-| Design system and app shell | Started |
+| Sign-in with local accounts, workspaces and projects backed by PostgreSQL | Done |
+| App shell, sign-in and setup pages, workspace and project pages, empty canvas | Done |
+| End-to-end journey in CI against the Compose stack, with accessibility checks | Done |
+| Sign-in with OIDC | Not started |
+| Row-level security as a second line of access control (ADR-0009) | Not started |
+| Design system | Started |
 
 ## Out of scope for 1.0
 

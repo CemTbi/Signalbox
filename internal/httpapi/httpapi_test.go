@@ -3,42 +3,73 @@
 package httpapi_test
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/CemTbi/Signalbox/internal/buildinfo"
 	"github.com/CemTbi/Signalbox/internal/health"
 	"github.com/CemTbi/Signalbox/internal/httpapi"
+	"github.com/CemTbi/Signalbox/internal/modules/identity"
 	"github.com/CemTbi/Signalbox/internal/roles"
 	"github.com/CemTbi/Signalbox/pkg/specengine"
 )
 
+// The tests in this file need no database: a fake identity module accepts
+// one session token.
+
+const (
+	fakeToken = "fake-session-token"
+	fakeCSRF  = "fake-csrf-token"
+)
+
+type fakeIdentity struct{ httpapi.Identity }
+
+func (fakeIdentity) Authenticate(_ context.Context, token string) (*identity.Session, error) {
+	if token != fakeToken {
+		return nil, identity.ErrUnauthenticated
+	}
+	return &identity.Session{User: identity.User{ID: uuid.New(), Name: "Test"}, CSRFToken: fakeCSRF}, nil
+}
+
 func newServer(t *testing.T, maxSpecBytes int64) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(httpapi.NewHandler(httpapi.Deps{
+	srv := httptest.NewUnstartedServer(nil)
+	srv.Config.Handler = httpapi.NewHandler(httpapi.Deps{
 		Logger:       slog.New(slog.DiscardHandler),
 		Health:       health.New("signalbox-server", "test"),
 		Build:        buildinfo.Info{Version: "1.2.3"},
 		Roles:        []roles.Name{roles.API},
 		MaxSpecBytes: maxSpecBytes,
-	}))
+		Identity:     fakeIdentity{},
+		PublicURL:    &url.URL{Scheme: "http", Host: srv.Listener.Addr().String()},
+	})
+	srv.Start()
 	t.Cleanup(srv.Close)
 	return srv
 }
 
-func do(t *testing.T, method, url, body string) (*http.Response, []byte) {
+// do sends a request as a signed-in browser on the server's own origin.
+func do(t *testing.T, method, target, body string) (*http.Response, []byte) {
 	t.Helper()
-	req, err := http.NewRequest(method, url, strings.NewReader(body))
+	req, err := http.NewRequest(method, target, strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
+	u, _ := url.Parse(target)
+	req.Header.Set("Origin", u.Scheme+"://"+u.Host)
+	req.Header.Set(httpapi.CSRFHeader, fakeCSRF)
+	req.AddCookie(&http.Cookie{Name: "sbx_session", Value: fakeToken})
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
