@@ -1,7 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import AxeBuilder from "@axe-core/playwright";
-import { type APIRequestContext, expect, type Page, test } from "@playwright/test";
+import { type APIRequestContext, test as base, expect, type Page } from "@playwright/test";
+
+// Every page must work under the server's Content Security Policy and
+// without uncaught errors. Failed requests, such as the 401 that tells the
+// app nobody is signed in, are expected and aren't collected.
+const test = base.extend<{ cleanConsole: void }>({
+  cleanConsole: [
+    async ({ page }, use) => {
+      const problems: string[] = [];
+      page.on("pageerror", (error) => problems.push(`uncaught error: ${error.message}`));
+      page.on("console", (message) => {
+        const text = message.text();
+        if (message.type() === "error" && /Content Security Policy|Refused to/i.test(text)) {
+          problems.push(`blocked by the Content Security Policy: ${text}`);
+        }
+      });
+      await use();
+      expect(problems, "the browser reported problems").toEqual([]);
+    },
+    { auto: true },
+  ],
+});
 
 // The walking skeleton's promise: from a new installation, someone can set
 // it up, sign in, create a workspace and a project, and see the project's
