@@ -1,0 +1,25 @@
+# Build output
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Web app
+node_modules/
+/web/**/dist/
+/internal/webui/dist/*
+!/internal/webui/dist/.gitkeep
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Editors and OS files
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

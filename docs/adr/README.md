@@ -1,0 +1,16 @@
+# Architecture decision records
+
+An architecture decision record (ADR) captures one significant decision: the context, what we decided, and what follows from it. ADRs are never edited after acceptance except to change their status. A new decision that replaces an old one gets a new ADR that supersedes it.
+
+Write a new ADR by copying [template.md](template.md) to the next number. Propose it in a pull request; it is accepted when the pull request merges.
+
+| ADR | Title | Status |
+|---|---|---|
+| [0001](0001-single-binary-with-roles.md) | One server binary with six roles | Accepted |
+| [0002](0002-data-stores.md) | PostgreSQL, ClickHouse, NATS and object storage | Accepted |
+| [0003](0003-spec-engine.md) | Spec engine on libopenapi and vacuum | Accepted |
+| [0004](0004-authentication-and-sessions.md) | Authentication, sessions and API tokens | Accepted |
+| [0005](0005-http-api-conventions.md) | HTTP API conventions | Accepted |
+| [0006](0006-frontend-architecture.md) | Frontend architecture | Accepted |
+| [0007](0007-license-and-dco.md) | Apache-2.0 license and DCO sign-off | Accepted |
+| [0008](0008-dependency-policy.md) | Dependency policy | Accepted |

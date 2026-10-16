@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Check that go.mod and go.sum are tidy
+        run: go mod tidy -diff
+      - name: Vet
+        run: go vet ./...
+      - name: Lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.15.0
+      - name: Test with the race detector
+        run: go test -race -coverprofile=coverage.out ./...
+      - name: Lint Signalbox's own API spec
+        run: go run ./cmd/signalbox lint --fail-on warning --format github api/openapi.yaml
+      - name: Check dependency licenses (ADR-0008)
+        run: go run github.com/google/go-licenses/v2@v2.0.1 check ./... --disallowed_types=forbidden,restricted
+      - name: Check for known vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  web:
+    name: Web app
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - name: Check that the API types match api/openapi.yaml
+        run: |
+          npm run generate:api
+          git diff --exit-code -- packages/api-client/src/schema.d.ts
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  image:
+    name: Container image and Compose smoke test
+    runs-on: ubuntu-latest
+    needs: [go, web]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          tags: signalbox-server:dev
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=0.0.0-ci
+            COMMIT=${{ github.sha }}
+      - name: Start the Compose stack
+        run: docker compose -f deploy/compose/compose.yaml up -d --no-build --wait --wait-timeout 180
+      - name: Check the running server
+        run: |
+          curl -fsS http://localhost:8080/readyz
+          curl -fsS http://localhost:8080/api/v1/meta
+          curl -fsS http://localhost:8080/ | grep -q '<div id="root">'
+          curl -fsS --data-binary @api/openapi.yaml 'http://localhost:8080/api/v1/spec-checks?ruleSets=recommended' \
+            | grep -q '"errors":0'
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose -f deploy/compose/compose.yaml logs
+      - name: Stop the Compose stack
+        if: always()
+        run: docker compose -f deploy/compose/compose.yaml down -v

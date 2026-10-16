@@ -1,0 +1,30 @@
+openapi: 3.2.0
+$self: https://example.com/specs/orders.yaml
+info:
+  title: Orders
+  version: 2.0.0
+tags:
+  - name: orders
+    summary: Orders
+    kind: nav
+  - name: refunds
+    summary: Refunds
+    parent: orders
+paths:
+  /orders:
+    query:
+      operationId: searchOrders
+      summary: Search orders
+      tags: [orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+      responses:
+        '200':
+          description: Matching orders.

@@ -1,0 +1,2193 @@
+openapi: 3.1.1
+info:
+  title: Signalbox API
+  version: 0.1.0
+  summary: Manage workspaces, projects, services and API specs, and check OpenAPI documents.
+  description: |
+    The Signalbox REST API. The web app and the `signalbox` CLI use only this API.
+
+    Conventions, decided in ADR-0005:
+
+    - JSON with camelCase field names; optional fields are omitted when empty.
+    - IDs are opaque strings with a type prefix, such as `ws_` or `prj_`.
+    - Lists are paginated with `limit` and `cursor`, and return `data` and `nextCursor`.
+    - Every error is an RFC 9457 problem document with a stable `code` and the `requestId`.
+    - Resources people edit carry an `ETag`; send it back in `If-Match` to avoid overwriting someone else's change.
+    - `POST` requests that create something accept an `Idempotency-Key`.
+
+    Operations marked `x-signalbox-status: planned` are part of the contract but not implemented yet.
+  contact:
+    name: Signalbox maintainers
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: '{scheme}://{host}'
+    description: Your Signalbox installation
+    variables:
+      scheme:
+        default: https
+        enum: [https, http]
+        description: Use https outside local development.
+      host:
+        default: localhost:8080
+        description: Host name and port of the installation.
+security:
+  - sessionCookie: []
+  - bearerToken: []
+tags:
+  - name: Meta
+    description: Information about the installation.
+  - name: Health
+    description: Liveness and readiness in the Health Check Response Format for HTTP APIs.
+  - name: Spec checks
+    description: Validate and lint OpenAPI documents without storing them.
+  - name: Sessions
+    description: Sign in and out of the web app.
+  - name: Workspaces
+    description: Workspaces group the projects, members and rules of one team or organization unit.
+  - name: Projects
+    description: A project is one system, shown as one canvas.
+  - name: Environments
+    description: Development, staging, production and other environments of a project.
+  - name: Services
+    description: Services are the nodes on a project's canvas.
+  - name: Specs
+    description: OpenAPI documents of a service and their revisions.
+
+paths:
+  /livez:
+    get:
+      operationId: getLiveness
+      summary: Check that the process is running
+      description: Answers as long as the process runs. It never checks dependencies, so a slow database can't make an orchestrator restart a healthy process.
+      tags: [Health]
+      security: []
+      responses:
+        '200':
+          description: The process is running.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/health+json:
+              schema: {$ref: '#/components/schemas/HealthResponse'}
+              example:
+                status: pass
+                version: '1'
+                releaseId: 0.1.0
+                serviceId: signalbox-server
+
+  /readyz:
+    get:
+      operationId: getReadiness
+      summary: Check that the server can take traffic
+      description: Runs every registered check. Fails with 503 when a critical dependency is down or the server is shutting down; a failing non-critical check makes the status `warn`.
+      tags: [Health]
+      security: []
+      responses:
+        '200':
+          description: Ready, possibly with warnings.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/health+json:
+              schema: {$ref: '#/components/schemas/HealthResponse'}
+              example:
+                status: pass
+                version: '1'
+                releaseId: 0.1.0
+                serviceId: signalbox-server
+                checks:
+                  uptime:
+                    - componentType: system
+                      observedValue: 3600
+                      observedUnit: s
+                      status: pass
+                      time: '2026-10-16T12:00:00Z'
+        '503':
+          description: Not ready. Load balancers should stop sending traffic.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/health+json:
+              schema: {$ref: '#/components/schemas/HealthResponse'}
+              example:
+                status: fail
+                version: '1'
+                releaseId: 0.1.0
+                serviceId: signalbox-server
+                output: shutting down
+
+  /api/v1/meta:
+    get:
+      operationId: getMeta
+      summary: Describe the installation
+      description: Returns the product version and the roles this process runs.
+      tags: [Meta]
+      security: []
+      responses:
+        '200':
+          description: The installation's details.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Meta'}
+              example:
+                product: Signalbox
+                version: 0.1.0
+                commit: 1a2b3c4d5e6f
+                buildDate: '2026-10-16T12:00:00Z'
+                apiVersion: v1
+                roles: [api]
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/spec-checks:
+    post:
+      operationId: checkSpec
+      summary: Validate and lint an OpenAPI document
+      description: |
+        Checks the document sent as the request body and returns every problem with its line and column. Nothing is stored.
+
+        A document with errors still gets a `200` response: the check worked, and the report lists the errors. File and remote `$ref`s are never followed.
+
+        Pre-alpha builds don't enforce authentication yet.
+      tags: [Spec checks]
+      parameters:
+        - name: ruleSets
+          in: query
+          required: false
+          description: Comma-separated lint rule sets. `none` validates without linting.
+          schema:
+            type: string
+            default: recommended
+            pattern: '^(recommended|owasp|all|none)(,(recommended|owasp|all|none))*$'
+          example: recommended,owasp
+      requestBody:
+        required: true
+        description: The OpenAPI or Swagger document, as YAML or JSON.
+        content:
+          application/yaml:
+            schema: {type: string, maxLength: 10485760}
+            example: |
+              openapi: 3.1.1
+              info:
+                title: Pets
+                version: 1.0.0
+              paths: {}
+          application/json:
+            schema: {type: string, maxLength: 10485760}
+            example: '{"openapi": "3.1.1", "info": {"title": "Pets", "version": "1.0.0"}, "paths": {}}'
+      responses:
+        '200':
+          description: The check ran. The report lists every problem found.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Report'}
+              example:
+                format: openapi-3.1
+                version: 3.1.0
+                diagnostics:
+                  - severity: error
+                    source: resolver
+                    code: unresolved-reference
+                    message: Component `#/components/schemas/Missing` does not exist in the specification.
+                    path: $.components.schemas['Missing']
+                    range:
+                      start: {line: 14, column: 17}
+                      end: {line: 14, column: 17}
+                    howToFix: Check that the referenced component exists and that the $ref is spelled correctly.
+                counts: {errors: 1, warnings: 0, infos: 0, hints: 0}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '413': {$ref: '#/components/responses/ContentTooLarge'}
+        '422':
+          description: The document took longer than 30 seconds to check.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example:
+                type: about:blank
+                title: Unprocessable Entity
+                status: 422
+                detail: Checking the document took longer than 30s.
+                code: check-timeout
+                requestId: 9f8e7d6c5b4a39281706f5e4
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/sessions:
+    post:
+      operationId: createSession
+      summary: Sign in
+      description: Signs in with an email address and password, and sets the session cookie. Accounts with a second factor get `mfaRequired` and finish signing in with the factor.
+      tags: [Sessions]
+      security: []
+      x-signalbox-status: planned
+      requestBody:
+        required: true
+        description: The email address and password to sign in with.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SessionCreate'}
+            example:
+              email: ada@example.com
+              password: correct horse battery staple
+      responses:
+        '201':
+          description: Signed in.
+          headers:
+            Set-Cookie:
+              description: The `__Host-sbx_session` cookie.
+              schema: {type: string}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Session'}
+              example:
+                user: {id: usr_01j9z3kq4m8r2t6v0x5w7y9a1b, email: ada@example.com, name: Ada Lovelace}
+                expiresAt: '2026-10-23T12:00:00Z'
+                csrfToken: 3q2+7wAAAAAAAAAAAAAAAA
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/sessions/current:
+    delete:
+      operationId: deleteCurrentSession
+      summary: Sign out
+      description: Ends the current session on the server and clears the cookie.
+      tags: [Sessions]
+      x-signalbox-status: planned
+      responses:
+        '204':
+          description: Signed out.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/me:
+    get:
+      operationId: getCurrentUser
+      summary: Get the signed-in user
+      description: Returns the user that the session or token belongs to.
+      tags: [Sessions]
+      x-signalbox-status: planned
+      responses:
+        '200':
+          description: The signed-in user.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/User'}
+              example: {id: usr_01j9z3kq4m8r2t6v0x5w7y9a1b, email: ada@example.com, name: Ada Lovelace}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/workspaces:
+    get:
+      operationId: listWorkspaces
+      summary: List workspaces
+      description: Lists the workspaces the caller is a member of, oldest first.
+      tags: [Workspaces]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of workspaces.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WorkspacePage'}
+              example:
+                data:
+                  - id: ws_01j9z3kq4m8r2t6v0x5w7y9a1b
+                    name: Payments
+                    slug: payments
+                    createdAt: '2026-10-16T12:00:00Z'
+                    updatedAt: '2026-10-16T12:00:00Z'
+                nextCursor: eyJpZCI6IndzXzAxajl6M2txNG04cjJ0NnYweDV3N3k5YTFiIn0
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createWorkspace
+      summary: Create a workspace
+      description: Creates a workspace and makes the caller its owner.
+      tags: [Workspaces]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        description: The new workspace's name and slug.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/WorkspaceCreate'}
+            example: {name: Payments, slug: payments}
+      responses:
+        '201':
+          description: The new workspace.
+          headers:
+            Location: {$ref: '#/components/headers/Location'}
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Workspace'}
+              example:
+                id: ws_01j9z3kq4m8r2t6v0x5w7y9a1b
+                name: Payments
+                slug: payments
+                createdAt: '2026-10-16T12:00:00Z'
+                updatedAt: '2026-10-16T12:00:00Z'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/workspaces/{workspaceId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      operationId: getWorkspace
+      summary: Get a workspace
+      description: Returns one workspace.
+      tags: [Workspaces]
+      x-signalbox-status: planned
+      responses:
+        '200':
+          description: The workspace.
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Workspace'}
+              example:
+                id: ws_01j9z3kq4m8r2t6v0x5w7y9a1b
+                name: Payments
+                slug: payments
+                createdAt: '2026-10-16T12:00:00Z'
+                updatedAt: '2026-10-16T12:00:00Z'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: updateWorkspace
+      summary: Update a workspace
+      description: Changes the fields that are sent and leaves the others as they are.
+      tags: [Workspaces]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        description: The workspace fields to change, as a JSON Merge Patch (RFC 7396).
+        content:
+          application/merge-patch+json:
+            schema: {$ref: '#/components/schemas/WorkspaceUpdate'}
+            example: {name: Payments platform}
+      responses:
+        '200':
+          description: The updated workspace.
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Workspace'}
+              example:
+                id: ws_01j9z3kq4m8r2t6v0x5w7y9a1b
+                name: Payments platform
+                slug: payments
+                createdAt: '2026-10-16T12:00:00Z'
+                updatedAt: '2026-10-17T09:30:00Z'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: deleteWorkspace
+      summary: Delete a workspace
+      description: Deletes the workspace with all its projects. Only owners can do this.
+      tags: [Workspaces]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The workspace is deleted.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/workspaces/{workspaceId}/projects:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      operationId: listProjects
+      summary: List a workspace's projects
+      description: Lists the projects in a workspace, oldest first.
+      tags: [Projects]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of projects.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProjectPage'}
+              example:
+                data:
+                  - id: prj_01j9z3m2p4r6t8v0x2z4b6d8f0
+                    workspaceId: ws_01j9z3kq4m8r2t6v0x5w7y9a1b
+                    name: Shop
+                    description: Checkout, orders and payments.
+                    createdAt: '2026-10-16T12:00:00Z'
+                    updatedAt: '2026-10-16T12:00:00Z'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createProject
+      summary: Create a project
+      description: Creates a project, with development, staging and production environments.
+      tags: [Projects]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        description: The new project's name and description.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ProjectCreate'}
+            example: {name: Shop, description: 'Checkout, orders and payments.'}
+      responses:
+        '201':
+          description: The new project.
+          headers:
+            Location: {$ref: '#/components/headers/Location'}
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Project'}
+              example:
+                id: prj_01j9z3m2p4r6t8v0x2z4b6d8f0
+                workspaceId: ws_01j9z3kq4m8r2t6v0x5w7y9a1b
+                name: Shop
+                description: Checkout, orders and payments.
+                createdAt: '2026-10-16T12:00:00Z'
+                updatedAt: '2026-10-16T12:00:00Z'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/projects/{projectId}:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      operationId: getProject
+      summary: Get a project
+      description: Returns one project.
+      tags: [Projects]
+      x-signalbox-status: planned
+      responses:
+        '200':
+          description: The project.
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Project'}
+              example:
+                id: prj_01j9z3m2p4r6t8v0x2z4b6d8f0
+                workspaceId: ws_01j9z3kq4m8r2t6v0x5w7y9a1b
+                name: Shop
+                description: Checkout, orders and payments.
+                createdAt: '2026-10-16T12:00:00Z'
+                updatedAt: '2026-10-16T12:00:00Z'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: updateProject
+      summary: Update a project
+      description: Changes the project fields that are sent; the others stay as they are.
+      tags: [Projects]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        description: The project fields to change, as a JSON Merge Patch (RFC 7396).
+        content:
+          application/merge-patch+json:
+            schema: {$ref: '#/components/schemas/ProjectUpdate'}
+            example: {description: 'Checkout, orders, payments and refunds.'}
+      responses:
+        '200':
+          description: The updated project.
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Project'}
+              example:
+                id: prj_01j9z3m2p4r6t8v0x2z4b6d8f0
+                workspaceId: ws_01j9z3kq4m8r2t6v0x5w7y9a1b
+                name: Shop
+                description: Checkout, orders, payments and refunds.
+                createdAt: '2026-10-16T12:00:00Z'
+                updatedAt: '2026-10-17T09:30:00Z'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: deleteProject
+      summary: Delete a project
+      description: Deletes the project with its environments, services and specs.
+      tags: [Projects]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The project is deleted.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/projects/{projectId}/environments:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      operationId: listEnvironments
+      summary: List a project's environments
+      description: Lists environments in the order the environment switcher shows them.
+      tags: [Environments]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of environments.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvironmentPage'}
+              example:
+                data:
+                  - id: env_01j9z3n5q7s9v1w3y5a7c9e1g3
+                    projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0
+                    name: Production
+                    slug: production
+                    kind: production
+                    position: 2
+                    createdAt: '2026-10-16T12:00:00Z'
+                    updatedAt: '2026-10-16T12:00:00Z'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createEnvironment
+      summary: Create an environment
+      description: Adds an environment to the project.
+      tags: [Environments]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        description: The new environment's name, slug and kind.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EnvironmentCreate'}
+            example: {name: Load test, slug: load-test, kind: other}
+      responses:
+        '201':
+          description: The new environment.
+          headers:
+            Location: {$ref: '#/components/headers/Location'}
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Environment'}
+              example:
+                id: env_01j9z3p8r0t2v4x6z8b0d2f4h6
+                projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0
+                name: Load test
+                slug: load-test
+                kind: other
+                position: 3
+                createdAt: '2026-10-16T12:00:00Z'
+                updatedAt: '2026-10-16T12:00:00Z'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/environments/{environmentId}:
+    parameters:
+      - $ref: '#/components/parameters/EnvironmentId'
+    get:
+      operationId: getEnvironment
+      summary: Get an environment
+      description: Returns one environment.
+      tags: [Environments]
+      x-signalbox-status: planned
+      responses:
+        '200':
+          description: The environment.
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Environment'}
+              example:
+                id: env_01j9z3n5q7s9v1w3y5a7c9e1g3
+                projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0
+                name: Production
+                slug: production
+                kind: production
+                position: 2
+                createdAt: '2026-10-16T12:00:00Z'
+                updatedAt: '2026-10-16T12:00:00Z'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: updateEnvironment
+      summary: Update an environment
+      description: Changes the environment fields that are sent, such as its place in the switcher.
+      tags: [Environments]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        description: The environment fields to change, as a JSON Merge Patch (RFC 7396).
+        content:
+          application/merge-patch+json:
+            schema: {$ref: '#/components/schemas/EnvironmentUpdate'}
+            example: {position: 0}
+      responses:
+        '200':
+          description: The updated environment.
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Environment'}
+              example:
+                id: env_01j9z3n5q7s9v1w3y5a7c9e1g3
+                projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0
+                name: Production
+                slug: production
+                kind: production
+                position: 0
+                createdAt: '2026-10-16T12:00:00Z'
+                updatedAt: '2026-10-17T09:30:00Z'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: deleteEnvironment
+      summary: Delete an environment
+      description: Deletes the environment with its variables and secrets.
+      tags: [Environments]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The environment is deleted.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/projects/{projectId}/services:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      operationId: listServices
+      summary: List a project's services
+      description: Lists the services on the project's canvas, oldest first.
+      tags: [Services]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of services.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServicePage'}
+              example:
+                data:
+                  - id: svc_01j9z3q1s3v5w7y9a1c3e5g7j9
+                    projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0
+                    name: orders-api
+                    slug: orders-api
+                    description: Places and tracks orders.
+                    telemetryServiceName: orders-api
+                    position: {x: 320, y: 120}
+                    createdAt: '2026-10-16T12:00:00Z'
+                    updatedAt: '2026-10-16T12:00:00Z'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createService
+      summary: Add a service
+      description: Adds a service to the project's canvas.
+      tags: [Services]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        description: The new service's details.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ServiceCreate'}
+            example: {name: orders-api, slug: orders-api, telemetryServiceName: orders-api}
+      responses:
+        '201':
+          description: The new service.
+          headers:
+            Location: {$ref: '#/components/headers/Location'}
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Service'}
+              example:
+                id: svc_01j9z3q1s3v5w7y9a1c3e5g7j9
+                projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0
+                name: orders-api
+                slug: orders-api
+                telemetryServiceName: orders-api
+                position: {x: 0, y: 0}
+                createdAt: '2026-10-16T12:00:00Z'
+                updatedAt: '2026-10-16T12:00:00Z'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/services/{serviceId}:
+    parameters:
+      - $ref: '#/components/parameters/ServiceId'
+    get:
+      operationId: getService
+      summary: Get a service
+      description: Returns one service.
+      tags: [Services]
+      x-signalbox-status: planned
+      responses:
+        '200':
+          description: The service.
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Service'}
+              example:
+                id: svc_01j9z3q1s3v5w7y9a1c3e5g7j9
+                projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0
+                name: orders-api
+                slug: orders-api
+                description: Places and tracks orders.
+                telemetryServiceName: orders-api
+                position: {x: 320, y: 120}
+                createdAt: '2026-10-16T12:00:00Z'
+                updatedAt: '2026-10-16T12:00:00Z'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: updateService
+      summary: Update a service
+      description: Changes the fields that are sent, such as the node's position on the canvas.
+      tags: [Services]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        description: The service fields to change, as a JSON Merge Patch (RFC 7396).
+        content:
+          application/merge-patch+json:
+            schema: {$ref: '#/components/schemas/ServiceUpdate'}
+            example: {position: {x: 480, y: 200}}
+      responses:
+        '200':
+          description: The updated service.
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Service'}
+              example:
+                id: svc_01j9z3q1s3v5w7y9a1c3e5g7j9
+                projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0
+                name: orders-api
+                slug: orders-api
+                telemetryServiceName: orders-api
+                position: {x: 480, y: 200}
+                createdAt: '2026-10-16T12:00:00Z'
+                updatedAt: '2026-10-17T09:30:00Z'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: deleteService
+      summary: Remove a service
+      description: Removes the service and its specs from the project.
+      tags: [Services]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The service is removed.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/services/{serviceId}/specs:
+    parameters:
+      - $ref: '#/components/parameters/ServiceId'
+    get:
+      operationId: listSpecs
+      summary: List a service's specs
+      description: Lists the OpenAPI documents of a service, oldest first.
+      tags: [Specs]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of specs.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SpecPage'}
+              example:
+                data:
+                  - id: spec_01j9z3r4t6v8x0z2b4d6f8h0k2
+                    serviceId: svc_01j9z3q1s3v5w7y9a1c3e5g7j9
+                    name: Orders API
+                    currentRevisionId: rev_01j9z3s7v9x1z3b5d7f9h1k3m5
+                    createdAt: '2026-10-16T12:00:00Z'
+                    updatedAt: '2026-10-16T12:00:00Z'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createSpec
+      summary: Add a spec
+      description: Adds an OpenAPI document to the service. The first revision is created with it.
+      tags: [Specs]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        description: The spec's name and the document for its first revision.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SpecCreate'}
+            example:
+              name: Orders API
+              content: |
+                openapi: 3.1.1
+                info:
+                  title: Orders API
+                  version: 1.0.0
+                paths: {}
+      responses:
+        '201':
+          description: The new spec.
+          headers:
+            Location: {$ref: '#/components/headers/Location'}
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Spec'}
+              example:
+                id: spec_01j9z3r4t6v8x0z2b4d6f8h0k2
+                serviceId: svc_01j9z3q1s3v5w7y9a1c3e5g7j9
+                name: Orders API
+                currentRevisionId: rev_01j9z3s7v9x1z3b5d7f9h1k3m5
+                createdAt: '2026-10-16T12:00:00Z'
+                updatedAt: '2026-10-16T12:00:00Z'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '413': {$ref: '#/components/responses/ContentTooLarge'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/specs/{specId}:
+    parameters:
+      - $ref: '#/components/parameters/SpecId'
+    get:
+      operationId: getSpec
+      summary: Get a spec
+      description: Returns one spec. The `ETag` identifies its current revision.
+      tags: [Specs]
+      x-signalbox-status: planned
+      responses:
+        '200':
+          description: The spec.
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Spec'}
+              example:
+                id: spec_01j9z3r4t6v8x0z2b4d6f8h0k2
+                serviceId: svc_01j9z3q1s3v5w7y9a1c3e5g7j9
+                name: Orders API
+                currentRevisionId: rev_01j9z3s7v9x1z3b5d7f9h1k3m5
+                createdAt: '2026-10-16T12:00:00Z'
+                updatedAt: '2026-10-16T12:00:00Z'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: updateSpec
+      summary: Rename a spec
+      description: Changes the spec's name. To change the document itself, create a revision.
+      tags: [Specs]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        description: The spec's new name, as a JSON Merge Patch (RFC 7396).
+        content:
+          application/merge-patch+json:
+            schema: {$ref: '#/components/schemas/SpecUpdate'}
+            example: {name: Orders API v2}
+      responses:
+        '200':
+          description: The updated spec.
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Spec'}
+              example:
+                id: spec_01j9z3r4t6v8x0z2b4d6f8h0k2
+                serviceId: svc_01j9z3q1s3v5w7y9a1c3e5g7j9
+                name: Orders API v2
+                currentRevisionId: rev_01j9z3s7v9x1z3b5d7f9h1k3m5
+                createdAt: '2026-10-16T12:00:00Z'
+                updatedAt: '2026-10-17T09:30:00Z'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: deleteSpec
+      summary: Delete a spec
+      description: Deletes the spec with all its revisions.
+      tags: [Specs]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The spec is deleted.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/specs/{specId}/revisions:
+    parameters:
+      - $ref: '#/components/parameters/SpecId'
+    get:
+      operationId: listRevisions
+      summary: List a spec's revisions
+      description: Lists revisions, newest first.
+      tags: [Specs]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of revisions.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RevisionPage'}
+              example:
+                data:
+                  - id: rev_01j9z3s7v9x1z3b5d7f9h1k3m5
+                    specId: spec_01j9z3r4t6v8x0z2b4d6f8h0k2
+                    number: 2
+                    message: Add refunds
+                    format: openapi-3.1
+                    version: 3.1.1
+                    sizeBytes: 18342
+                    sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+                    counts: {errors: 0, warnings: 3, infos: 0, hints: 1}
+                    createdBy: usr_01j9z3kq4m8r2t6v0x5w7y9a1b
+                    createdAt: '2026-10-16T12:00:00Z'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createRevision
+      summary: Save a new revision
+      description: |
+        Saves the document as the spec's new current revision and checks it.
+
+        `If-Match` is required and must carry the spec's current `ETag`. If someone saved in the meantime, the request fails with 412, and the editor offers a three-way merge.
+      tags: [Specs]
+      x-signalbox-status: planned
+      parameters:
+        - $ref: '#/components/parameters/IfMatchRequired'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        description: The full document and a note that describes the change.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RevisionCreate'}
+            example:
+              message: Add refunds
+              content: |
+                openapi: 3.1.1
+                info:
+                  title: Orders API
+                  version: 1.1.0
+                paths: {}
+      responses:
+        '201':
+          description: The new revision.
+          headers:
+            Location: {$ref: '#/components/headers/Location'}
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Revision'}
+              example:
+                id: rev_01j9z3t0w2y4a6c8e0g2j4m6p8
+                specId: spec_01j9z3r4t6v8x0z2b4d6f8h0k2
+                number: 3
+                message: Add refunds
+                format: openapi-3.1
+                version: 3.1.1
+                sizeBytes: 19021
+                sha256: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
+                counts: {errors: 0, warnings: 2, infos: 0, hints: 1}
+                createdBy: usr_01j9z3kq4m8r2t6v0x5w7y9a1b
+                createdAt: '2026-10-17T09:30:00Z'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '413': {$ref: '#/components/responses/ContentTooLarge'}
+        '428': {$ref: '#/components/responses/PreconditionRequired'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/revisions/{revisionId}:
+    parameters:
+      - $ref: '#/components/parameters/RevisionId'
+    get:
+      operationId: getRevision
+      summary: Get a revision
+      description: Returns a revision's details without its content.
+      tags: [Specs]
+      x-signalbox-status: planned
+      responses:
+        '200':
+          description: The revision.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Revision'}
+              example:
+                id: rev_01j9z3s7v9x1z3b5d7f9h1k3m5
+                specId: spec_01j9z3r4t6v8x0z2b4d6f8h0k2
+                number: 2
+                message: Add refunds
+                format: openapi-3.1
+                version: 3.1.1
+                sizeBytes: 18342
+                sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+                counts: {errors: 0, warnings: 3, infos: 0, hints: 1}
+                createdBy: usr_01j9z3kq4m8r2t6v0x5w7y9a1b
+                createdAt: '2026-10-16T12:00:00Z'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/revisions/{revisionId}/content:
+    parameters:
+      - $ref: '#/components/parameters/RevisionId'
+    get:
+      operationId: getRevisionContent
+      summary: Download a revision's document
+      description: Returns the document exactly as it was saved. Revisions never change, so the response can be cached forever.
+      tags: [Specs]
+      x-signalbox-status: planned
+      responses:
+        '200':
+          description: The document.
+          headers:
+            Cache-Control:
+              description: '`private, max-age=31536000, immutable`.'
+              schema: {type: string}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/yaml:
+              schema: {type: string}
+              example: |
+                openapi: 3.1.1
+                info:
+                  title: Orders API
+                  version: 1.1.0
+                paths: {}
+            application/json:
+              schema: {type: string}
+              example: '{"openapi": "3.1.1", "info": {"title": "Orders API", "version": "1.1.0"}, "paths": {}}'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/revisions/{revisionId}/report:
+    parameters:
+      - $ref: '#/components/parameters/RevisionId'
+    get:
+      operationId: getRevisionReport
+      summary: Get a revision's check report
+      description: Returns the validation and lint results recorded when the revision was saved.
+      tags: [Specs]
+      x-signalbox-status: planned
+      responses:
+        '200':
+          description: The report.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Report'}
+              example:
+                format: openapi-3.1
+                version: 3.1.1
+                diagnostics: []
+                counts: {errors: 0, warnings: 0, infos: 0, hints: 0}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: __Host-sbx_session
+      description: The browser session cookie set by `createSession`. Unsafe methods also need the `X-CSRF-Token` header from the session.
+    bearerToken:
+      type: http
+      scheme: bearer
+      description: A personal access token (`sbx_pat_…`) or service-account token (`sbx_sat_…`).
+
+  parameters:
+    WorkspaceId:
+      name: workspaceId
+      in: path
+      required: true
+      description: The workspace's ID.
+      schema: {$ref: '#/components/schemas/WorkspaceId'}
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      description: The project's ID.
+      schema: {$ref: '#/components/schemas/ProjectId'}
+    EnvironmentId:
+      name: environmentId
+      in: path
+      required: true
+      description: The environment's ID.
+      schema: {$ref: '#/components/schemas/EnvironmentId'}
+    ServiceId:
+      name: serviceId
+      in: path
+      required: true
+      description: The service's ID.
+      schema: {$ref: '#/components/schemas/ServiceId'}
+    SpecId:
+      name: specId
+      in: path
+      required: true
+      description: The spec's ID.
+      schema: {$ref: '#/components/schemas/SpecId'}
+    RevisionId:
+      name: revisionId
+      in: path
+      required: true
+      description: The revision's ID.
+      schema: {$ref: '#/components/schemas/RevisionId'}
+    Limit:
+      name: limit
+      in: query
+      required: false
+      description: Maximum number of items to return.
+      schema: {type: integer, minimum: 1, maximum: 200, default: 50}
+      example: 50
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: The `nextCursor` value from the previous page.
+      schema: {type: string, maxLength: 512}
+      example: eyJpZCI6IndzXzAxajl6M2txNG04cjJ0NnYweDV3N3k5YTFiIn0
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: The `ETag` of the version you edited. The request fails with 412 if the resource changed since.
+      schema: {type: string, maxLength: 128}
+      example: '"3"'
+    IfMatchRequired:
+      name: If-Match
+      in: header
+      required: true
+      description: Required. The spec's current `ETag`, which names the revision your change is based on. The request fails with 412 if someone saved a newer revision.
+      schema: {type: string, maxLength: 128}
+      example: '"rev_01j9z3s7v9x1z3b5d7f9h1k3m5"'
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: A unique key for this request. Repeating a request with the same key within 24 hours returns the first result instead of creating a duplicate.
+      schema: {type: string, minLength: 8, maxLength: 128}
+      example: 3f1c2b8e-6d4a-4c1e-9b7a-2e5f8d0c1a94
+
+  headers:
+    RequestId:
+      description: Identifies the request in server logs. Quote it when you report a problem.
+      schema: {type: string, maxLength: 64}
+      example: 9f8e7d6c5b4a39281706f5e4
+    ETag:
+      description: The version of the resource, for `If-Match`.
+      schema: {type: string, maxLength: 128}
+      example: '"3"'
+    Location:
+      description: URL of the created resource.
+      schema: {type: string, format: uri-reference}
+      example: /api/v1/workspaces/ws_01j9z3kq4m8r2t6v0x5w7y9a1b
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema: {type: integer, minimum: 0}
+      example: 30
+
+  responses:
+    BadRequest:
+      description: The request is malformed, or a field is invalid.
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/RequestId'}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example:
+            type: about:blank
+            title: Bad Request
+            status: 400
+            detail: The request has 1 invalid field.
+            code: validation-failed
+            requestId: 9f8e7d6c5b4a39281706f5e4
+            errors:
+              - pointer: /slug
+                detail: Use lowercase letters, digits and single hyphens.
+                code: pattern
+    Unauthorized:
+      description: The request has no valid session or token.
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/RequestId'}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example:
+            type: about:blank
+            title: Unauthorized
+            status: 401
+            detail: Sign in, or send a valid token in the Authorization header.
+            code: unauthenticated
+            requestId: 9f8e7d6c5b4a39281706f5e4
+    Forbidden:
+      description: The caller is signed in but isn't allowed to do this.
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/RequestId'}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example:
+            type: about:blank
+            title: Forbidden
+            status: 403
+            detail: Only workspace owners can delete a workspace.
+            code: permission-denied
+            requestId: 9f8e7d6c5b4a39281706f5e4
+    NotFound:
+      description: The resource doesn't exist, or the caller can't see it.
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/RequestId'}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            detail: There is no project with this ID.
+            code: not-found
+            requestId: 9f8e7d6c5b4a39281706f5e4
+    Conflict:
+      description: The request conflicts with an existing resource, such as a slug that is already taken.
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/RequestId'}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            detail: The slug payments is already taken in this installation.
+            code: slug-taken
+            requestId: 9f8e7d6c5b4a39281706f5e4
+    PreconditionFailed:
+      description: The resource changed since the `ETag` in `If-Match`. Load it again and reapply your change.
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/RequestId'}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example:
+            type: about:blank
+            title: Precondition Failed
+            status: 412
+            detail: Someone saved a newer revision. Merge your changes into it and save again.
+            code: edit-conflict
+            requestId: 9f8e7d6c5b4a39281706f5e4
+    PreconditionRequired:
+      description: This request needs an `If-Match` header.
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/RequestId'}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example:
+            type: about:blank
+            title: Precondition Required
+            status: 428
+            detail: Send the spec's current ETag in If-Match.
+            code: if-match-required
+            requestId: 9f8e7d6c5b4a39281706f5e4
+    ContentTooLarge:
+      description: The request body is larger than the installation allows.
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/RequestId'}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example:
+            type: about:blank
+            title: Request Entity Too Large
+            status: 413
+            detail: The document is larger than 10 MiB.
+            code: document-too-large
+            requestId: 9f8e7d6c5b4a39281706f5e4
+    TooManyRequests:
+      description: The caller sent too many requests. Wait for the time in `Retry-After`.
+      headers:
+        Retry-After: {$ref: '#/components/headers/RetryAfter'}
+        X-Request-Id: {$ref: '#/components/headers/RequestId'}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example:
+            type: about:blank
+            title: Too Many Requests
+            status: 429
+            detail: Try again in 30 seconds.
+            code: rate-limited
+            requestId: 9f8e7d6c5b4a39281706f5e4
+    Error:
+      description: Any other error, such as an unexpected failure on the server.
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/RequestId'}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example:
+            type: about:blank
+            title: Internal Server Error
+            status: 500
+            detail: Something went wrong on the server. Quote the request ID when you report it.
+            code: internal-error
+            requestId: 9f8e7d6c5b4a39281706f5e4
+
+  schemas:
+    WorkspaceId:
+      type: string
+      description: A workspace ID.
+      pattern: '^ws_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [ws_01j9z3kq4m8r2t6v0x5w7y9a1b]
+    ProjectId:
+      type: string
+      description: A project ID.
+      pattern: '^prj_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [prj_01j9z3m2p4r6t8v0x2z4b6d8f0]
+    EnvironmentId:
+      type: string
+      description: An environment ID.
+      pattern: '^env_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [env_01j9z3n5q7s9v1w3y5a7c9e1g3]
+    ServiceId:
+      type: string
+      description: A service ID.
+      pattern: '^svc_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [svc_01j9z3q1s3v5w7y9a1c3e5g7j9]
+    SpecId:
+      type: string
+      description: A spec ID.
+      pattern: '^spec_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [spec_01j9z3r4t6v8x0z2b4d6f8h0k2]
+    RevisionId:
+      type: string
+      description: A revision ID.
+      pattern: '^rev_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [rev_01j9z3s7v9x1z3b5d7f9h1k3m5]
+    UserId:
+      type: string
+      description: A user ID.
+      pattern: '^usr_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [usr_01j9z3kq4m8r2t6v0x5w7y9a1b]
+    Timestamp:
+      type: string
+      format: date-time
+      description: A point in time in RFC 3339 format, in UTC.
+      examples: ['2026-10-16T12:00:00Z']
+    Slug:
+      type: string
+      description: A short, URL-safe name made of lowercase letters, digits and single hyphens.
+      minLength: 1
+      maxLength: 63
+      pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+      examples: [payments]
+    Name:
+      type: string
+      description: A display name.
+      minLength: 1
+      maxLength: 100
+      examples: [Payments]
+    Description:
+      type: string
+      description: A short description in plain text.
+      maxLength: 1000
+      examples: ['Checkout, orders and payments.']
+
+    Problem:
+      type: object
+      description: An RFC 9457 problem details object. Every error response uses it.
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          description: Identifies the kind of problem. `about:blank` means the HTTP status says it all.
+          examples: [about:blank]
+        title:
+          type: string
+          description: A short summary of the kind of problem.
+          examples: [Not Found]
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+          description: The HTTP status code.
+          examples: [404]
+        detail:
+          type: string
+          description: What went wrong in this case, and how to fix it.
+          examples: [There is no project with this ID.]
+        instance:
+          type: string
+          format: uri-reference
+          description: The path of the request that failed.
+          examples: [/api/v1/projects/prj_01j9z3m2p4r6t8v0x2z4b6d8f0]
+        code:
+          type: string
+          description: A stable, machine-readable identifier for the problem.
+          examples: [not-found]
+        requestId:
+          type: string
+          description: Matches the `X-Request-Id` header and the server logs.
+          examples: [9f8e7d6c5b4a39281706f5e4]
+        errors:
+          type: array
+          description: The fields that failed validation.
+          maxItems: 100
+          items: {$ref: '#/components/schemas/FieldError'}
+          examples:
+            - - pointer: /slug
+                detail: Use lowercase letters, digits and single hyphens.
+                code: pattern
+    FieldError:
+      type: object
+      description: One invalid field in a request body.
+      required: [pointer, detail]
+      properties:
+        pointer:
+          type: string
+          description: A JSON Pointer (RFC 6901) to the field in the request body.
+          examples: [/slug]
+        detail:
+          type: string
+          description: What is wrong with the field.
+          examples: [Use lowercase letters, digits and single hyphens.]
+        code:
+          type: string
+          description: The rule that failed.
+          examples: [pattern]
+
+    Meta:
+      type: object
+      description: Details of the installation.
+      required: [product, version, apiVersion, roles]
+      properties:
+        product:
+          type: string
+          description: The product name.
+          examples: [Signalbox]
+        version:
+          type: string
+          description: The server version.
+          examples: [0.1.0]
+        commit:
+          type: string
+          description: The source commit the server was built from.
+          examples: [1a2b3c4d5e6f]
+        buildDate:
+          type: string
+          description: When the server was built.
+          examples: ['2026-10-16T12:00:00Z']
+        apiVersion:
+          type: string
+          description: The API's major version.
+          examples: [v1]
+        roles:
+          type: array
+          description: The roles this process runs.
+          maxItems: 6
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/Role'}
+          examples: [[api, mock]]
+    Role:
+      type: string
+      description: A role of `signalbox-server`.
+      enum: [api, mock, runner, scheduler, worker, ingest]
+      examples: [api]
+
+    HealthResponse:
+      type: object
+      description: A health document in the Health Check Response Format for HTTP APIs.
+      required: [status]
+      properties:
+        status: {$ref: '#/components/schemas/HealthStatus'}
+        version:
+          type: string
+          description: The version of the health format.
+          examples: ['1']
+        releaseId:
+          type: string
+          description: The server release.
+          examples: [0.1.0]
+        serviceId:
+          type: string
+          description: The service that answered.
+          examples: [signalbox-server]
+        output:
+          type: string
+          description: Why the status isn't `pass`.
+          examples: [shutting down]
+        checks:
+          type: object
+          description: Results per component, keyed by `component:measurement`.
+          additionalProperties:
+            type: array
+            maxItems: 50
+            items: {$ref: '#/components/schemas/HealthCheckResult'}
+          examples:
+            - uptime:
+                - componentType: system
+                  observedValue: 3600
+                  observedUnit: s
+                  status: pass
+                  time: '2026-10-16T12:00:00Z'
+    HealthStatus:
+      type: string
+      description: '`pass` is healthy, `warn` is healthy with concerns, `fail` is unhealthy.'
+      enum: [pass, warn, fail]
+      examples: [pass]
+    HealthCheckResult:
+      type: object
+      description: The result of one check.
+      required: [status, time]
+      properties:
+        componentType:
+          type: string
+          description: The kind of component checked.
+          examples: [datastore]
+        observedValue:
+          type: [number, string, boolean]
+          description: The measured value.
+          examples: [12]
+        observedUnit:
+          type: string
+          description: The unit of the measured value.
+          examples: [ms]
+        status: {$ref: '#/components/schemas/HealthStatus'}
+        time: {$ref: '#/components/schemas/Timestamp'}
+        output:
+          type: string
+          description: Why the check isn't passing.
+          examples: [no answer within 2s]
+
+    Report:
+      type: object
+      description: The result of validating and linting one document.
+      required: [diagnostics, counts]
+      properties:
+        format: {$ref: '#/components/schemas/SpecFormat'}
+        version:
+          type: string
+          description: The version the document declares. Missing when the document couldn't be read.
+          examples: [3.1.0]
+        diagnostics:
+          type: array
+          description: Every problem found, ordered by position.
+          maxItems: 100000
+          items: {$ref: '#/components/schemas/Diagnostic'}
+          examples:
+            - - severity: warning
+                source: linter
+                code: operation-operationId
+                message: The `GET` operation does not contain an `operationId`.
+                path: "$.paths['/things'].get"
+                range: {start: {line: 7, column: 5}, end: {line: 7, column: 5}}
+        counts: {$ref: '#/components/schemas/Counts'}
+    SpecFormat:
+      type: string
+      description: The specification family and minor version.
+      enum: [swagger-2.0, openapi-3.0, openapi-3.1, openapi-3.2]
+      examples: [openapi-3.1]
+    Diagnostic:
+      type: object
+      description: One problem found in a document.
+      required: [severity, source, code, message, range]
+      properties:
+        severity:
+          type: string
+          description: How serious the problem is. Errors mean the document is invalid.
+          enum: [error, warning, info, hint]
+          examples: [error]
+        source:
+          type: string
+          description: The check that found the problem.
+          enum: [parser, validator, resolver, linter]
+          examples: [resolver]
+        code:
+          type: string
+          description: The kind of problem, or the lint rule ID.
+          examples: [unresolved-reference]
+        message:
+          type: string
+          description: What is wrong.
+          examples: [Component `#/components/schemas/Missing` does not exist in the specification.]
+        path:
+          type: string
+          description: Where the problem is, as a JSON Pointer or JSONPath.
+          examples: ["$.paths['/things'].get"]
+        range: {$ref: '#/components/schemas/Range'}
+        howToFix:
+          type: string
+          description: A suggestion for fixing the problem.
+          examples: [Check that the referenced component exists and that the $ref is spelled correctly.]
+    Range:
+      type: object
+      description: Where a problem starts and ends in the document.
+      required: [start, end]
+      properties:
+        start: {$ref: '#/components/schemas/Position'}
+        end: {$ref: '#/components/schemas/Position'}
+    Position:
+      type: object
+      description: A 1-based line and column. Zero means the position is unknown.
+      required: [line, column]
+      properties:
+        line:
+          type: integer
+          minimum: 0
+          description: The line, starting at 1.
+          examples: [14]
+        column:
+          type: integer
+          minimum: 0
+          description: The column, starting at 1.
+          examples: [17]
+    Counts:
+      type: object
+      description: How many problems there are of each severity.
+      required: [errors, warnings, infos, hints]
+      properties:
+        errors: {type: integer, minimum: 0, description: Problems that make the document invalid., examples: [1]}
+        warnings: {type: integer, minimum: 0, description: Quality or security issues., examples: [3]}
+        infos: {type: integer, minimum: 0, description: Information worth knowing., examples: [0]}
+        hints: {type: integer, minimum: 0, description: Suggestions., examples: [1]}
+
+    User:
+      type: object
+      description: A person with an account.
+      required: [id, email, name]
+      properties:
+        id: {$ref: '#/components/schemas/UserId'}
+        email:
+          type: string
+          format: email
+          description: The user's email address.
+          examples: [ada@example.com]
+        name: {$ref: '#/components/schemas/Name'}
+    SessionCreate:
+      type: object
+      description: Credentials to sign in with.
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: The account's email address.
+          examples: [ada@example.com]
+        password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 1024
+          writeOnly: true
+          description: The account's password.
+          examples: [correct horse battery staple]
+    Session:
+      type: object
+      description: A signed-in session.
+      required: [user, expiresAt, csrfToken]
+      properties:
+        user: {$ref: '#/components/schemas/User'}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+        csrfToken:
+          type: string
+          description: Send this in the `X-CSRF-Token` header on unsafe requests.
+          examples: [3q2+7wAAAAAAAAAAAAAAAA]
+        mfaRequired:
+          type: boolean
+          description: True when the account must confirm a second factor before the session is usable.
+          examples: [false]
+
+    Workspace:
+      type: object
+      description: A workspace groups the projects, members and rules of one team or organization unit.
+      required: [id, name, slug, createdAt, updatedAt]
+      properties:
+        id: {$ref: '#/components/schemas/WorkspaceId'}
+        name: {$ref: '#/components/schemas/Name'}
+        slug: {$ref: '#/components/schemas/Slug'}
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+        updatedAt: {$ref: '#/components/schemas/Timestamp'}
+    WorkspaceCreate:
+      type: object
+      description: A new workspace.
+      required: [name, slug]
+      additionalProperties: false
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        slug: {$ref: '#/components/schemas/Slug'}
+    WorkspaceUpdate:
+      type: object
+      description: Changes to a workspace. Fields that aren't sent keep their value.
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        slug: {$ref: '#/components/schemas/Slug'}
+    WorkspacePage:
+      type: object
+      description: One page of the workspace list, with a cursor for the next page.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The workspaces on this page.
+          maxItems: 200
+          items: {$ref: '#/components/schemas/Workspace'}
+          examples:
+            - - {id: ws_01j9z3kq4m8r2t6v0x5w7y9a1b, name: Payments, slug: payments, createdAt: '2026-10-16T12:00:00Z', updatedAt: '2026-10-16T12:00:00Z'}
+        nextCursor: {$ref: '#/components/schemas/NextCursor'}
+    NextCursor:
+      type: string
+      description: Pass this as `cursor` to get the next page. Missing on the last page.
+      maxLength: 512
+      examples: [eyJpZCI6IndzXzAxajl6M2txNG04cjJ0NnYweDV3N3k5YTFiIn0]
+
+    Project:
+      type: object
+      description: A project is one system, such as a product or a platform, with its own canvas, environments and services.
+      required: [id, workspaceId, name, createdAt, updatedAt]
+      properties:
+        id: {$ref: '#/components/schemas/ProjectId'}
+        workspaceId: {$ref: '#/components/schemas/WorkspaceId'}
+        name: {$ref: '#/components/schemas/Name'}
+        description: {$ref: '#/components/schemas/Description'}
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+        updatedAt: {$ref: '#/components/schemas/Timestamp'}
+    ProjectCreate:
+      type: object
+      description: A new project.
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        description: {$ref: '#/components/schemas/Description'}
+    ProjectUpdate:
+      type: object
+      description: Changes to a project. Fields that aren't sent keep their value.
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        description: {$ref: '#/components/schemas/Description'}
+    ProjectPage:
+      type: object
+      description: One page of the project list, with a cursor for the next page.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The projects on this page.
+          maxItems: 200
+          items: {$ref: '#/components/schemas/Project'}
+          examples:
+            - - {id: prj_01j9z3m2p4r6t8v0x2z4b6d8f0, workspaceId: ws_01j9z3kq4m8r2t6v0x5w7y9a1b, name: Shop, createdAt: '2026-10-16T12:00:00Z', updatedAt: '2026-10-16T12:00:00Z'}
+        nextCursor: {$ref: '#/components/schemas/NextCursor'}
+
+    Environment:
+      type: object
+      description: An environment of a project, with its own base URLs, variables and secrets.
+      required: [id, projectId, name, slug, kind, position, createdAt, updatedAt]
+      properties:
+        id: {$ref: '#/components/schemas/EnvironmentId'}
+        projectId: {$ref: '#/components/schemas/ProjectId'}
+        name: {$ref: '#/components/schemas/Name'}
+        slug: {$ref: '#/components/schemas/Slug'}
+        kind: {$ref: '#/components/schemas/EnvironmentKind'}
+        position:
+          type: integer
+          minimum: 0
+          description: The environment's place in the environment switcher, starting at 0.
+          examples: [2]
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+        updatedAt: {$ref: '#/components/schemas/Timestamp'}
+    EnvironmentKind:
+      type: string
+      description: What the environment is for. Production environments get extra confirmation before destructive actions.
+      enum: [development, staging, production, other]
+      examples: [production]
+    EnvironmentCreate:
+      type: object
+      description: A new environment.
+      required: [name, slug, kind]
+      additionalProperties: false
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        slug: {$ref: '#/components/schemas/Slug'}
+        kind: {$ref: '#/components/schemas/EnvironmentKind'}
+    EnvironmentUpdate:
+      type: object
+      description: Changes to an environment. Fields that aren't sent keep their value.
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        slug: {$ref: '#/components/schemas/Slug'}
+        kind: {$ref: '#/components/schemas/EnvironmentKind'}
+        position:
+          type: integer
+          minimum: 0
+          description: The new place in the environment switcher.
+          examples: [0]
+    EnvironmentPage:
+      type: object
+      description: One page of the environment list, with a cursor for the next page.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The environments on this page.
+          maxItems: 200
+          items: {$ref: '#/components/schemas/Environment'}
+          examples:
+            - - {id: env_01j9z3n5q7s9v1w3y5a7c9e1g3, projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0, name: Production, slug: production, kind: production, position: 2, createdAt: '2026-10-16T12:00:00Z', updatedAt: '2026-10-16T12:00:00Z'}
+        nextCursor: {$ref: '#/components/schemas/NextCursor'}
+
+    Service:
+      type: object
+      description: A service on a project's canvas.
+      required: [id, projectId, name, slug, position, createdAt, updatedAt]
+      properties:
+        id: {$ref: '#/components/schemas/ServiceId'}
+        projectId: {$ref: '#/components/schemas/ProjectId'}
+        name: {$ref: '#/components/schemas/Name'}
+        slug: {$ref: '#/components/schemas/Slug'}
+        description: {$ref: '#/components/schemas/Description'}
+        telemetryServiceName: {$ref: '#/components/schemas/TelemetryServiceName'}
+        position: {$ref: '#/components/schemas/CanvasPosition'}
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+        updatedAt: {$ref: '#/components/schemas/Timestamp'}
+    CanvasPosition:
+      type: object
+      description: Where the node sits on the canvas, in canvas units.
+      required: [x, y]
+      properties:
+        x: {type: number, description: Horizontal position., examples: [320]}
+        y: {type: number, description: Vertical position., examples: [120]}
+    TelemetryServiceName:
+      type: string
+      maxLength: 255
+      description: The `service.name` a service reports in its traces. It links the service's spans to its node on the canvas.
+      examples: [orders-api]
+    ServiceCreate:
+      type: object
+      description: A new service.
+      required: [name, slug]
+      additionalProperties: false
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        slug: {$ref: '#/components/schemas/Slug'}
+        description: {$ref: '#/components/schemas/Description'}
+        telemetryServiceName: {$ref: '#/components/schemas/TelemetryServiceName'}
+        position: {$ref: '#/components/schemas/CanvasPosition'}
+    ServiceUpdate:
+      type: object
+      description: Changes to a service. Fields that aren't sent keep their value.
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        slug: {$ref: '#/components/schemas/Slug'}
+        description: {$ref: '#/components/schemas/Description'}
+        telemetryServiceName: {$ref: '#/components/schemas/TelemetryServiceName'}
+        position: {$ref: '#/components/schemas/CanvasPosition'}
+    ServicePage:
+      type: object
+      description: One page of the service list, with a cursor for the next page.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The services on this page.
+          maxItems: 200
+          items: {$ref: '#/components/schemas/Service'}
+          examples:
+            - - {id: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0, name: orders-api, slug: orders-api, position: {x: 320, y: 120}, createdAt: '2026-10-16T12:00:00Z', updatedAt: '2026-10-16T12:00:00Z'}
+        nextCursor: {$ref: '#/components/schemas/NextCursor'}
+
+    Spec:
+      type: object
+      description: An OpenAPI document of a service. Its content lives in revisions.
+      required: [id, serviceId, name, createdAt, updatedAt]
+      properties:
+        id: {$ref: '#/components/schemas/SpecId'}
+        serviceId: {$ref: '#/components/schemas/ServiceId'}
+        name: {$ref: '#/components/schemas/Name'}
+        currentRevisionId: {$ref: '#/components/schemas/RevisionId'}
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+        updatedAt: {$ref: '#/components/schemas/Timestamp'}
+    SpecCreate:
+      type: object
+      description: A new spec and the content of its first revision.
+      required: [name, content]
+      additionalProperties: false
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+        content: {$ref: '#/components/schemas/SpecContent'}
+    SpecUpdate:
+      type: object
+      description: Changes to a spec. Fields that aren't sent keep their value.
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        name: {$ref: '#/components/schemas/Name'}
+    SpecContent:
+      type: string
+      description: The full OpenAPI document as YAML or JSON text.
+      minLength: 1
+      maxLength: 10485760
+      examples: ["openapi: 3.1.1\ninfo:\n  title: Orders API\n  version: 1.0.0\npaths: {}\n"]
+    SpecPage:
+      type: object
+      description: One page of the spec list, with a cursor for the next page.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The specs on this page.
+          maxItems: 200
+          items: {$ref: '#/components/schemas/Spec'}
+          examples:
+            - - {id: spec_01j9z3r4t6v8x0z2b4d6f8h0k2, serviceId: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, name: Orders API, createdAt: '2026-10-16T12:00:00Z', updatedAt: '2026-10-16T12:00:00Z'}
+        nextCursor: {$ref: '#/components/schemas/NextCursor'}
+
+    Revision:
+      type: object
+      description: One saved version of a spec's document. Revisions never change.
+      required: [id, specId, number, format, version, sizeBytes, sha256, counts, createdBy, createdAt]
+      properties:
+        id: {$ref: '#/components/schemas/RevisionId'}
+        specId: {$ref: '#/components/schemas/SpecId'}
+        number:
+          type: integer
+          minimum: 1
+          description: The revision's sequence number within the spec, starting at 1.
+          examples: [3]
+        message:
+          type: string
+          maxLength: 500
+          description: What changed, in the author's words.
+          examples: [Add refunds]
+        format: {$ref: '#/components/schemas/SpecFormat'}
+        version:
+          type: string
+          description: The OpenAPI version the document declares.
+          examples: [3.1.1]
+        sizeBytes:
+          type: integer
+          minimum: 0
+          description: The size of the document in bytes.
+          examples: [18342]
+        sha256:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+          description: The SHA-256 hash of the document.
+          examples: [9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08]
+        counts: {$ref: '#/components/schemas/Counts'}
+        createdBy: {$ref: '#/components/schemas/UserId'}
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+    RevisionCreate:
+      type: object
+      description: The content of a new revision.
+      required: [content]
+      additionalProperties: false
+      properties:
+        content: {$ref: '#/components/schemas/SpecContent'}
+        message:
+          type: string
+          maxLength: 500
+          description: A short note on what changed, shown in the revision history.
+          examples: [Add refunds]
+    RevisionPage:
+      type: object
+      description: One page of the revision history, with a cursor for the next page.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The revisions on this page.
+          maxItems: 200
+          items: {$ref: '#/components/schemas/Revision'}
+          examples:
+            - - {id: rev_01j9z3s7v9x1z3b5d7f9h1k3m5, specId: spec_01j9z3r4t6v8x0z2b4d6f8h0k2, number: 2, format: openapi-3.1, version: 3.1.1, sizeBytes: 18342, sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08, counts: {errors: 0, warnings: 3, infos: 0, hints: 1}, createdBy: usr_01j9z3kq4m8r2t6v0x5w7y9a1b, createdAt: '2026-10-16T12:00:00Z'}
+        nextCursor: {$ref: '#/components/schemas/NextCursor'}

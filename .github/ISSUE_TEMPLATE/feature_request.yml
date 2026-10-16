@@ -1,0 +1,21 @@
+name: Feature request
+description: Suggest an improvement, starting from the problem it solves.
+labels: [enhancement, triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you'd like
+      description: How you imagine Signalbox could solve it.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workarounds and alternatives
+      description: What you do now, and other tools or approaches you've considered.

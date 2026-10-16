@@ -1,0 +1,106 @@
+openapi: 3.1.1
+info:
+  title: Pet Store
+  version: 1.0.0
+  description: Manage the pets in a store.
+  contact:
+    name: API team
+    url: https://example.com/support
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+servers:
+  - url: https://api.example.com/v1
+    description: Production
+tags:
+  - name: pets
+    description: Pets in the store.
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      summary: List pets
+      description: Returns every pet in the store, newest first.
+      tags: [pets]
+      parameters:
+        - name: limit
+          in: query
+          description: How many pets to return.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: A page of pets.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 100
+                items:
+                  $ref: '#/components/schemas/Pet'
+  /pets/{petId}:
+    get:
+      operationId: getPet
+      summary: Get a pet
+      description: Returns one pet.
+      tags: [pets]
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          description: The pet's ID.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The pet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pet'
+        '404':
+          description: No pet has this ID.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+components:
+  schemas:
+    Pet:
+      type: object
+      description: A pet.
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique ID.
+        name:
+          type: string
+          maxLength: 100
+          description: The pet's name.
+        tag:
+          type: [string, 'null']
+          maxLength: 50
+          description: Optional label.
+    Problem:
+      type: object
+      description: RFC 9457 problem details.
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          description: Problem type.
+        title:
+          type: string
+          description: Short summary.
+        status:
+          type: integer
+          description: HTTP status code.
+        detail:
+          type: string
+          description: Explanation for this occurrence.

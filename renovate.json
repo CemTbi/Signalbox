@@ -1,0 +1,23 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "timezone": "UTC",
+  "schedule": ["before 6am on monday"],
+  "postUpdateOptions": ["gomodTidy"],
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "schedule": ["at any time"]
+  },
+  "packageRules": [
+    {
+      "description": "Batch routine updates into one weekly pull request per ecosystem.",
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "{{manager}} minor and patch updates"
+    },
+    {
+      "description": "openapi-typescript and typescript-eslint don't support TypeScript 6 yet. See ADR-0006.",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<6.0.0"
+    }
+  ]
+}

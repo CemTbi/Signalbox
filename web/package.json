@@ -1,0 +1,28 @@
+{
+  "name": "signalbox-web",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "app",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "npm --workspace @signalbox/app run dev",
+    "build": "npm --workspace @signalbox/app run build",
+    "lint": "eslint .",
+    "typecheck": "npm --workspaces --if-present run typecheck",
+    "test": "npm --workspaces --if-present run test",
+    "generate:api": "npm --workspace @signalbox/api-client run generate"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.13.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.71.2"
+  }
+}
