@@ -4,13 +4,17 @@ on:
   push:
     branches: [main]
   pull_request:
+    # ready_for_review starts the job that draft pull requests skip.
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A new push makes a pull request's running checks pointless. On main,
+  # every commit gets a complete run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   go:
@@ -69,6 +73,9 @@ jobs:
 
   image:
     name: Image, Compose stack and end-to-end tests
+    # The slowest job. Draft pull requests skip it to save Actions minutes;
+    # it runs once they are marked ready for review.
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     needs: [go, web]
     env:
