@@ -15,7 +15,8 @@
     "lint": "eslint .",
     "typecheck": "npm --workspaces --if-present run typecheck",
     "test": "npm --workspaces --if-present run test",
-    "generate:api": "npm --workspace @signalbox/api-client run generate"
+    "generate:api": "npm --workspace @signalbox/api-client run generate",
+    "licenses": "node scripts/check-licenses.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

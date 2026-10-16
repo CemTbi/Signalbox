@@ -15,8 +15,20 @@ export type HealthStatus = Schemas["HealthStatus"];
 export type Report = Schemas["Report"];
 export type Diagnostic = Schemas["Diagnostic"];
 export type Problem = Schemas["Problem"];
+export type FieldError = Schemas["FieldError"];
+export type User = Schemas["User"];
+export type Session = Schemas["Session"];
+export type SetupStatus = Schemas["SetupStatus"];
+export type Workspace = Schemas["Workspace"];
+export type WorkspaceRole = Schemas["WorkspaceRole"];
+export type WorkspacePage = Schemas["WorkspacePage"];
+export type Project = Schemas["Project"];
+export type ProjectPage = Schemas["ProjectPage"];
 
 export type ApiClient = ReturnType<typeof createClient<paths>>;
+
+/** The header that carries the session's CSRF token on unsafe requests. */
+export const CSRF_HEADER = "X-CSRF-Token";
 
 /**
  * Creates a client for the Signalbox API. In the browser it talks to the

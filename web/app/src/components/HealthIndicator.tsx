@@ -52,7 +52,7 @@ export function HealthIndicator({ client = api }: { client?: ApiClient }) {
   return (
     <div className="health" role="status" aria-live="polite">
       <span className={`health-dot health-${tone}`} aria-hidden="true" />
-      <span>{label}</span>
+      <span className="health-label">{label}</span>
       {state.kind === "known" && state.version ? <span className="health-version">v{state.version}</span> : null}
     </div>
   );

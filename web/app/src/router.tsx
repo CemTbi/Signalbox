@@ -1,0 +1,153 @@
+// SPDX-License-Identifier: Apache-2.0
+
+import type { ApiClient } from "@signalbox/api-client";
+import type { QueryClient } from "@tanstack/react-query";
+import {
+  createRootRouteWithContext,
+  createRoute,
+  createRouter,
+  Link,
+  Outlet,
+  redirect,
+  useRouteContext,
+} from "@tanstack/react-router";
+import { AppShell } from "./components/AppShell";
+import { PageHeader } from "./components/Page";
+import { SetupPage, SignInPage } from "./features/auth/pages";
+import { ProjectPage } from "./features/projects/ProjectPage";
+import { SpecCheck } from "./features/spec-check/SpecCheck";
+import { WorkspacePage, WorkspacesPage } from "./features/workspaces/pages";
+import { safeRedirect, sessionQuery, setupStatusQuery } from "./session";
+
+export interface RouterContext {
+  queryClient: QueryClient;
+  api: ApiClient;
+}
+
+const rootRoute = createRootRouteWithContext<RouterContext>()({
+  component: Outlet,
+  notFoundComponent: NotFound,
+});
+
+// Pages for people who aren't signed in. Each sends people where they
+// belong: setup on a new installation, the app when already signed in.
+
+const setupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/setup",
+  beforeLoad: async ({ context }) => {
+    const status = await context.queryClient.ensureQueryData(setupStatusQuery(context.api));
+    if (!status.required) throw redirect({ to: "/sign-in" });
+  },
+  component: SetupPage,
+});
+
+const signInRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sign-in",
+  validateSearch: (search: Record<string, unknown>): { redirect?: string } => {
+    const target = safeRedirect(search.redirect);
+    return target ? { redirect: target } : {};
+  },
+  beforeLoad: async ({ context }) => {
+    const status = await context.queryClient.ensureQueryData(setupStatusQuery(context.api));
+    if (status.required) throw redirect({ to: "/setup" });
+    const session = await context.queryClient.ensureQueryData(sessionQuery(context.api));
+    if (session) throw redirect({ to: "/workspaces" });
+  },
+  component: SignInPage,
+});
+
+// Everything else needs a session.
+
+const appRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: "_app",
+  beforeLoad: async ({ context, location }) => {
+    const session = await context.queryClient.ensureQueryData(sessionQuery(context.api));
+    if (!session) {
+      const status = await context.queryClient.ensureQueryData(setupStatusQuery(context.api));
+      if (status.required) throw redirect({ to: "/setup" });
+      throw redirect({ to: "/sign-in", search: { redirect: location.href } });
+    }
+    return { session };
+  },
+  component: function AppLayout() {
+    const { session } = useRouteContext({ from: "/_app" });
+    return <AppShell session={session} />;
+  },
+});
+
+const homeRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/",
+  beforeLoad: () => {
+    throw redirect({ to: "/workspaces" });
+  },
+});
+
+const workspacesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/workspaces",
+  component: WorkspacesPage,
+});
+
+const workspaceRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/workspaces/$workspaceId",
+  component: WorkspacePage,
+});
+
+const projectRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/projects/$projectId",
+  component: ProjectPage,
+});
+
+const specCheckRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/spec-check",
+  component: function SpecCheckPage() {
+    return (
+      <div className="stack">
+        <PageHeader title="Spec check" documentTitle="Spec check" />
+        <SpecCheck />
+      </div>
+    );
+  },
+});
+
+const routeTree = rootRoute.addChildren([
+  setupRoute,
+  signInRoute,
+  appRoute.addChildren([homeRoute, workspacesRoute, workspaceRoute, projectRoute, specCheckRoute]),
+]);
+
+export function createAppRouter(context: RouterContext) {
+  return createRouter({
+    routeTree,
+    context,
+    defaultPreload: "intent",
+    // Data loads through TanStack Query, which has its own cache.
+    defaultPreloadStaleTime: 0,
+    scrollRestoration: true,
+  });
+}
+
+declare module "@tanstack/react-router" {
+  interface Register {
+    router: ReturnType<typeof createAppRouter>;
+  }
+}
+
+function NotFound() {
+  return (
+    <main className="page narrow">
+      <PageHeader title="Page not found" />
+      <p>There is nothing at this address.</p>
+      <p>
+        <Link to="/workspaces">Go to your workspaces</Link>
+      </p>
+    </main>
+  );
+}
