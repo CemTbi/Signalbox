@@ -13,21 +13,24 @@ Thank you for helping. This guide covers how to set up a development environment
 You need:
 
 - Go 1.27 or newer
-- Node.js 22 or newer, with npm, for the web app
-- Docker, for the Compose stack and integration tests
-- `make` (optional). On Windows, `scoop install make` or Git Bash works.
+- Node.js 22 or newer, with npm, for the web app and the end-to-end tests
+- Docker, for PostgreSQL, the Compose stack and the database tests
+- `make` (optional). On Windows, `scoop install make` adds it; Git Bash doesn't include it.
 
 Then:
 
 ```sh
 git clone https://github.com/CemTbi/Signalbox.git signalbox && cd signalbox
-make test          # Go tests with the race detector
+make test          # Go tests with the race detector; database tests start PostgreSQL in Docker
 make web           # build the web app into the server
 make build         # build bin/signalbox and bin/signalbox-server
+make dev-db        # start PostgreSQL on localhost:5432
 make run           # start the server on :8080 with readable logs
 ```
 
 Without `make`, run the commands from the [Makefile](Makefile) directly.
+
+The first time the server starts on an empty database, it logs a setup code. Open http://localhost:8080, enter the code and create your admin account. To work on the web app with hot reload, run `npm --prefix web run dev` next to `make run` and open http://localhost:5173; it forwards API calls to the server.
 
 ## Making a change
 
@@ -77,8 +80,21 @@ A change is done when:
 | `make test` | Every Go test with the race detector, including performance budgets |
 | `make test-short` | Go tests without the slower performance budgets |
 | `make web-check` | Web app lint, type check and unit tests |
+| `npm --prefix e2e test` | The end-to-end journey in Chromium, against a running installation |
 
-Integration tests that need PostgreSQL or ClickHouse use Testcontainers and skip themselves when Docker isn't available.
+Tests that need PostgreSQL start it with Testcontainers and skip themselves when Docker isn't available; CI sets `SIGNALBOX_REQUIRE_DATABASE_TESTS` so they can't skip there. To use an existing server instead, set `SIGNALBOX_TEST_DATABASE_URL`.
+
+The API tests check every request and response against `api/openapi.yaml`, so a handler that drifts from the contract fails them.
+
+The end-to-end tests expect a new installation started with a known setup code:
+
+```sh
+SIGNALBOX_SETUP_CODE=E2E-SETUP-CODE-0001 docker compose -f deploy/compose/compose.yaml up -d --build --wait
+npm --prefix e2e ci && npx --prefix e2e playwright install chromium
+SIGNALBOX_E2E_SETUP_CODE=E2E-SETUP-CODE-0001 npm --prefix e2e test
+```
+
+They also run axe-core on every page and fail on WCAG 2.2 AA violations.
 
 ## Releases
 

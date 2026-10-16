@@ -9,8 +9,11 @@ Write a new ADR by copying [template.md](template.md) to the next number. Propos
 | [0001](0001-single-binary-with-roles.md) | One server binary with six roles | Accepted |
 | [0002](0002-data-stores.md) | PostgreSQL, ClickHouse, NATS and object storage | Accepted |
 | [0003](0003-spec-engine.md) | Spec engine on libopenapi and vacuum | Accepted |
-| [0004](0004-authentication-and-sessions.md) | Authentication, sessions and API tokens | Accepted |
+| [0004](0004-authentication-and-sessions.md) | Authentication, sessions and API tokens | Accepted; amended by 0010 |
 | [0005](0005-http-api-conventions.md) | HTTP API conventions | Accepted |
 | [0006](0006-frontend-architecture.md) | Frontend architecture | Accepted |
 | [0007](0007-license-and-dco.md) | Apache-2.0 license and DCO sign-off | Accepted |
-| [0008](0008-dependency-policy.md) | Dependency policy | Accepted |
+| [0008](0008-dependency-policy.md) | Dependency policy | Accepted; amended by 0011 |
+| [0009](0009-database-conventions.md) | Database conventions | Accepted |
+| [0010](0010-first-run-setup.md) | First-run setup, the public URL and request origins | Accepted |
+| [0011](0011-public-domain-dependencies.md) | Public-domain dedications in shipped dependencies | Accepted |

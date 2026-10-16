@@ -1,6 +1,6 @@
 # 0004. Authentication, sessions and API tokens
 
-- Status: Accepted
+- Status: Accepted; amended by [ADR-0010](0010-first-run-setup.md)
 - Date: 2026-10-16
 - Deciders: project lead
 
