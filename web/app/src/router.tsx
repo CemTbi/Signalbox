@@ -6,13 +6,16 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  type ErrorComponentProps,
   Link,
   Outlet,
   redirect,
   useRouteContext,
+  useRouter,
 } from "@tanstack/react-router";
+import { describeError } from "./api";
 import { AppShell } from "./components/AppShell";
-import { PageHeader } from "./components/Page";
+import { LoadError, PageHeader } from "./components/Page";
 import { SetupPage, SignInPage } from "./features/auth/pages";
 import { ProjectPage } from "./features/projects/ProjectPage";
 import { SpecCheck } from "./features/spec-check/SpecCheck";
@@ -27,6 +30,7 @@ export interface RouterContext {
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: Outlet,
   notFoundComponent: NotFound,
+  errorComponent: LoadFailed,
 });
 
 // Pages for people who aren't signed in. Each sends people where they
@@ -138,6 +142,26 @@ declare module "@tanstack/react-router" {
   interface Register {
     router: ReturnType<typeof createAppRouter>;
   }
+}
+
+/**
+ * Shown when a page can't load at all, for example because the server
+ * can't be reached while the app checks the session.
+ */
+function LoadFailed({ error, reset }: ErrorComponentProps) {
+  const router = useRouter();
+  return (
+    <main className="page narrow">
+      <PageHeader title="This page couldn't load" />
+      <LoadError
+        message={describeError(error)}
+        onRetry={() => {
+          reset();
+          void router.invalidate();
+        }}
+      />
+    </main>
+  );
 }
 
 function NotFound() {

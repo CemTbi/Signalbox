@@ -124,6 +124,26 @@ test("from a new installation to a project's canvas", async ({ page, request }) 
   await expect(page.getByRole("heading", { level: 1, name: "Shop" })).toBeVisible();
 });
 
+test("a page that can't load says why and can try again", async ({ page, request }) => {
+  test.skip(await setupRequired(request), "needs an installation that is set up");
+  // The session check fails as it would while the database is down.
+  await page.route("**/api/v1/sessions/current", (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "application/problem+json",
+      body: JSON.stringify({ type: "about:blank", title: "Service Unavailable", status: 503, detail: "PostgreSQL didn't answer." }),
+    }),
+  );
+  await page.goto("/workspaces");
+  await expect(page.getByRole("heading", { level: 1, name: "This page couldn't load" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("PostgreSQL didn't answer.")).toBeVisible();
+  await expectAccessible(page);
+
+  await page.unroute("**/api/v1/sessions/current");
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+});
+
 test("a wrong password is refused", async ({ page, request }) => {
   test.skip(await setupRequired(request), "needs an installation that is set up");
   await page.goto("/sign-in");
