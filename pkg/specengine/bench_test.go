@@ -93,9 +93,12 @@ func TestLargeSpecMeetsBudget(t *testing.T) {
 	}
 	t.Logf("checked %d lines in %v (%d diagnostics)", bytes.Count(data, []byte("\n")), elapsed, len(rep.Diagnostics))
 
+	// The race detector slows the code down by a factor that depends on the
+	// machine, so under it the test only catches pathological slowdowns.
+	// CI enforces the real budget in a run without it.
 	budget := time.Second
 	if raceEnabled {
-		budget *= 4
+		budget *= 10
 	}
 	if elapsed > budget {
 		t.Errorf("Check took %v for a 10,000-line spec, budget is %v", elapsed, budget)

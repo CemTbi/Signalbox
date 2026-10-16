@@ -39,6 +39,9 @@ jobs:
         env:
           SIGNALBOX_REQUIRE_DATABASE_TESTS: "1"
         run: go test -race -coverprofile=coverage.out ./...
+      - name: Check the spec engine's performance budget
+        # Without the race detector, which distorts timings.
+        run: go test -count=1 -run TestLargeSpecMeetsBudget -v ./pkg/specengine/
       - name: Lint Signalbox's own API spec
         run: go run ./cmd/signalbox lint --fail-on warning --format github api/openapi.yaml
       - name: Check dependency licenses (ADR-0008)
