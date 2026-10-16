@@ -17,9 +17,11 @@ import { describeError } from "./api";
 import { AppShell } from "./components/AppShell";
 import { LoadError, PageHeader } from "./components/Page";
 import { SetupPage, SignInPage } from "./features/auth/pages";
+import { InvitePage } from "./features/invitations/InvitePage";
+import { WorkspaceMembers } from "./features/members/MembersPage";
 import { ProjectPage } from "./features/projects/ProjectPage";
 import { SpecCheck } from "./features/spec-check/SpecCheck";
-import { WorkspacePage, WorkspacesPage } from "./features/workspaces/pages";
+import { WorkspaceLayout, WorkspaceProjects, WorkspacesPage } from "./features/workspaces/pages";
 import { safeRedirect, sessionQuery, setupStatusQuery } from "./session";
 
 export interface RouterContext {
@@ -62,6 +64,13 @@ const signInRoute = createRoute({
   component: SignInPage,
 });
 
+// Invitation links work whether or not someone is signed in.
+const inviteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/invite",
+  component: InvitePage,
+});
+
 // Everything else needs a session.
 
 const appRoute = createRoute({
@@ -99,7 +108,19 @@ const workspacesRoute = createRoute({
 const workspaceRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/workspaces/$workspaceId",
-  component: WorkspacePage,
+  component: WorkspaceLayout,
+});
+
+const workspaceProjectsRoute = createRoute({
+  getParentRoute: () => workspaceRoute,
+  path: "/",
+  component: WorkspaceProjects,
+});
+
+const workspaceMembersRoute = createRoute({
+  getParentRoute: () => workspaceRoute,
+  path: "/members",
+  component: WorkspaceMembers,
 });
 
 const projectRoute = createRoute({
@@ -124,7 +145,14 @@ const specCheckRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   setupRoute,
   signInRoute,
-  appRoute.addChildren([homeRoute, workspacesRoute, workspaceRoute, projectRoute, specCheckRoute]),
+  inviteRoute,
+  appRoute.addChildren([
+    homeRoute,
+    workspacesRoute,
+    workspaceRoute.addChildren([workspaceProjectsRoute, workspaceMembersRoute]),
+    projectRoute,
+    specCheckRoute,
+  ]),
 ]);
 
 export function createAppRouter(context: RouterContext) {

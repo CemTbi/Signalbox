@@ -428,6 +428,88 @@ h1[tabindex="-1"]:focus {
   font-weight: 500;
 }
 
+.row-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.stack-tight {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stack-tight > .rows,
+.stack-tight > .empty-state,
+.stack-tight > .section-title {
+  margin: 0;
+}
+
+/* Tabs inside a page, such as a workspace's projects and members. */
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.tabs a {
+  margin-bottom: -1px;
+  padding: 8px 12px;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+}
+
+.tabs a:hover {
+  color: var(--ink);
+}
+
+.tabs a[aria-current="page"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+/* A new invitation's link, shown once. */
+.invitation-link {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.invitation-link p {
+  margin: 0;
+}
+
+.copy-row {
+  display: flex;
+  gap: 8px;
+}
+
+.copy-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+}
+
+.invitation-link .button.ghost {
+  align-self: flex-start;
+}
+
+a.button {
+  text-decoration: none;
+}
+
 .badge {
   flex: none;
   padding: 1px 8px;
@@ -515,6 +597,17 @@ h1[tabindex="-1"]:focus {
   background: var(--surface);
   border: 1px solid var(--rule-strong);
   border-radius: var(--radius);
+}
+
+.field select {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 15px;
+}
+
+.field input[readonly] {
+  color: var(--ink-2);
+  background: var(--surface-2);
 }
 
 .field input.mono {
