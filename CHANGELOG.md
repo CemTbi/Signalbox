@@ -16,6 +16,7 @@ All notable changes to Signalbox are recorded here. The format follows [Keep a C
 - Sign-in with email and password: Argon2id hashes, server-side sessions that end after 12 hours idle or 7 days, CSRF protection through the request origin and a per-session token, and rate limits per client address and per account.
 - Workspaces with owner, admin, editor and viewer roles, and projects with development, staging and production environments, in the API and the web app. Edits use ETags and lists page with cursors.
 - The web app now has sign-in, setup, workspace and project pages, an empty canvas for each project, and the spec check at `/spec-check`.
+- Workspace members and invitations. Owners and admins create an invitation link for an email address and a role, and send it however they like; the invitee creates an account from it, or signs in and accepts. Members' roles can change, people can be removed or leave, and a workspace always keeps an owner.
 - New settings: `SIGNALBOX_DATABASE_URL`, `SIGNALBOX_PUBLIC_URL`, `SIGNALBOX_TRUSTED_PROXIES`, `SIGNALBOX_SETUP_CODE`, `SIGNALBOX_MIGRATE` and `SIGNALBOX_DATABASE_WAIT`.
 
 ### Changed

@@ -43,6 +43,40 @@ export function projectsQuery(client: ApiClient, workspaceId: string) {
   });
 }
 
+export const membersKey = (workspaceId: string) => ["workspaces", workspaceId, "members"] as const;
+
+/** A workspace's members, a page at a time. */
+export function membersQuery(client: ApiClient, workspaceId: string) {
+  return infiniteQueryOptions({
+    queryKey: membersKey(workspaceId),
+    queryFn: ({ pageParam }) =>
+      unwrap(
+        client.GET("/api/v1/workspaces/{workspaceId}/members", {
+          params: { path: { workspaceId }, query: { limit: 200, cursor: pageParam } },
+        }),
+      ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor,
+  });
+}
+
+export const invitationsKey = (workspaceId: string) => ["workspaces", workspaceId, "invitations"] as const;
+
+/** A workspace's open invitations, a page at a time. Owners and admins only. */
+export function invitationsQuery(client: ApiClient, workspaceId: string) {
+  return infiniteQueryOptions({
+    queryKey: invitationsKey(workspaceId),
+    queryFn: ({ pageParam }) =>
+      unwrap(
+        client.GET("/api/v1/workspaces/{workspaceId}/invitations", {
+          params: { path: { workspaceId }, query: { limit: PAGE_SIZE, cursor: pageParam } },
+        }),
+      ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor,
+  });
+}
+
 export function projectQuery(client: ApiClient, projectId: string) {
   return queryOptions({
     queryKey: ["projects", projectId],

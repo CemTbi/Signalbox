@@ -4,9 +4,6 @@ package identity
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"strings"
@@ -16,45 +13,8 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/CemTbi/Signalbox/internal/platform/id"
+	"github.com/CemTbi/Signalbox/internal/platform/token"
 )
-
-// tokenLength is the length of a session token: 32 random bytes in
-// unpadded base64url.
-const tokenLength = 43
-
-// newToken returns a random 256-bit token and the hash that is stored.
-func newToken() (token string, hash []byte) {
-	token = randomString()
-	return token, hashToken(token)
-}
-
-func randomString() string {
-	var b [32]byte
-	_, _ = rand.Read(b[:]) // crypto/rand never fails
-	return base64.RawURLEncoding.EncodeToString(b[:])
-}
-
-func hashToken(token string) []byte {
-	h := sha256.Sum256([]byte(token))
-	return h[:]
-}
-
-// wellFormed rejects tokens that can't exist before touching the database.
-func wellFormed(token string) bool {
-	if len(token) != tokenLength {
-		return false
-	}
-	for i := 0; i < len(token); i++ {
-		if !isBase64URL(token[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-func isBase64URL(c byte) bool {
-	return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || c == '-' || c == '_'
-}
 
 // SignIn checks an email address and password and starts a session.
 func (s *Service) SignIn(ctx context.Context, email, password string, client Client) (*NewSession, error) {
@@ -110,8 +70,8 @@ func (s *Service) upgradeHash(ctx context.Context, u User, password string) {
 }
 
 func (s *Service) createSession(ctx context.Context, q querier, u User, client Client) (*NewSession, error) {
-	token, hash := newToken()
-	ns := &NewSession{Token: token, Session: Session{User: u, CSRFToken: randomString()}}
+	secret, hash := token.New()
+	ns := &NewSession{Token: secret, Session: Session{User: u, CSRFToken: token.Random()}}
 	var ip *string
 	if client.IP.IsValid() {
 		v := client.IP.String()
@@ -130,11 +90,11 @@ func (s *Service) createSession(ctx context.Context, q querier, u User, client C
 }
 
 // Authenticate returns the session for a token from a session cookie.
-func (s *Service) Authenticate(ctx context.Context, token string) (*Session, error) {
-	if !wellFormed(token) {
+func (s *Service) Authenticate(ctx context.Context, sessionToken string) (*Session, error) {
+	if !token.WellFormed(sessionToken) {
 		return nil, ErrUnauthenticated
 	}
-	hash := hashToken(token)
+	hash := token.Hash(sessionToken)
 	var (
 		sess  Session
 		stale bool
@@ -167,12 +127,12 @@ func (s *Service) Authenticate(ctx context.Context, token string) (*Session, err
 
 // SignOut ends the session that the token belongs to. Signing out of a
 // session that doesn't exist isn't an error.
-func (s *Service) SignOut(ctx context.Context, token string) error {
-	if !wellFormed(token) {
+func (s *Service) SignOut(ctx context.Context, sessionToken string) error {
+	if !token.WellFormed(sessionToken) {
 		return nil
 	}
 	var userID uuid.UUID
-	err := s.db.QueryRow(ctx, `DELETE FROM sessions WHERE token_hash = $1 RETURNING user_id`, hashToken(token)).Scan(&userID)
+	err := s.db.QueryRow(ctx, `DELETE FROM sessions WHERE token_hash = $1 RETURNING user_id`, token.Hash(sessionToken)).Scan(&userID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}

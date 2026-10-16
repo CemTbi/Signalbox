@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
@@ -326,6 +327,56 @@ func TestCreateUser(t *testing.T) {
 	var fields validate.Errors
 	if !errors.As(err, &fields) || len(fields) != 3 {
 		t.Errorf("invalid input: error = %v, want three field errors", err)
+	}
+}
+
+func TestCreateUserAndSignIn(t *testing.T) {
+	svc, pool, _ := newService(t, identity.Config{SetupCode: setupCode})
+	ctx := context.Background()
+	setUp(t, svc)
+
+	ns, err := svc.CreateUserAndSignIn(ctx, identity.UserInput{Name: "Grace", Email: "grace@example.com", Password: password}, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sess, err := svc.Authenticate(ctx, ns.Token); err != nil || sess.User.ID != ns.User.ID {
+		t.Errorf("the new session doesn't work: %+v, %v", sess, err)
+	}
+
+	// A failed sign-up leaves neither an account nor a session behind.
+	_, err = svc.CreateUserAndSignIn(ctx, identity.UserInput{Name: "Grace again", Email: "GRACE@example.com", Password: password}, client)
+	if !errors.Is(err, identity.ErrEmailTaken) {
+		t.Errorf("duplicate email: error = %v, want ErrEmailTaken", err)
+	}
+	var users, sessions int
+	if err := pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM users), (SELECT count(*) FROM sessions)`).Scan(&users, &sessions); err != nil {
+		t.Fatal(err)
+	}
+	if users != 2 || sessions != 2 {
+		t.Errorf("%d users and %d sessions, want 2 and 2", users, sessions)
+	}
+}
+
+func TestLookUpUsers(t *testing.T) {
+	svc, _, _ := newService(t, identity.Config{SetupCode: setupCode})
+	ctx := context.Background()
+	admin := setUp(t, svc)
+
+	u, ok, err := svc.UserByEmail(ctx, "ADA@example.COM")
+	if err != nil || !ok || u.ID != admin.User.ID {
+		t.Errorf("UserByEmail = %+v, %v, %v", u, ok, err)
+	}
+	if _, ok, err := svc.UserByEmail(ctx, "nobody@example.com"); err != nil || ok {
+		t.Errorf("UserByEmail for an unknown address = %v, %v", ok, err)
+	}
+
+	missing := uuid.New()
+	users, err := svc.Users(ctx, []uuid.UUID{admin.User.ID, missing})
+	if err != nil || len(users) != 1 || users[admin.User.ID].Name != "Ada Lovelace" {
+		t.Errorf("Users = %+v, %v", users, err)
+	}
+	if users, err := svc.Users(ctx, nil); err != nil || len(users) != 0 {
+		t.Errorf("Users(nil) = %+v, %v", users, err)
 	}
 }
 

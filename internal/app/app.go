@@ -84,13 +84,14 @@ func DefaultConfig() Config {
 
 // Server is a configured signalbox-server with its listeners bound.
 type Server struct {
-	cfg       Config
-	logger    *slog.Logger
-	roles     []roles.Name
-	health    *health.Checker
-	publicURL *url.URL
-	db        *pgxpool.Pool
-	identity  *identity.Service
+	cfg        Config
+	logger     *slog.Logger
+	roles      []roles.Name
+	health     *health.Checker
+	publicURL  *url.URL
+	db         *pgxpool.Pool
+	identity   *identity.Service
+	workspaces *workspaces.Service
 
 	ops *endpoint
 	api *endpoint // nil when the api role isn't running
@@ -138,7 +139,10 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 	checker.Add(postgres.Check(db, logger))
 	checker.SetStarting("waiting for the database")
 
-	s := &Server{cfg: cfg, logger: logger, roles: names, health: checker, publicURL: publicURL, db: db, identity: ids}
+	s := &Server{
+		cfg: cfg, logger: logger, roles: names, health: checker, publicURL: publicURL,
+		db: db, identity: ids, workspaces: workspaces.New(db, logger),
+	}
 
 	ops := http.NewServeMux()
 	ops.Handle("GET /livez", checker.LiveHandler())
@@ -160,7 +164,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 			UI:             webui.Handler(),
 			MaxSpecBytes:   cfg.MaxSpecBytes,
 			Identity:       ids,
-			Workspaces:     workspaces.New(db, logger),
+			Workspaces:     s.workspaces,
 			PublicURL:      publicURL,
 			TrustedProxies: trusted,
 		})
@@ -244,6 +248,10 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	g.Go(func() error {
 		s.identity.Run(gctx)
+		return nil
+	})
+	g.Go(func() error {
+		s.workspaces.Run(gctx)
 		return nil
 	})
 	s.health.SetStarted()

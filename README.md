@@ -7,7 +7,7 @@ Signalbox is an open-source platform for the whole life of an HTTP API. You desi
 ## What works today
 
 - **`signalbox lint`** validates Swagger 2.0 and OpenAPI 3.0, 3.1 and 3.2 documents against the official JSON Schemas, resolves every `$ref`, and checks the recommended and OWASP API Security rules. Each finding has an exact line and column, and the exit code tells CI whether to fail.
-- **`signalbox-server`** stores its data in PostgreSQL and migrates the schema at startup. A new installation asks for a setup code from the server log and creates the first admin account. People sign in with a password; workspaces have owners, admins, editors and viewers; each project gets development, staging and production environments and a canvas, still empty. Spec checks run in the browser and over the API.
+- **`signalbox-server`** stores its data in PostgreSQL and migrates the schema at startup. A new installation asks for a setup code from the server log and creates the first admin account. People sign in with a password; workspaces have owners, admins, editors and viewers, who bring others in with invitation links; each project gets development, staging and production environments and a canvas, still empty. Spec checks run in the browser and over the API.
 - **The REST API** in [`api/openapi.yaml`](api/openapi.yaml) covers everything the web app does. Errors are RFC 9457 problem documents, edits use ETags, and lists page with cursors.
 
 ## Try it

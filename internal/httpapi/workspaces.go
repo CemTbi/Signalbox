@@ -94,6 +94,14 @@ func (a *api) workspaceError(w http.ResponseWriter, r *http.Request, what string
 	case errors.Is(err, workspaces.ErrVersionMismatch):
 		writeProblem(w, r, http.StatusPreconditionFailed, "edit-conflict",
 			"Someone changed this "+what+" since you loaded it. Load it again and reapply your change.")
+	case errors.Is(err, workspaces.ErrMemberNotFound):
+		writeProblem(w, r, http.StatusNotFound, "not-found", "There is no member with this ID in the workspace.")
+	case errors.Is(err, workspaces.ErrLastOwner):
+		writeProblem(w, r, http.StatusConflict, "last-owner",
+			"A workspace needs at least one owner. Make someone else an owner first.")
+	case errors.Is(err, workspaces.ErrInvitationNotFound):
+		writeProblem(w, r, http.StatusNotFound, "invitation-not-found",
+			"This invitation link is wrong, expired or already used. Ask for a new one.")
 	default:
 		a.fail(w, r, what, err)
 	}
