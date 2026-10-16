@@ -402,6 +402,11 @@ func (s *Service) DeleteProject(ctx context.Context, userID, projectID uuid.UUID
 }
 
 func isServiceError(err error) bool {
-	return errors.Is(err, ErrNotFound) || errors.Is(err, ErrForbidden) ||
-		errors.Is(err, ErrVersionMismatch) || errors.Is(err, ErrSlugTaken)
+	for _, e := range []error{ErrNotFound, ErrForbidden, ErrVersionMismatch, ErrSlugTaken,
+		ErrMemberNotFound, ErrLastOwner, ErrInvitationNotFound, ErrEmailMismatch} {
+		if errors.Is(err, e) {
+			return true
+		}
+	}
+	return false
 }

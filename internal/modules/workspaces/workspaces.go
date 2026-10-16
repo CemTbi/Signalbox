@@ -34,6 +34,17 @@ var (
 	// ErrVersionMismatch means the resource changed since the version in
 	// the precondition.
 	ErrVersionMismatch = errors.New("workspaces: version mismatch")
+	// ErrMemberNotFound means the person isn't a member of the workspace.
+	ErrMemberNotFound = errors.New("workspaces: member not found")
+	// ErrLastOwner means the change would leave the workspace without an
+	// owner.
+	ErrLastOwner = errors.New("workspaces: last owner")
+	// ErrInvitationNotFound means the invitation doesn't exist, has
+	// expired or was used.
+	ErrInvitationNotFound = errors.New("workspaces: invitation not found")
+	// ErrEmailMismatch means someone tried to accept an invitation that
+	// was sent to another email address.
+	ErrEmailMismatch = errors.New("workspaces: invitation is for another email address")
 )
 
 // Role is a member's role in a workspace.
@@ -56,18 +67,30 @@ const (
 	createProject
 	updateProject
 	deleteProject
+	// manageMembers covers inviting people, changing roles and removing
+	// members. Only owners may grant, take away or invite the owner role.
+	manageMembers
 )
 
 // allows says whether the role may take the action. Every member may read
-// the workspace and its projects.
+// the workspace, its projects and its members.
 func (r Role) allows(a action) bool {
 	switch a {
 	case deleteWorkspace:
 		return r == Owner
-	case updateWorkspace, deleteProject:
+	case updateWorkspace, deleteProject, manageMembers:
 		return r == Owner || r == Admin
 	case createProject, updateProject:
 		return r == Owner || r == Admin || r == Editor
+	}
+	return false
+}
+
+// Valid reports whether r is one of the four roles.
+func (r Role) Valid() bool {
+	switch r {
+	case Owner, Admin, Editor, Viewer:
+		return true
 	}
 	return false
 }

@@ -30,6 +30,9 @@ type Identity interface {
 	SignIn(ctx context.Context, email, password string, client identity.Client) (*identity.NewSession, error)
 	Authenticate(ctx context.Context, token string) (*identity.Session, error)
 	SignOut(ctx context.Context, token string) error
+	CreateUserAndSignIn(ctx context.Context, in identity.UserInput, client identity.Client) (*identity.NewSession, error)
+	UserByEmail(ctx context.Context, email string) (identity.User, bool, error)
+	Users(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]identity.User, error)
 }
 
 // Workspaces is what the API needs from the workspaces module.
@@ -44,6 +47,16 @@ type Workspaces interface {
 	GetProject(ctx context.Context, userID, projectID uuid.UUID) (workspaces.Project, error)
 	UpdateProject(ctx context.Context, userID, projectID uuid.UUID, pre workspaces.Precondition, patch workspaces.ProjectPatch) (workspaces.Project, error)
 	DeleteProject(ctx context.Context, userID, projectID uuid.UUID, pre workspaces.Precondition) error
+
+	ListMembers(ctx context.Context, userID, workspaceID uuid.UUID, p workspaces.PageRequest) (workspaces.Page[workspaces.Member], error)
+	MemberRole(ctx context.Context, workspaceID, userID uuid.UUID) (workspaces.Role, bool, error)
+	ChangeRole(ctx context.Context, actorID, workspaceID, memberID uuid.UUID, role workspaces.Role) (workspaces.Member, error)
+	RemoveMember(ctx context.Context, actorID, workspaceID, memberID uuid.UUID) error
+	Invite(ctx context.Context, actorID, workspaceID uuid.UUID, in workspaces.InvitationInput) (workspaces.NewInvitation, error)
+	ListInvitations(ctx context.Context, actorID, workspaceID uuid.UUID, p workspaces.PageRequest) (workspaces.Page[workspaces.Invitation], error)
+	RevokeInvitation(ctx context.Context, actorID, invitationID uuid.UUID) error
+	LookupInvitation(ctx context.Context, token string) (workspaces.InvitationDetails, error)
+	AcceptInvitation(ctx context.Context, token string, userID uuid.UUID, email string) (workspaces.Workspace, error)
 }
 
 // Deps is everything the api role's handlers need.
@@ -77,6 +90,7 @@ type api struct {
 	setupByIP       *ratelimit.Limiter
 	signInByIP      *ratelimit.Limiter
 	signInByAccount *ratelimit.Limiter
+	invitationsByIP *ratelimit.Limiter
 }
 
 // NewHandler returns the api role's HTTP handler.
@@ -94,6 +108,7 @@ func NewHandler(d Deps) http.Handler {
 		setupByIP:       ratelimit.New(5, 12*time.Second), // 5 at once, then 5 a minute
 		signInByIP:      ratelimit.New(10, 6*time.Second), // 10 at once, then 10 a minute
 		signInByAccount: ratelimit.New(5, 12*time.Second), // 5 at once, then 5 a minute
+		invitationsByIP: ratelimit.New(20, 3*time.Second), // 20 at once, then 20 a minute
 	}
 
 	mux := http.NewServeMux()
@@ -126,6 +141,21 @@ func NewHandler(d Deps) http.Handler {
 		http.MethodGet:  a.authenticated(a.listProjects),
 		http.MethodPost: a.authenticated(a.createProject),
 	})
+	mux.Handle("/api/v1/workspaces/{workspaceId}/members", methods{
+		http.MethodGet: a.authenticated(a.listMembers),
+	})
+	mux.Handle("/api/v1/workspaces/{workspaceId}/members/{userId}", methods{
+		http.MethodPatch:  a.authenticated(a.updateMember),
+		http.MethodDelete: a.authenticated(a.removeMember),
+	})
+	mux.Handle("/api/v1/workspaces/{workspaceId}/invitations", methods{
+		http.MethodGet:  a.authenticated(a.listInvitations),
+		http.MethodPost: a.authenticated(a.createInvitation),
+	})
+	mux.Handle("/api/v1/invitations/{invitationId}", methods{http.MethodDelete: a.authenticated(a.revokeInvitation)})
+	mux.Handle("/api/v1/invitations/lookup", methods{http.MethodPost: http.HandlerFunc(a.lookUpInvitation)})
+	mux.Handle("/api/v1/invitations/accept", methods{http.MethodPost: a.authenticated(a.acceptInvitation)})
+	mux.Handle("/api/v1/invitations/sign-up", methods{http.MethodPost: http.HandlerFunc(a.signUpWithInvitation)})
 	mux.Handle("/api/v1/projects/{projectId}", methods{
 		http.MethodGet:    a.authenticated(a.getProject),
 		http.MethodPatch:  a.authenticated(a.updateProject),

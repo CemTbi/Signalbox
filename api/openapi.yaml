@@ -46,6 +46,10 @@ tags:
     description: Sign in and out of the web app.
   - name: Workspaces
     description: Workspaces group the projects, members and rules of one team or organization unit.
+  - name: Members
+    description: The people in a workspace and their roles.
+  - name: Invitations
+    description: Links that bring people into a workspace. They work without email, once, for 7 days.
   - name: Projects
     description: A project is one system, shown as one canvas.
   - name: Environments
@@ -619,6 +623,320 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/workspaces/{workspaceId}/members:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      operationId: listMembers
+      summary: List a workspace's members
+      description: Lists the workspace's members with their roles, in no particular order. Every member may.
+      tags: [Members]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of members.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MemberPage'}
+              example:
+                data:
+                  - user: {id: usr_01j9z3kq4m8r2t6v0x5w7y9a1b, email: ada@example.com, name: Ada Lovelace}
+                    role: owner
+                    joinedAt: '2026-10-16T12:00:00Z'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/workspaces/{workspaceId}/members/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+      - $ref: '#/components/parameters/UserId'
+    patch:
+      operationId: updateMember
+      summary: Change a member's role
+      description: Owners and admins may change roles. Only owners may make someone an owner or change an owner's role. A workspace always keeps at least one owner.
+      tags: [Members]
+      requestBody:
+        required: true
+        description: The member's new role, as a JSON Merge Patch (RFC 7396).
+        content:
+          application/merge-patch+json:
+            schema: {$ref: '#/components/schemas/MemberUpdate'}
+            example: {role: admin}
+      responses:
+        '200':
+          description: The member with the new role.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Member'}
+              example:
+                user: {id: usr_01j9z3kq4m8r2t6v0x5w7y9a1b, email: grace@example.com, name: Grace Hopper}
+                role: admin
+                joinedAt: '2026-10-16T12:00:00Z'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/LastOwner'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: removeMember
+      summary: Remove a member
+      description: Owners and admins may remove members, only owners may remove an owner, and anyone may leave a workspace. A workspace always keeps at least one owner.
+      tags: [Members]
+      responses:
+        '204':
+          description: The member is removed.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/LastOwner'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/workspaces/{workspaceId}/invitations:
+    parameters:
+      - $ref: '#/components/parameters/WorkspaceId'
+    get:
+      operationId: listInvitations
+      summary: List open invitations
+      description: Lists invitations that haven't been used and haven't expired, oldest first. Owners and admins may.
+      tags: [Invitations]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of invitations.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InvitationPage'}
+              example:
+                data:
+                  - id: inv_01j9z3v2x4z6b8d0f2h4k6m8p0
+                    workspaceId: ws_01j9z3kq4m8r2t6v0x5w7y9a1b
+                    email: grace@example.com
+                    role: editor
+                    invitedBy: usr_01j9z3kq4m8r2t6v0x5w7y9a1b
+                    createdAt: '2026-10-16T12:00:00Z'
+                    expiresAt: '2026-10-23T12:00:00Z'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createInvitation
+      summary: Invite someone
+      description: |
+        Creates an invitation for an email address and returns its link. The link appears only in this response; send it to the person however you like. It works once, for 7 days, and only for that email address. Inviting the same address again replaces the earlier link.
+
+        Owners and admins may invite. Only owners may invite owners.
+      tags: [Invitations]
+      requestBody:
+        required: true
+        description: The email address to invite and the role to give.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InvitationCreate'}
+            example: {email: grace@example.com, role: editor}
+      responses:
+        '201':
+          description: The invitation and its link.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NewInvitation'}
+              example:
+                id: inv_01j9z3v2x4z6b8d0f2h4k6m8p0
+                workspaceId: ws_01j9z3kq4m8r2t6v0x5w7y9a1b
+                email: grace@example.com
+                role: editor
+                invitedBy: usr_01j9z3kq4m8r2t6v0x5w7y9a1b
+                createdAt: '2026-10-16T12:00:00Z'
+                expiresAt: '2026-10-23T12:00:00Z'
+                url: 'https://signalbox.example.com/invite#Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: The person is already a member of the workspace.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example:
+                type: about:blank
+                title: Conflict
+                status: 409
+                detail: grace@example.com is already a member of this workspace.
+                code: already-member
+                requestId: 9f8e7d6c5b4a39281706f5e4
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/invitations/{invitationId}:
+    parameters:
+      - $ref: '#/components/parameters/InvitationId'
+    delete:
+      operationId: revokeInvitation
+      summary: Revoke an invitation
+      description: Deletes an open invitation, so its link stops working. Owners and admins of its workspace may.
+      tags: [Invitations]
+      responses:
+        '204':
+          description: The invitation is revoked.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/invitations/lookup:
+    post:
+      operationId: lookUpInvitation
+      summary: Read an invitation link
+      description: Returns what an invitation link offers, for the page the link opens. The token travels in the request body rather than the URL, so it never reaches server logs. Anyone holding the link may call this.
+      tags: [Invitations]
+      security: []
+      requestBody:
+        required: true
+        description: The token from the invitation link.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InvitationToken'}
+            example: {token: Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8}
+      responses:
+        '200':
+          description: The invitation.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InvitationDetails'}
+              example:
+                workspace: {id: ws_01j9z3kq4m8r2t6v0x5w7y9a1b, name: Payments}
+                email: grace@example.com
+                role: editor
+                invitedBy: Ada Lovelace
+                expiresAt: '2026-10-23T12:00:00Z'
+                accountExists: false
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/InvitationNotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/invitations/accept:
+    post:
+      operationId: acceptInvitation
+      summary: Accept an invitation
+      description: Makes the signed-in user a member of the invitation's workspace, with the invitation's role. The user's email address must be the one the invitation was sent to. Someone who is already a member keeps their role.
+      tags: [Invitations]
+      requestBody:
+        required: true
+        description: The token from the invitation link to accept.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InvitationToken'}
+            example: {token: Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8}
+      responses:
+        '200':
+          description: The workspace the user now belongs to.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Workspace'}
+              example:
+                id: ws_01j9z3kq4m8r2t6v0x5w7y9a1b
+                name: Payments
+                slug: payments
+                role: editor
+                createdAt: '2026-10-16T12:00:00Z'
+                updatedAt: '2026-10-16T12:00:00Z'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403':
+          description: The invitation is for another email address, or the request came from another site.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example:
+                type: about:blank
+                title: Forbidden
+                status: 403
+                detail: This invitation is for grace@example.com, but you are signed in as ada@example.com.
+                code: invitation-email-mismatch
+                requestId: 9f8e7d6c5b4a39281706f5e4
+        '404': {$ref: '#/components/responses/InvitationNotFound'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/invitations/sign-up:
+    post:
+      operationId: signUpWithInvitation
+      summary: Create an account from an invitation
+      description: Creates an account with the invitation's email address, makes it a member of the workspace and signs it in. It is for people without an account; people with one sign in and accept the invitation instead.
+      tags: [Invitations]
+      security: []
+      requestBody:
+        required: true
+        description: The token from the invitation link, and the new account's name and password.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/InvitationSignUp'}
+            example:
+              token: Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8
+              name: Grace Hopper
+              password: correct horse battery staple
+      responses:
+        '201':
+          description: The account exists, belongs to the workspace and is signed in.
+          headers:
+            Set-Cookie:
+              description: The new account's session cookie.
+              schema: {type: string}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Session'}
+              example:
+                user: {id: usr_01j9z3w5y7a9c1e3g5j7m9p1r3, email: grace@example.com, name: Grace Hopper}
+                expiresAt: '2026-10-23T12:00:00Z'
+                csrfToken: Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/InvitationNotFound'}
+        '409':
+          description: An account with the invitation's email address exists. Sign in and accept the invitation instead.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example:
+                type: about:blank
+                title: Conflict
+                status: 409
+                detail: An account with this email address exists. Sign in, then open the invitation link again.
+                code: account-exists
+                requestId: 9f8e7d6c5b4a39281706f5e4
+        '429': {$ref: '#/components/responses/TooManyRequests'}
         default: {$ref: '#/components/responses/Error'}
 
   /api/v1/projects/{projectId}:
@@ -1426,6 +1744,18 @@ components:
       required: true
       description: The revision's ID.
       schema: {$ref: '#/components/schemas/RevisionId'}
+    UserId:
+      name: userId
+      in: path
+      required: true
+      description: The user's ID.
+      schema: {$ref: '#/components/schemas/UserId'}
+    InvitationId:
+      name: invitationId
+      in: path
+      required: true
+      description: The invitation's ID.
+      schema: {$ref: '#/components/schemas/InvitationId'}
     Limit:
       name: limit
       in: query
@@ -1601,6 +1931,34 @@ components:
             detail: The document is larger than 10 MiB.
             code: document-too-large
             requestId: 9f8e7d6c5b4a39281706f5e4
+    LastOwner:
+      description: The change would leave the workspace without an owner.
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/RequestId'}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example:
+            type: about:blank
+            title: Conflict
+            status: 409
+            detail: A workspace needs at least one owner. Make someone else an owner first.
+            code: last-owner
+            requestId: 9f8e7d6c5b4a39281706f5e4
+    InvitationNotFound:
+      description: The invitation link is wrong, expired or already used.
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/RequestId'}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example:
+            type: about:blank
+            title: Not Found
+            status: 404
+            detail: This invitation link is wrong, expired or already used. Ask for a new one.
+            code: invitation-not-found
+            requestId: 9f8e7d6c5b4a39281706f5e4
     TooManyRequests:
       description: The caller sent too many requests. Wait for the time in `Retry-After`.
       headers:
@@ -1667,6 +2025,11 @@ components:
       description: A user ID.
       pattern: '^usr_[0-9a-hjkmnp-tv-z]{26}$'
       examples: [usr_01j9z3kq4m8r2t6v0x5w7y9a1b]
+    InvitationId:
+      type: string
+      description: An invitation ID.
+      pattern: '^inv_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [inv_01j9z3v2x4z6b8d0f2h4k6m8p0]
     Timestamp:
       type: string
       format: date-time
@@ -2090,6 +2453,142 @@ components:
       description: Pass this as `cursor` to get the next page. Missing on the last page.
       maxLength: 512
       examples: [eyJpZCI6IndzXzAxajl6M2txNG04cjJ0NnYweDV3N3k5YTFiIn0]
+    WorkspaceSummary:
+      type: object
+      description: A workspace's ID and name, for someone who isn't a member yet.
+      required: [id, name]
+      properties:
+        id: {$ref: '#/components/schemas/WorkspaceId'}
+        name: {$ref: '#/components/schemas/Name'}
+
+    Member:
+      type: object
+      description: A person in a workspace, with their role.
+      required: [user, role, joinedAt]
+      properties:
+        user: {$ref: '#/components/schemas/User'}
+        role: {$ref: '#/components/schemas/WorkspaceRole'}
+        joinedAt: {$ref: '#/components/schemas/Timestamp'}
+    MemberUpdate:
+      type: object
+      description: A member's new role.
+      required: [role]
+      additionalProperties: false
+      properties:
+        role: {$ref: '#/components/schemas/WorkspaceRole'}
+    MemberPage:
+      type: object
+      description: One page of a workspace's members, with a cursor for the next page.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The members on this page.
+          maxItems: 200
+          items: {$ref: '#/components/schemas/Member'}
+          examples:
+            - - {user: {id: usr_01j9z3kq4m8r2t6v0x5w7y9a1b, email: ada@example.com, name: Ada Lovelace}, role: owner, joinedAt: '2026-10-16T12:00:00Z'}
+        nextCursor: {$ref: '#/components/schemas/NextCursor'}
+
+    Invitation:
+      type: object
+      description: An open invitation to join a workspace. `invitedBy` is missing when the inviter's account was deleted.
+      required: [id, workspaceId, email, role, createdAt, expiresAt]
+      properties:
+        id: {$ref: '#/components/schemas/InvitationId'}
+        workspaceId: {$ref: '#/components/schemas/WorkspaceId'}
+        email:
+          type: string
+          format: email
+          description: The only email address that can accept the invitation.
+          examples: [grace@example.com]
+        role: {$ref: '#/components/schemas/WorkspaceRole'}
+        invitedBy: {$ref: '#/components/schemas/UserId'}
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+    NewInvitation:
+      description: An invitation that was just created, with its link. The link can't be retrieved again.
+      allOf:
+        - $ref: '#/components/schemas/Invitation'
+        - type: object
+          required: [url]
+          properties:
+            url:
+              type: string
+              format: uri
+              description: The link to send. The token after `#` stays in the browser and never reaches the server's logs.
+              examples: ['https://signalbox.example.com/invite#Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8']
+    InvitationCreate:
+      type: object
+      description: Who to invite, and with which role.
+      required: [email, role]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: The email address of the person to invite.
+          examples: [grace@example.com]
+        role: {$ref: '#/components/schemas/WorkspaceRole'}
+    InvitationPage:
+      type: object
+      description: One page of open invitations, with a cursor for the next page.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The invitations on this page.
+          maxItems: 200
+          items: {$ref: '#/components/schemas/Invitation'}
+          examples:
+            - - {id: inv_01j9z3v2x4z6b8d0f2h4k6m8p0, workspaceId: ws_01j9z3kq4m8r2t6v0x5w7y9a1b, email: grace@example.com, role: editor, createdAt: '2026-10-16T12:00:00Z', expiresAt: '2026-10-23T12:00:00Z'}
+        nextCursor: {$ref: '#/components/schemas/NextCursor'}
+    InvitationToken:
+      type: object
+      description: The token from an invitation link, the part after `#`.
+      required: [token]
+      additionalProperties: false
+      properties:
+        token:
+          type: string
+          maxLength: 128
+          description: The invitation token.
+          examples: [Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8]
+    InvitationDetails:
+      type: object
+      description: What an invitation link offers.
+      required: [workspace, email, role, expiresAt, accountExists]
+      properties:
+        workspace: {$ref: '#/components/schemas/WorkspaceSummary'}
+        email:
+          type: string
+          format: email
+          description: The email address the invitation was sent to.
+          examples: [grace@example.com]
+        role: {$ref: '#/components/schemas/WorkspaceRole'}
+        invitedBy:
+          type: string
+          description: The name of the person who sent the invitation. Missing when that account was deleted.
+          examples: [Ada Lovelace]
+        expiresAt: {$ref: '#/components/schemas/Timestamp'}
+        accountExists:
+          type: boolean
+          description: Whether an account with the email address exists. If it does, sign in and accept; if not, sign up with the invitation.
+          examples: [false]
+    InvitationSignUp:
+      type: object
+      description: The invitation token and the new account's details.
+      required: [token, name, password]
+      additionalProperties: false
+      properties:
+        token:
+          type: string
+          maxLength: 128
+          description: The token from the invitation link the person received.
+          examples: [Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8]
+        name: {$ref: '#/components/schemas/Name'}
+        password: {$ref: '#/components/schemas/NewPassword'}
 
     Project:
       type: object

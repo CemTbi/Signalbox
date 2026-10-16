@@ -24,6 +24,10 @@ export type WorkspaceRole = Schemas["WorkspaceRole"];
 export type WorkspacePage = Schemas["WorkspacePage"];
 export type Project = Schemas["Project"];
 export type ProjectPage = Schemas["ProjectPage"];
+export type Member = Schemas["Member"];
+export type Invitation = Schemas["Invitation"];
+export type NewInvitation = Schemas["NewInvitation"];
+export type InvitationDetails = Schemas["InvitationDetails"];
 
 export type ApiClient = ReturnType<typeof createClient<paths>>;
 

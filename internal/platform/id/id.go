@@ -31,6 +31,7 @@ const (
 	Service     Prefix = "svc"
 	Spec        Prefix = "spec"
 	Revision    Prefix = "rev"
+	Invitation  Prefix = "inv"
 )
 
 // ErrInvalid means a string isn't an ID of the expected type.

@@ -260,6 +260,170 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The workspace's ID. */
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List a workspace's members
+         * @description Lists the workspace's members with their roles, in no particular order. Every member may.
+         */
+        get: operations["listMembers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/members/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The workspace's ID. */
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description The user's ID. */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a member
+         * @description Owners and admins may remove members, only owners may remove an owner, and anyone may leave a workspace. A workspace always keeps at least one owner.
+         */
+        delete: operations["removeMember"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a member's role
+         * @description Owners and admins may change roles. Only owners may make someone an owner or change an owner's role. A workspace always keeps at least one owner.
+         */
+        patch: operations["updateMember"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The workspace's ID. */
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List open invitations
+         * @description Lists invitations that haven't been used and haven't expired, oldest first. Owners and admins may.
+         */
+        get: operations["listInvitations"];
+        put?: never;
+        /**
+         * Invite someone
+         * @description Creates an invitation for an email address and returns its link. The link appears only in this response; send it to the person however you like. It works once, for 7 days, and only for that email address. Inviting the same address again replaces the earlier link.
+         *
+         *     Owners and admins may invite. Only owners may invite owners.
+         */
+        post: operations["createInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitations/{invitationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The invitation's ID. */
+                invitationId: components["parameters"]["InvitationId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke an invitation
+         * @description Deletes an open invitation, so its link stops working. Owners and admins of its workspace may.
+         */
+        delete: operations["revokeInvitation"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitations/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read an invitation link
+         * @description Returns what an invitation link offers, for the page the link opens. The token travels in the request body rather than the URL, so it never reaches server logs. Anyone holding the link may call this.
+         */
+        post: operations["lookUpInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitations/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept an invitation
+         * @description Makes the signed-in user a member of the invitation's workspace, with the invitation's role. The user's email address must be the one the invitation was sent to. Someone who is already a member keeps their role.
+         */
+        post: operations["acceptInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitations/sign-up": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create an account from an invitation
+         * @description Creates an account with the invitation's email address, makes it a member of the workspace and signs it in. It is for people without an account; people with one sign in and accept the invitation instead.
+         */
+        post: operations["signUpWithInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}": {
         parameters: {
             query?: never;
@@ -602,6 +766,11 @@ export interface components {
          * @example usr_01j9z3kq4m8r2t6v0x5w7y9a1b
          */
         UserId: string;
+        /**
+         * @description An invitation ID.
+         * @example inv_01j9z3v2x4z6b8d0f2h4k6m8p0
+         */
+        InvitationId: string;
         /**
          * Format: date-time
          * @description A point in time in RFC 3339 format, in UTC.
@@ -1047,6 +1216,132 @@ export interface components {
          * @example eyJpZCI6IndzXzAxajl6M2txNG04cjJ0NnYweDV3N3k5YTFiIn0
          */
         NextCursor: string;
+        /** @description A workspace's ID and name, for someone who isn't a member yet. */
+        WorkspaceSummary: {
+            id: components["schemas"]["WorkspaceId"];
+            name: components["schemas"]["Name"];
+        };
+        /** @description A person in a workspace, with their role. */
+        Member: {
+            user: components["schemas"]["User"];
+            role: components["schemas"]["WorkspaceRole"];
+            joinedAt: components["schemas"]["Timestamp"];
+        };
+        /** @description A member's new role. */
+        MemberUpdate: {
+            role: components["schemas"]["WorkspaceRole"];
+        };
+        /** @description One page of a workspace's members, with a cursor for the next page. */
+        MemberPage: {
+            /**
+             * @description The members on this page.
+             * @example [
+             *       {
+             *         "user": {
+             *           "id": "usr_01j9z3kq4m8r2t6v0x5w7y9a1b",
+             *           "email": "ada@example.com",
+             *           "name": "Ada Lovelace"
+             *         },
+             *         "role": "owner",
+             *         "joinedAt": "2026-10-16T12:00:00Z"
+             *       }
+             *     ]
+             */
+            data: components["schemas"]["Member"][];
+            nextCursor?: components["schemas"]["NextCursor"];
+        };
+        /** @description An open invitation to join a workspace. `invitedBy` is missing when the inviter's account was deleted. */
+        Invitation: {
+            id: components["schemas"]["InvitationId"];
+            workspaceId: components["schemas"]["WorkspaceId"];
+            /**
+             * Format: email
+             * @description The only email address that can accept the invitation.
+             * @example grace@example.com
+             */
+            email: string;
+            role: components["schemas"]["WorkspaceRole"];
+            invitedBy?: components["schemas"]["UserId"];
+            createdAt: components["schemas"]["Timestamp"];
+            expiresAt: components["schemas"]["Timestamp"];
+        };
+        /** @description An invitation that was just created, with its link. The link can't be retrieved again. */
+        NewInvitation: components["schemas"]["Invitation"] & {
+            /**
+             * Format: uri
+             * @description The link to send. The token after `#` stays in the browser and never reaches the server's logs.
+             * @example https://signalbox.example.com/invite#Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8
+             */
+            url: string;
+        };
+        /** @description Who to invite, and with which role. */
+        InvitationCreate: {
+            /**
+             * Format: email
+             * @description The email address of the person to invite.
+             * @example grace@example.com
+             */
+            email: string;
+            role: components["schemas"]["WorkspaceRole"];
+        };
+        /** @description One page of open invitations, with a cursor for the next page. */
+        InvitationPage: {
+            /**
+             * @description The invitations on this page.
+             * @example [
+             *       {
+             *         "id": "inv_01j9z3v2x4z6b8d0f2h4k6m8p0",
+             *         "workspaceId": "ws_01j9z3kq4m8r2t6v0x5w7y9a1b",
+             *         "email": "grace@example.com",
+             *         "role": "editor",
+             *         "createdAt": "2026-10-16T12:00:00Z",
+             *         "expiresAt": "2026-10-23T12:00:00Z"
+             *       }
+             *     ]
+             */
+            data: components["schemas"]["Invitation"][];
+            nextCursor?: components["schemas"]["NextCursor"];
+        };
+        /** @description The token from an invitation link, the part after `#`. */
+        InvitationToken: {
+            /**
+             * @description The invitation token.
+             * @example Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8
+             */
+            token: string;
+        };
+        /** @description What an invitation link offers. */
+        InvitationDetails: {
+            workspace: components["schemas"]["WorkspaceSummary"];
+            /**
+             * Format: email
+             * @description The email address the invitation was sent to.
+             * @example grace@example.com
+             */
+            email: string;
+            role: components["schemas"]["WorkspaceRole"];
+            /**
+             * @description The name of the person who sent the invitation. Missing when that account was deleted.
+             * @example Ada Lovelace
+             */
+            invitedBy?: string;
+            expiresAt: components["schemas"]["Timestamp"];
+            /**
+             * @description Whether an account with the email address exists. If it does, sign in and accept; if not, sign up with the invitation.
+             * @example false
+             */
+            accountExists: boolean;
+        };
+        /** @description The invitation token and the new account's details. */
+        InvitationSignUp: {
+            /**
+             * @description The token from the invitation link the person received.
+             * @example Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8
+             */
+            token: string;
+            name: components["schemas"]["Name"];
+            password: components["schemas"]["NewPassword"];
+        };
         /** @description A project is one system, such as a product or a platform, with its own canvas, environments and services. */
         Project: {
             id: components["schemas"]["ProjectId"];
@@ -1496,6 +1791,46 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
+        /** @description The change would leave the workspace without an owner. */
+        LastOwner: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "type": "about:blank",
+                 *       "title": "Conflict",
+                 *       "status": 409,
+                 *       "detail": "A workspace needs at least one owner. Make someone else an owner first.",
+                 *       "code": "last-owner",
+                 *       "requestId": "9f8e7d6c5b4a39281706f5e4"
+                 *     }
+                 */
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description The invitation link is wrong, expired or already used. */
+        InvitationNotFound: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "type": "about:blank",
+                 *       "title": "Not Found",
+                 *       "status": 404,
+                 *       "detail": "This invitation link is wrong, expired or already used. Ask for a new one.",
+                 *       "code": "invitation-not-found",
+                 *       "requestId": "9f8e7d6c5b4a39281706f5e4"
+                 *     }
+                 */
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
         /** @description The caller sent too many requests. Wait for the time in `Retry-After`. */
         TooManyRequests: {
             headers: {
@@ -1551,6 +1886,10 @@ export interface components {
         SpecId: components["schemas"]["SpecId"];
         /** @description The revision's ID. */
         RevisionId: components["schemas"]["RevisionId"];
+        /** @description The user's ID. */
+        UserId: components["schemas"]["UserId"];
+        /** @description The invitation's ID. */
+        InvitationId: components["schemas"]["InvitationId"];
         /**
          * @description Maximum number of items to return.
          * @example 50
@@ -2442,6 +2781,478 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listMembers: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Maximum number of items to return.
+                 * @example 50
+                 */
+                limit?: components["parameters"]["Limit"];
+                /**
+                 * @description The `nextCursor` value from the previous page.
+                 * @example eyJpZCI6IndzXzAxajl6M2txNG04cjJ0NnYweDV3N3k5YTFiIn0
+                 */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description The workspace's ID. */
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of members. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "user": {
+                     *             "id": "usr_01j9z3kq4m8r2t6v0x5w7y9a1b",
+                     *             "email": "ada@example.com",
+                     *             "name": "Ada Lovelace"
+                     *           },
+                     *           "role": "owner",
+                     *           "joinedAt": "2026-10-16T12:00:00Z"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["MemberPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    removeMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The workspace's ID. */
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description The user's ID. */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The member is removed. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["LastOwner"];
+            default: components["responses"]["Error"];
+        };
+    };
+    updateMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The workspace's ID. */
+                workspaceId: components["parameters"]["WorkspaceId"];
+                /** @description The user's ID. */
+                userId: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        /** @description The member's new role, as a JSON Merge Patch (RFC 7396). */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "role": "admin"
+                 *     }
+                 */
+                "application/merge-patch+json": components["schemas"]["MemberUpdate"];
+            };
+        };
+        responses: {
+            /** @description The member with the new role. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "user": {
+                     *         "id": "usr_01j9z3kq4m8r2t6v0x5w7y9a1b",
+                     *         "email": "grace@example.com",
+                     *         "name": "Grace Hopper"
+                     *       },
+                     *       "role": "admin",
+                     *       "joinedAt": "2026-10-16T12:00:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Member"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["LastOwner"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listInvitations: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Maximum number of items to return.
+                 * @example 50
+                 */
+                limit?: components["parameters"]["Limit"];
+                /**
+                 * @description The `nextCursor` value from the previous page.
+                 * @example eyJpZCI6IndzXzAxajl6M2txNG04cjJ0NnYweDV3N3k5YTFiIn0
+                 */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description The workspace's ID. */
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of invitations. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "id": "inv_01j9z3v2x4z6b8d0f2h4k6m8p0",
+                     *           "workspaceId": "ws_01j9z3kq4m8r2t6v0x5w7y9a1b",
+                     *           "email": "grace@example.com",
+                     *           "role": "editor",
+                     *           "invitedBy": "usr_01j9z3kq4m8r2t6v0x5w7y9a1b",
+                     *           "createdAt": "2026-10-16T12:00:00Z",
+                     *           "expiresAt": "2026-10-23T12:00:00Z"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["InvitationPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    createInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The workspace's ID. */
+                workspaceId: components["parameters"]["WorkspaceId"];
+            };
+            cookie?: never;
+        };
+        /** @description The email address to invite and the role to give. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "email": "grace@example.com",
+                 *       "role": "editor"
+                 *     }
+                 */
+                "application/json": components["schemas"]["InvitationCreate"];
+            };
+        };
+        responses: {
+            /** @description The invitation and its link. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "inv_01j9z3v2x4z6b8d0f2h4k6m8p0",
+                     *       "workspaceId": "ws_01j9z3kq4m8r2t6v0x5w7y9a1b",
+                     *       "email": "grace@example.com",
+                     *       "role": "editor",
+                     *       "invitedBy": "usr_01j9z3kq4m8r2t6v0x5w7y9a1b",
+                     *       "createdAt": "2026-10-16T12:00:00Z",
+                     *       "expiresAt": "2026-10-23T12:00:00Z",
+                     *       "url": "https://signalbox.example.com/invite#Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["NewInvitation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The person is already a member of the workspace. */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Conflict",
+                     *       "status": 409,
+                     *       "detail": "grace@example.com is already a member of this workspace.",
+                     *       "code": "already-member",
+                     *       "requestId": "9f8e7d6c5b4a39281706f5e4"
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    revokeInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The invitation's ID. */
+                invitationId: components["parameters"]["InvitationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The invitation is revoked. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    lookUpInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The token from the invitation link. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "token": "Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8"
+                 *     }
+                 */
+                "application/json": components["schemas"]["InvitationToken"];
+            };
+        };
+        responses: {
+            /** @description The invitation. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "workspace": {
+                     *         "id": "ws_01j9z3kq4m8r2t6v0x5w7y9a1b",
+                     *         "name": "Payments"
+                     *       },
+                     *       "email": "grace@example.com",
+                     *       "role": "editor",
+                     *       "invitedBy": "Ada Lovelace",
+                     *       "expiresAt": "2026-10-23T12:00:00Z",
+                     *       "accountExists": false
+                     *     }
+                     */
+                    "application/json": components["schemas"]["InvitationDetails"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["InvitationNotFound"];
+            429: components["responses"]["TooManyRequests"];
+            default: components["responses"]["Error"];
+        };
+    };
+    acceptInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The token from the invitation link to accept. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "token": "Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8"
+                 *     }
+                 */
+                "application/json": components["schemas"]["InvitationToken"];
+            };
+        };
+        responses: {
+            /** @description The workspace the user now belongs to. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "ws_01j9z3kq4m8r2t6v0x5w7y9a1b",
+                     *       "name": "Payments",
+                     *       "slug": "payments",
+                     *       "role": "editor",
+                     *       "createdAt": "2026-10-16T12:00:00Z",
+                     *       "updatedAt": "2026-10-16T12:00:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Workspace"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description The invitation is for another email address, or the request came from another site. */
+            403: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Forbidden",
+                     *       "status": 403,
+                     *       "detail": "This invitation is for grace@example.com, but you are signed in as ada@example.com.",
+                     *       "code": "invitation-email-mismatch",
+                     *       "requestId": "9f8e7d6c5b4a39281706f5e4"
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            404: components["responses"]["InvitationNotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    signUpWithInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The token from the invitation link, and the new account's name and password. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "token": "Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8",
+                 *       "name": "Grace Hopper",
+                 *       "password": "correct horse battery staple"
+                 *     }
+                 */
+                "application/json": components["schemas"]["InvitationSignUp"];
+            };
+        };
+        responses: {
+            /** @description The account exists, belongs to the workspace and is signed in. */
+            201: {
+                headers: {
+                    /** @description The new account's session cookie. */
+                    "Set-Cookie"?: string;
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "user": {
+                     *         "id": "usr_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *         "email": "grace@example.com",
+                     *         "name": "Grace Hopper"
+                     *       },
+                     *       "expiresAt": "2026-10-23T12:00:00Z",
+                     *       "csrfToken": "Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["InvitationNotFound"];
+            /** @description An account with the invitation's email address exists. Sign in and accept the invitation instead. */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Conflict",
+                     *       "status": 409,
+                     *       "detail": "An account with this email address exists. Sign in, then open the invitation link again.",
+                     *       "code": "account-exists",
+                     *       "requestId": "9f8e7d6c5b4a39281706f5e4"
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
             default: components["responses"]["Error"];
         };
     };
