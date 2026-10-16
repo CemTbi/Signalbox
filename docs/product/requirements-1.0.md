@@ -18,6 +18,17 @@ The people who work on APIs inside one organization: backend and frontend develo
 4. **Secure by default.** Single sign-on for everyone, encrypted secrets, a runner that can't reach places it shouldn't.
 5. **API-first.** The web app uses only the public API, which is described in `api/openapi.yaml`.
 
+## Constraints
+
+Decided by the maintainer on 16 October 2026:
+
+| Constraint | Decision | What follows |
+|---|---|---|
+| License | Apache-2.0 ([ADR-0007](../adr/0007-license-and-dco.md)) | Companies can adopt Signalbox without legal review friction. |
+| Team | One maintainer, with Claude as the AI assistant that writes most of the code | The maintainer reviews and merges every pull request. The roadmap is a sequence of milestones without calendar dates; its pace is set by review time. |
+| Protocols | HTTP APIs described with OpenAPI first | GraphQL, gRPC, WebSockets, server-sent events and event-driven APIs (AsyncAPI) follow after 1.0. Specs and revisions record their format, so other formats can join without a new data model. |
+| Budget | Under €100, free services first | CI runs on GitHub Actions, images go to GitHub Container Registry, releases are signed with Sigstore, and docs are served by GitHub Pages, all free for public repositories. Binaries aren't signed with paid Apple or Windows certificates; checksums and Sigstore signatures prove where they came from. |
+
 ## Modules
 
 ### Workspace canvas
@@ -114,15 +125,17 @@ Backups: PostgreSQL point-in-time recovery with at most 5 minutes of data loss; 
 
 ## Roadmap
 
-Dates assume the core team starts on 2 November 2026.
+Milestones come in this order. Each one is a series of pull requests and is done when its last column holds.
 
-| Milestone | When | Contents | Done when |
-|---|---|---|---|
-| Walking skeleton (internal) | Month 2, December 2026 | `docker compose up` gives sign-in with local accounts or OIDC, a workspace, a project and an empty canvas; CI builds signed images; the first ADRs are merged | All of the contents work from a clean machine |
-| v0.1 alpha | Month 5, March 2027 | Design and validate specs, publish docs, hosted mocks, code generation, lint and diff in CI, services placed on the canvas by hand | A frontend developer builds against a mock without help from the backend team |
-| v0.2 | Month 8, June 2027 | API client with the local agent, test suites, generated contract tests, CI templates | Real Postman collections import with a clean report, and a test suite gates a pull request |
-| v0.3 beta | Month 11, September 2027 | Monitors, incidents and alerts, tracing over OTLP and Zipkin, service graph, live canvas | The demo shop shows live traffic on the canvas, and a failing health check reaches Slack within two minutes |
-| 1.0 | Month 14, December 2027 | Drift report, SAML, audit log, high-availability Helm chart, performance targets met, external security audit closed, documentation complete | Every target above passes, no high-severity finding is open, and the upgrade from 0.3 is tested |
+| Milestone | Contents | Done when |
+|---|---|---|
+| Walking skeleton (internal) | `docker compose up` gives sign-in with local accounts or OIDC, inviting people to a workspace, a project and an empty canvas; CI builds signed images; the first ADRs are merged | All of the contents work from a clean machine |
+| v0.1 alpha | Design and validate specs, publish docs, hosted mocks, code generation, lint and diff in CI, services placed on the canvas by hand | A frontend developer builds against a mock without help from the backend team |
+| v0.2 | API client with the local agent, test suites, generated contract tests, CI templates | Real Postman collections import with a clean report, and a test suite gates a pull request |
+| v0.3 beta | Monitors, incidents and alerts, tracing over OTLP and Zipkin, service graph, live canvas | The demo shop shows live traffic on the canvas, and a failing health check reaches Slack within two minutes |
+| 1.0 | Drift report, SAML, audit log, high-availability Helm chart, performance targets met, security review closed, documentation complete | Every target above passes, no high-severity finding is open, and the upgrade from 0.3 is tested |
+
+The security review before 1.0 is an external audit if a funding program for open-source security, such as OSTIF or Alpha-Omega, accepts the project. Otherwise it is a published threat model, fuzzing of every parser, and a fix for every high-severity finding from the automated scanners.
 
 ### Progress
 
@@ -137,13 +150,19 @@ Dates assume the core team starts on 2 November 2026.
 | Sign-in with local accounts, workspaces and projects backed by PostgreSQL | Done |
 | App shell, sign-in and setup pages, workspace and project pages, empty canvas | Done |
 | End-to-end journey in CI against the Compose stack, with accessibility checks | Done |
+| Name, license, team, protocols and budget decided | Done |
+| Inviting people to a workspace, roles of members | Not started |
 | Sign-in with OIDC | Not started |
 | Row-level security as a second line of access control (ADR-0009) | Not started |
 | Design system | Started |
+
+## After 1.0
+
+- **More protocols:** GraphQL, gRPC, WebSockets and server-sent events in the client, tests and mocks, and AsyncAPI documents for event-driven APIs such as Kafka and MQTT.
 
 ## Out of scope for 1.0
 
 - Hosting or deploying users' own APIs
 - A low-code builder that runs endpoint logic
-- Protocols other than HTTP in the client, tests and mocks
+- Protocols other than HTTP in the client, tests and mocks (planned after 1.0, see above)
 - A hosted, multi-tenant Signalbox service

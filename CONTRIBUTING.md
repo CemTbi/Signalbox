@@ -52,7 +52,7 @@ Signalbox uses the [Developer Certificate of Origin](https://developercertificat
 
 ### Reviews
 
-A code owner reviews every pull request. Changes to authentication, the request runner, the script sandbox or secrets handling need two approving reviews. Reviewers look for correctness, tests, clear names and the definition of done below.
+A code owner reviews every pull request. Reviewers look for correctness, tests, clear names and the definition of done below. Once the project has a second maintainer, changes to authentication, the request runner, the script sandbox or secrets handling need two approving reviews; until then they get an automated Claude Code review as well as the maintainer's.
 
 ## Definition of done
 
