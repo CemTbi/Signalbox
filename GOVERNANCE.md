@@ -2,6 +2,12 @@
 
 This document describes who makes decisions in the Signalbox project and how.
 
+## The project today
+
+Signalbox has one maintainer, listed in [MAINTAINERS.md](MAINTAINERS.md), who decides alone. Most code is written with Claude, Anthropic's AI coding assistant: it implements changes in pull requests, its commits carry a `Co-Authored-By: Claude` trailer, and the maintainer reviews and merges every pull request. RFCs and ADRs are still written, and they are accepted when the maintainer merges them, so the reasoning behind decisions stays on record.
+
+The rules below take effect once the project has three maintainers. Until then they describe where the project is heading.
+
 ## Roles
 
 **Users** run Signalbox and report problems or ideas. Everyone is welcome to.
