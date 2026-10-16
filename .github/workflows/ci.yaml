@@ -64,11 +64,16 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: Check dependency licenses (ADR-0008)
+        run: npm run licenses
 
   image:
-    name: Container image and Compose smoke test
+    name: Image, Compose stack and end-to-end tests
     runs-on: ubuntu-latest
     needs: [go, web]
+    env:
+      BASE: http://localhost:8080
+      SIGNALBOX_SETUP_CODE: CI-E2E-SETUP-CODE-0001
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -85,27 +90,49 @@ jobs:
             VERSION=0.0.0-ci
             COMMIT=${{ github.sha }}
       - name: Start the Compose stack
-        env:
-          SIGNALBOX_SETUP_CODE: CI-SMOKE-TEST-SETUP-CODE
         run: docker compose -f deploy/compose/compose.yaml up -d --no-build --wait --wait-timeout 180
       - name: Check the running server
-        env:
-          BASE: http://localhost:8080
         run: |
           curl -fsS "$BASE/readyz"
           curl -fsS "$BASE/api/v1/meta"
           curl -fsS "$BASE/" | grep -q '<div id="root">'
           curl -fsS "$BASE/api/v1/setup" | grep -q '"required":true'
 
-          # Create the first admin, keep the session cookie, then check
-          # Signalbox's own API spec as that admin.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Install the end-to-end tests and Chromium
+        working-directory: e2e
+        run: |
+          npm ci
+          npm run typecheck
+          npx playwright install --with-deps chromium
+      - name: Run the end-to-end tests
+        working-directory: e2e
+        env:
+          SIGNALBOX_E2E_BASE_URL: ${{ env.BASE }}
+          SIGNALBOX_E2E_SETUP_CODE: ${{ env.SIGNALBOX_SETUP_CODE }}
+        run: npm test
+
+      - name: Check Signalbox's own API spec as the admin the tests created
+        run: |
           session=$(curl -fsS -c cookies.txt -H "Origin: $BASE" -H 'Content-Type: application/json' \
-            -d '{"setupCode":"CI-SMOKE-TEST-SETUP-CODE","name":"CI","email":"ci@example.com","password":"correct horse battery staple"}' \
-            "$BASE/api/v1/setup")
+            -d '{"email":"ada@example.com","password":"correct horse battery staple"}' "$BASE/api/v1/sessions")
           csrf=$(jq -r .csrfToken <<<"$session")
           curl -fsS -b cookies.txt -H "Origin: $BASE" -H "X-CSRF-Token: $csrf" -H 'Content-Type: application/yaml' \
             --data-binary @api/openapi.yaml "$BASE/api/v1/spec-checks?ruleSets=recommended" | grep -q '"errors":0'
-          curl -fsS -b cookies.txt "$BASE/api/v1/me" | grep -q '"email":"ci@example.com"'
+
+      - name: Keep the end-to-end report
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
       - name: Show logs on failure
         if: failure()
         run: docker compose -f deploy/compose/compose.yaml logs
