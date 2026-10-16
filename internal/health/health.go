@@ -80,6 +80,7 @@ type Checker struct {
 	mu       sync.RWMutex
 	checks   []Check
 	draining atomic.Bool
+	starting atomic.Pointer[string]
 }
 
 // New returns a Checker for the given service and release.
@@ -98,6 +99,13 @@ func (c *Checker) Add(check Check) {
 // once, so load balancers stop sending traffic before listeners close.
 func (c *Checker) SetDraining() { c.draining.Store(true) }
 
+// SetStarting makes readiness fail with the given output, such as "running
+// database migrations", until SetStarted is called.
+func (c *Checker) SetStarting(output string) { c.starting.Store(&output) }
+
+// SetStarted ends the starting phase that SetStarting began.
+func (c *Checker) SetStarted() { c.starting.Store(nil) }
+
 // Live reports that the process is running. It never runs checks, so a slow
 // database can't make an orchestrator restart a healthy process.
 func (c *Checker) Live() Response {
@@ -111,6 +119,11 @@ func (c *Checker) Ready(ctx context.Context) Response {
 	if c.draining.Load() {
 		resp.Status = Fail
 		resp.Output = "shutting down"
+		return resp
+	}
+	if starting := c.starting.Load(); starting != nil {
+		resp.Status = Fail
+		resp.Output = "starting: " + *starting
 		return resp
 	}
 

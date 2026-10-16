@@ -88,6 +88,21 @@ func TestPanickingCheckFails(t *testing.T) {
 	}
 }
 
+func TestStartingFailsReadinessUntilStarted(t *testing.T) {
+	c := health.New("svc", "1")
+	c.SetStarting("running database migrations")
+	if resp := c.Ready(context.Background()); resp.Status != health.Fail || resp.Output != "starting: running database migrations" {
+		t.Errorf("Ready while starting = %+v", resp)
+	}
+	if resp := c.Live(); resp.Status != health.Pass {
+		t.Errorf("Live while starting = %+v", resp)
+	}
+	c.SetStarted()
+	if resp := c.Ready(context.Background()); resp.Status != health.Pass {
+		t.Errorf("Ready after starting = %+v", resp)
+	}
+}
+
 func TestDrainingFailsReadinessButNotLiveness(t *testing.T) {
 	c := health.New("svc", "1")
 	c.SetDraining()

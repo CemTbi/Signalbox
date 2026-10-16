@@ -16,10 +16,12 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/CemTbi/Signalbox/internal/app"
 	"github.com/CemTbi/Signalbox/internal/buildinfo"
 	"github.com/CemTbi/Signalbox/internal/logging"
+	"github.com/CemTbi/Signalbox/internal/platform/postgres"
 )
 
 func main() {
@@ -39,7 +41,7 @@ func newRootCommand() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(newServeCommand(), newHealthcheckCommand(), &cobra.Command{
+	root.AddCommand(newServeCommand(), newMigrateCommand(), newHealthcheckCommand(), &cobra.Command{
 		Use:   "version",
 		Short: "Print the version of signalbox-server",
 		Args:  cobra.NoArgs,
@@ -80,17 +82,81 @@ Flags win over environment variables.`,
 		"address for the web app and REST API [SIGNALBOX_HTTP_ADDR]")
 	f.StringVar(&cfg.OpsAddr, "ops-addr", env("SIGNALBOX_OPS_ADDR", cfg.OpsAddr),
 		"address for health endpoints; keep it off the public network [SIGNALBOX_OPS_ADDR]")
+	f.StringVar(&cfg.PublicURL, "public-url", env("SIGNALBOX_PUBLIC_URL", cfg.PublicURL),
+		"the address people open Signalbox at, such as https://signalbox.example.com [SIGNALBOX_PUBLIC_URL]")
+	f.StringVar(&cfg.TrustedProxies, "trusted-proxies", env("SIGNALBOX_TRUSTED_PROXIES", cfg.TrustedProxies),
+		"reverse proxies whose X-Forwarded-For header is believed, as addresses or CIDR ranges [SIGNALBOX_TRUSTED_PROXIES]")
+	f.StringVar(&cfg.SetupCode, "setup-code", env("SIGNALBOX_SETUP_CODE", cfg.SetupCode),
+		"code that unlocks first-run setup; by default a random one is logged [SIGNALBOX_SETUP_CODE]")
+	addDatabaseFlags(f, &cfg.DatabaseURL, &cfg.DatabaseWait)
+	f.BoolVar(&cfg.Migrate, "migrate", envBool("SIGNALBOX_MIGRATE", cfg.Migrate),
+		"apply pending database migrations at startup [SIGNALBOX_MIGRATE]")
 	f.DurationVar(&cfg.DrainDelay, "drain-delay", envDuration("SIGNALBOX_DRAIN_DELAY", cfg.DrainDelay),
 		"how long readiness fails before shutdown starts [SIGNALBOX_DRAIN_DELAY]")
 	f.DurationVar(&cfg.ShutdownTimeout, "shutdown-timeout", envDuration("SIGNALBOX_SHUTDOWN_TIMEOUT", cfg.ShutdownTimeout),
 		"how long in-flight requests get to finish [SIGNALBOX_SHUTDOWN_TIMEOUT]")
 	f.Int64Var(&cfg.MaxSpecBytes, "max-spec-bytes", envInt("SIGNALBOX_MAX_SPEC_BYTES", cfg.MaxSpecBytes),
 		"largest OpenAPI document the API accepts, in bytes [SIGNALBOX_MAX_SPEC_BYTES]")
-	f.StringVar(&logFormat, "log-format", env("SIGNALBOX_LOG_FORMAT", "json"),
-		"log format: json or text [SIGNALBOX_LOG_FORMAT]")
-	f.StringVar(&logLevel, "log-level", env("SIGNALBOX_LOG_LEVEL", "info"),
-		"log level: debug, info, warn or error [SIGNALBOX_LOG_LEVEL]")
+	addLogFlags(f, &logFormat, &logLevel)
 	return cmd
+}
+
+// newMigrateCommand applies migrations on demand, for installations that
+// start the server with --migrate=false and migrate as a separate step.
+func newMigrateCommand() *cobra.Command {
+	var (
+		databaseURL         string
+		wait                time.Duration
+		logFormat, logLevel string
+	)
+	cmd := &cobra.Command{
+		Use:   "migrate",
+		Short: "Apply pending database migrations and exit",
+		Long: `Apply pending database migrations and exit.
+
+The server migrates the database at startup unless --migrate=false is set.
+Use this command when migrations run as a separate deployment step.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			logger, err := logging.New(cmd.ErrOrStderr(), logFormat, logLevel)
+			if err != nil {
+				return err
+			}
+			if databaseURL == "" {
+				return fmt.Errorf("no database configured: set SIGNALBOX_DATABASE_URL or --database-url")
+			}
+			ctx := cmd.Context()
+			pool, err := postgres.Open(ctx, databaseURL)
+			if err != nil {
+				return err
+			}
+			defer pool.Close()
+			waitCtx, cancel := context.WithTimeout(ctx, wait)
+			defer cancel()
+			if err := postgres.WaitReady(waitCtx, pool, logger); err != nil {
+				return err
+			}
+			return postgres.Migrate(ctx, pool, logger)
+		},
+	}
+	f := cmd.Flags()
+	addDatabaseFlags(f, &databaseURL, &wait)
+	addLogFlags(f, &logFormat, &logLevel)
+	return cmd
+}
+
+func addDatabaseFlags(f *pflag.FlagSet, url *string, wait *time.Duration) {
+	f.StringVar(url, "database-url", env("SIGNALBOX_DATABASE_URL", ""),
+		"PostgreSQL URL, such as postgres://signalbox:password@localhost:5432/signalbox [SIGNALBOX_DATABASE_URL]")
+	f.DurationVar(wait, "database-wait", envDuration("SIGNALBOX_DATABASE_WAIT", time.Minute),
+		"how long startup waits for the database to answer [SIGNALBOX_DATABASE_WAIT]")
+}
+
+func addLogFlags(f *pflag.FlagSet, format, level *string) {
+	f.StringVar(format, "log-format", env("SIGNALBOX_LOG_FORMAT", "json"),
+		"log format: json or text [SIGNALBOX_LOG_FORMAT]")
+	f.StringVar(level, "log-level", env("SIGNALBOX_LOG_LEVEL", "info"),
+		"log level: debug, info, warn or error [SIGNALBOX_LOG_LEVEL]")
 }
 
 // newHealthcheckCommand probes the local ops listener. Container images
@@ -161,6 +227,16 @@ func envInt(key string, fallback int64) int64 {
 			return n
 		}
 		fmt.Fprintf(os.Stderr, "signalbox-server: ignoring %s=%q: not a whole number\n", key, v)
+	}
+	return fallback
+}
+
+func envBool(key string, fallback bool) bool {
+	if v, ok := os.LookupEnv(key); ok {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
+		}
+		fmt.Fprintf(os.Stderr, "signalbox-server: ignoring %s=%q: not true or false\n", key, v)
 	}
 	return fallback
 }
