@@ -3,6 +3,7 @@
 package httpapi_test
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -170,3 +171,60 @@ paths:
             application/json:
               example: {ok: true}
 `
+
+// A version whose schemas expand too far to check requests against is
+// refused, instead of keeping the server busy building its mock.
+func TestMocksTooLargeToBuild(t *testing.T) {
+	h := newHarness(t)
+	h.setUp()
+	p := h.newProject("shop")
+	var svc httpapi.ServiceJSON
+	h.do(call{method: http.MethodPost, path: "/api/v1/projects/" + p.ID + "/services", body: map[string]string{"name": "Deep", "slug": "deep"}}).decode(t, &svc)
+	var spec httpapi.SpecJSON
+	h.do(call{method: http.MethodPost, path: "/api/v1/services/" + svc.ID + "/specs", body: map[string]string{"name": "Deep", "content": doublingSpec(30)}}).decode(t, &spec)
+	h.do(call{method: http.MethodPost, path: "/api/v1/specs/" + spec.ID + "/versions", body: map[string]string{}}).expect(t, http.StatusCreated, "")
+
+	resp, body := h.mockCall(http.MethodGet, "/mocks/"+spec.ID+"/latest/a", nil)
+	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, `"mock-too-large"`) {
+		t.Errorf("GET /a = %d %s", resp.StatusCode, body)
+	}
+}
+
+// doublingSpec is a document whose schema doubles at each level: each
+// level refers to the next twice.
+func doublingSpec(levels int) string {
+	var doc strings.Builder
+	doc.WriteString(`openapi: 3.1.1
+info: {title: Deep, version: 1.0.0, description: Deep schemas.}
+servers: [{url: 'https://deep.example.com'}]
+tags: [{name: deep, description: Deep.}]
+paths:
+  /a:
+    get:
+      operationId: getA
+      summary: Get A.
+      description: Gets A.
+      tags: [deep]
+      responses:
+        '200':
+          description: A.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/L0'}
+components:
+  schemas:
+`)
+	for i := range levels {
+		next := "{type: string}"
+		if i < levels-1 {
+			next = fmt.Sprintf("{$ref: '#/components/schemas/L%d'}", i+1)
+		}
+		fmt.Fprintf(&doc, `    L%d:
+      type: object
+      properties:
+        left: %s
+        right: %s
+`, i, next, next)
+	}
+	return doc.String()
+}

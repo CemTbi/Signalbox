@@ -32,12 +32,19 @@ import (
 	verrors "github.com/pb33f/libopenapi-validator/errors"
 	"github.com/pb33f/libopenapi-validator/paths"
 	"github.com/pb33f/libopenapi/datamodel"
+	"github.com/pb33f/libopenapi/datamodel/high/base"
 	v3 "github.com/pb33f/libopenapi/datamodel/high/v3"
+	"github.com/pb33f/libopenapi/orderedmap"
 	"github.com/pb33f/libopenapi/renderer"
 )
 
 // ErrUnsupported means the document can't be mocked: it isn't OpenAPI 3.
 var ErrUnsupported = errors.New("mockengine: only OpenAPI 3.0, 3.1 and 3.2 documents can be mocked")
+
+// ErrTooLarge means the document's schemas, with their references
+// expanded, are too large to check requests against or to generate data
+// from. For generated data, an example in the document avoids it.
+var ErrTooLarge = errors.New("mockengine: the schemas expand to too much to mock; add examples, or share fewer schemas")
 
 // Mock serves one document. It is safe for concurrent use.
 type Mock struct {
@@ -61,6 +68,9 @@ func New(document []byte) (*Mock, error) {
 	model, err := doc.BuildV3Model()
 	if err != nil || model == nil {
 		return nil, fmt.Errorf("mockengine: build the document: %w", err)
+	}
+	if checkedSize(&model.Model) > maxChecked {
+		return nil, ErrTooLarge
 	}
 	v, errs := validator.NewValidator(doc)
 	if len(errs) > 0 {
@@ -138,6 +148,11 @@ func (m *Mock) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body, err := render(mediaType, media, prefer.example, seed(r.Method, r.URL.Path))
+	if errors.Is(err, ErrTooLarge) {
+		problem(w, http.StatusNotImplemented, "schema-too-large",
+			"The response's schema expands to too much data to generate. Add an example to the response in the API's description.", nil)
+		return
+	}
 	if err != nil {
 		problem(w, http.StatusInternalServerError, "mock-failed", "The mock couldn't build a response body: "+err.Error(), nil)
 		return
@@ -307,6 +322,13 @@ func isJSON(t string) bool {
 	return t == "application/json" || strings.HasSuffix(t, "+json")
 }
 
+// Body builds a body for a media type as a mock would send it: the named
+// example, or the first one, or data generated from the schema. Generated
+// data depends only on seed.
+func Body(mediaType string, media *v3.MediaType, example string, seed int64) ([]byte, error) {
+	return render(mediaType, media, example, seed)
+}
+
 // render builds the body for a media type from its examples or schema.
 func render(mediaType string, media *v3.MediaType, example string, seed int64) ([]byte, error) {
 	kind := renderer.JSON
@@ -316,6 +338,10 @@ func render(mediaType string, media *v3.MediaType, example string, seed int64) (
 		kind = renderer.YAML
 	case strings.HasSuffix(t, "/xml") || strings.HasSuffix(t, "+xml"):
 		kind = renderer.XML
+	}
+	if media.Example == nil && (media.Examples == nil || media.Examples.Len() == 0) && media.Schema != nil &&
+		expandedSize(media.Schema, maxGenerated, map[string]int{}, map[string]bool{}) > maxGenerated {
+		return nil, ErrTooLarge
 	}
 	gen := renderer.NewMockGenerator(kind)
 	gen.SetSeed(seed)
@@ -332,6 +358,137 @@ func render(mediaType string, media *v3.MediaType, example string, seed int64) (
 		}
 	}
 	return body, nil
+}
+
+// maxGenerated bounds the schemas a generated body may expand to. The
+// generator's own budgets apply only after it has copied shared schemas,
+// which grows exponentially when schemas refer to others more than once.
+const maxGenerated = 10_000
+
+// maxChecked bounds the schemas, counted with references expanded, that
+// request checks prepare. Preparing takes about 15 µs a schema.
+const maxChecked = 250_000
+
+// checkedSize counts the schemas the request validator prepares: those of
+// every parameter, request body and response, each with its references
+// expanded. It stops counting soon after maxChecked.
+func checkedSize(m *v3.Document) int {
+	if m.Paths == nil || m.Paths.PathItems == nil {
+		return 0
+	}
+	sizes, active := map[string]int{}, map[string]bool{}
+	n := 0
+	add := func(p *base.SchemaProxy) {
+		if n <= maxChecked {
+			n += expandedSize(p, maxChecked-n, sizes, active)
+		}
+	}
+	addContent := func(content *orderedmap.Map[string, *v3.MediaType]) {
+		if content == nil {
+			return
+		}
+		for _, mt := range content.FromOldest() {
+			if mt != nil {
+				add(mt.Schema)
+			}
+		}
+	}
+	addParams := func(params []*v3.Parameter) {
+		for _, p := range params {
+			if p != nil {
+				add(p.Schema)
+				addContent(p.Content)
+			}
+		}
+	}
+	for _, item := range m.Paths.PathItems.FromOldest() {
+		if item == nil {
+			continue
+		}
+		addParams(item.Parameters)
+		for _, op := range item.GetOperations().FromOldest() {
+			if op == nil {
+				continue
+			}
+			addParams(op.Parameters)
+			if op.RequestBody != nil {
+				addContent(op.RequestBody.Content)
+			}
+			if op.Responses != nil {
+				if op.Responses.Codes != nil {
+					for _, r := range op.Responses.Codes.FromOldest() {
+						if r != nil {
+							addContent(r.Content)
+						}
+					}
+				}
+				if op.Responses.Default != nil {
+					addContent(op.Responses.Default.Content)
+				}
+			}
+		}
+	}
+	return n
+}
+
+// expandedSize counts the schemas a body generated from proxy would
+// contain, stopping once the count passes limit. A reference to a schema
+// already being expanded counts once, as the generator stops there too.
+// sizes remembers each referenced schema's size; active holds the
+// references being expanded.
+func expandedSize(proxy *base.SchemaProxy, limit int, sizes map[string]int, active map[string]bool) int {
+	if proxy == nil {
+		return 0
+	}
+	ref := ""
+	if proxy.IsReference() {
+		ref = proxy.GetReference()
+		if n, ok := sizes[ref]; ok {
+			return n
+		}
+		if active[ref] {
+			return 1
+		}
+		active[ref] = true
+		defer delete(active, ref)
+	}
+	s := proxy.Schema()
+	if s == nil {
+		return 1
+	}
+	n := 1
+	add := func(p *base.SchemaProxy) {
+		if n <= limit {
+			n += expandedSize(p, limit-n, sizes, active)
+		}
+	}
+	// Every keyword that holds a schema; libopenapi expands references in
+	// all of them.
+	for _, m := range []*orderedmap.Map[string, *base.SchemaProxy]{s.Properties, s.PatternProperties, s.DependentSchemas} {
+		if m != nil {
+			for _, p := range m.FromOldest() {
+				add(p)
+			}
+		}
+	}
+	for _, d := range []*base.DynamicValue[*base.SchemaProxy, bool]{s.Items, s.AdditionalProperties, s.UnevaluatedProperties} {
+		if d != nil && d.IsA() {
+			add(d.A)
+		}
+	}
+	for _, list := range [][]*base.SchemaProxy{s.AllOf, s.OneOf, s.AnyOf, s.PrefixItems} {
+		for _, p := range list {
+			add(p)
+		}
+	}
+	for _, p := range []*base.SchemaProxy{s.Not, s.If, s.Then, s.Else, s.Contains, s.PropertyNames, s.UnevaluatedItems, s.ContentSchema} {
+		add(p)
+	}
+	// A count cut short at the limit is only good for this limit.
+	if ref != "" && n <= limit {
+		sizes[ref] = n
+	}
+	return n
 }
 
 // seed makes generated data depend only on the request's method and path.

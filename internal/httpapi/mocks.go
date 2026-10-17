@@ -121,6 +121,11 @@ func (a *api) serveMock(w http.ResponseWriter, r *http.Request) {
 			"This version is a Swagger 2.0 document. Mocks need OpenAPI 3.0 or later.")
 		return
 	}
+	if errors.Is(err, mockengine.ErrTooLarge) {
+		writeProblem(w, r, http.StatusUnprocessableEntity, "mock-too-large",
+			"This version's schemas, with their references expanded, are too large to check requests against. Refer to shared schemas less often, or split the API.")
+		return
+	}
 	if err != nil {
 		a.Logger.WarnContext(r.Context(), "couldn't build a mock", "error", err, "request_id", RequestID(r.Context()))
 		writeProblem(w, r, http.StatusUnprocessableEntity, "mock-failed",
