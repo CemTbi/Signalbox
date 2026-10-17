@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { ApiClient, Diagnostic, Report } from "@signalbox/api-client";
+import type { ApiClient, Report } from "@signalbox/api-client";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { api } from "../../api";
-import { lineRange, summarize } from "./lines";
+import { summarize } from "./lines";
+import { ProblemList, revealLine as reveal } from "./ProblemList";
 import { sampleSpec } from "./sample";
 
 type CheckState =
@@ -17,13 +18,6 @@ const ruleSetOptions = [
   { value: "recommended,owasp", label: "Recommended and OWASP security" },
   { value: "none", label: "Validation only" },
 ] as const;
-
-const severityLabels: Record<Diagnostic["severity"], string> = {
-  error: "Error",
-  warning: "Warning",
-  info: "Info",
-  hint: "Hint",
-};
 
 /**
  * Validates and lints an OpenAPI document against the server's spec engine,
@@ -71,15 +65,7 @@ export function SpecCheck({ client = api }: { client?: ApiClient }) {
     void check(sampleSpec, ruleSetOptions[0].value);
   }, [check]);
 
-  function revealLine(line: number) {
-    const el = editor.current;
-    if (!el || line < 1) return;
-    const { start, end } = lineRange(el.value, line);
-    el.focus();
-    el.setSelectionRange(start, end);
-    const lineHeight = Number.parseFloat(getComputedStyle(el).lineHeight) || 20;
-    el.scrollTop = Math.max(0, (line - 4) * lineHeight);
-  }
+  const revealLine = (line: number) => reveal(editor.current, line);
 
   const report = state.status === "done" ? state.report : lastReport(state);
   const checking = state.status === "checking";
@@ -153,28 +139,7 @@ export function SpecCheck({ client = api }: { client?: ApiClient }) {
         ) : null}
 
         {report && report.diagnostics.length > 0 ? (
-          <ol className={`problems${checking ? " stale" : ""}`}>
-            {report.diagnostics.map((d, i) => (
-              <li key={`${d.code}-${d.range.start.line}-${d.range.start.column}-${i}`}>
-                <button type="button" className="problem" onClick={() => revealLine(d.range.start.line)}>
-                  <span className={`severity severity-${d.severity}`}>
-                    <span className="severity-dot" aria-hidden="true" />
-                    {severityLabels[d.severity]}
-                  </span>
-                  <span className="where">
-                    {d.range.start.line > 0 ? `Line ${d.range.start.line}:${d.range.start.column}` : "Document"}
-                  </span>
-                  <span className="what">
-                    <span className="message">{d.message}</span>
-                    <span className="meta">
-                      <code>{d.code}</code>
-                      {d.howToFix ? <span className="fix">{d.howToFix}</span> : null}
-                    </span>
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ol>
+          <ProblemList diagnostics={report.diagnostics} onReveal={revealLine} stale={checking} />
         ) : report ? (
           <p className="empty">This document has no problems with the selected rules.</p>
         ) : null}

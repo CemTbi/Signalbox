@@ -21,6 +21,8 @@ import { ssoFailureMessages } from "./features/auth/sso";
 import { InvitePage } from "./features/invitations/InvitePage";
 import { WorkspaceMembers } from "./features/members/MembersPage";
 import { ProjectPage } from "./features/projects/ProjectPage";
+import { ServicePage } from "./features/services/ServicePage";
+import { SpecPage } from "./features/services/SpecPage";
 import { SpecCheck } from "./features/spec-check/SpecCheck";
 import { WorkspaceLayout, WorkspaceProjects, WorkspacesPage } from "./features/workspaces/pages";
 import { safeRedirect, sessionQuery, setupStatusQuery } from "./session";
@@ -132,6 +134,18 @@ const projectRoute = createRoute({
   component: ProjectPage,
 });
 
+const serviceRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/services/$serviceId",
+  component: ServicePage,
+});
+
+const specRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/specs/$specId",
+  component: SpecPage,
+});
+
 const specCheckRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/spec-check",
@@ -154,6 +168,8 @@ const routeTree = rootRoute.addChildren([
     workspacesRoute,
     workspaceRoute.addChildren([workspaceProjectsRoute, workspaceMembersRoute]),
     projectRoute,
+    serviceRoute,
+    specRoute,
     specCheckRoute,
   ]),
 ]);
