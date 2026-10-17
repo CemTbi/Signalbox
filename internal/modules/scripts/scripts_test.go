@@ -345,3 +345,24 @@ func TestMemoryLimit(t *testing.T) {
 	res := run(t, s, scripts.Input{Event: "test", Source: "pm.test('after', () => {})"})
 	passed(t, res, "after")
 }
+
+// A deadline that fires as a script ends must not fail the next script in
+// the session.
+func TestLateInterruptsDontLeak(t *testing.T) {
+	s := session(t, scripts.Options{Timeout: 3 * time.Millisecond})
+	for i := range 300 {
+		// Ends right around its deadline: either outcome is fine.
+		_, err := s.Run(context.Background(), scripts.Input{Event: "test", Info: scripts.Info{RequestName: "edge"},
+			Source: "const t = Date.now(); while (Date.now() - t < 3) {}"})
+		if err != nil && !errors.Is(err, scripts.ErrTimeout) {
+			t.Fatal(err)
+		}
+		// Finishes long before its own deadline, so it must pass.
+		res, err := s.Run(context.Background(), scripts.Input{Event: "test", Info: scripts.Info{RequestName: "quick"},
+			Source: "tests['quick'] = true;"})
+		if err != nil {
+			t.Fatalf("run %d: a quick script failed after a script at its deadline: %v", i, err)
+		}
+		passed(t, res, "quick")
+	}
+}

@@ -190,9 +190,9 @@ func heapBytes() int64 {
 	return int64(min(sample[0].Value.Uint64(), math.MaxInt64)) //nolint:gosec // G115: clamped above.
 }
 
-// watchMemory interrupts rt when the heap grows by more than limit, until
-// stop is called.
-func watchMemory(rt *sobek.Runtime, limit int64) (stop func()) {
+// watchMemory calls interrupt when the heap grows by more than limit,
+// until stop is called.
+func watchMemory(interrupt func(error), limit int64) (stop func()) {
 	if limit < 0 {
 		return func() {}
 	}
@@ -207,7 +207,7 @@ func watchMemory(rt *sobek.Runtime, limit int64) (stop func()) {
 				return
 			case <-t.C:
 				if heapBytes()-start > limit {
-					rt.Interrupt(ErrMemory)
+					interrupt(ErrMemory)
 					return
 				}
 			}
@@ -281,9 +281,24 @@ func (s *Session) Run(ctx context.Context, in Input) (*Result, error) {
 	}
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
-	stop := context.AfterFunc(ctx, func() { s.rt.Interrupt(ErrTimeout) })
-	stopWatch := watchMemory(s.rt, s.opts.MaxMemory)
+	// The deadline and the memory watchdog interrupt the runtime from other
+	// goroutines. Once this run ends they may no longer, or a late interrupt
+	// would fail the session's next script.
+	var mu sync.Mutex
+	running := true
+	interrupt := func(err error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if running {
+			s.rt.Interrupt(err)
+		}
+	}
+	stop := context.AfterFunc(ctx, func() { interrupt(ErrTimeout) })
+	stopWatch := watchMemory(interrupt, s.opts.MaxMemory)
 	defer func() {
+		mu.Lock()
+		running = false
+		mu.Unlock()
 		stop()
 		stopWatch()
 		s.rt.ClearInterrupt()
@@ -309,14 +324,11 @@ func (s *Session) Run(ctx context.Context, in Input) (*Result, error) {
 		"info":      in.Info,
 	})
 	if err != nil {
-		return nil, err
+		return nil, s.jsError(ctx, err)
 	}
 	state, err := s.exec(sobek.Undefined(), input, fn)
 	if err != nil {
-		if err := interrupted(ctx, err); err != nil {
-			return nil, err
-		}
-		return nil, fmt.Errorf("scripts: %w", err)
+		return nil, s.jsError(ctx, err)
 	}
 	obj := state.ToObject(s.rt)
 	if err := s.loop(ctx, obj.Get("pending").ToObject(s.rt)); err != nil {
@@ -325,11 +337,11 @@ func (s *Session) Run(ctx context.Context, in Input) (*Result, error) {
 	finish, _ := sobek.AssertFunction(obj.Get("finish"))
 	out, err := finish(obj)
 	if err != nil {
-		return nil, fmt.Errorf("scripts: %w", err)
+		return nil, s.jsError(ctx, err)
 	}
 	var res Result
 	if err := s.fromJS(out, &res); err != nil {
-		return nil, err
+		return nil, s.jsError(ctx, err)
 	}
 	return &res, nil
 }
@@ -349,7 +361,7 @@ func (s *Session) loop(ctx context.Context, pending *sobek.Object) error {
 			ops[i] = pending.Get(fmt.Sprint(i)).ToObject(s.rt)
 		}
 		if err := pending.Set("length", 0); err != nil {
-			return err
+			return s.jsError(ctx, err)
 		}
 		sort.SliceStable(ops, func(i, j int) bool { return delay(ops[i]) < delay(ops[j]) })
 		for _, op := range ops {
@@ -365,12 +377,12 @@ func (s *Session) loop(ctx context.Context, pending *sobek.Object) error {
 					}
 				}
 				if _, err := done(sobek.Undefined()); err != nil {
-					return s.callbackError(ctx, err)
+					return s.jsError(ctx, err)
 				}
 			case "send":
 				var req Request
 				if err := s.fromJS(op.Get("request"), &req); err != nil {
-					return err
+					return s.jsError(ctx, err)
 				}
 				var resp *Response
 				var sendErr error
@@ -388,19 +400,24 @@ func (s *Session) loop(ctx context.Context, pending *sobek.Object) error {
 				} else if v, err := s.toJS(resp); err == nil {
 					respVal = v
 				} else {
-					return err
+					return s.jsError(ctx, err)
 				}
 				if _, err := done(sobek.Undefined(), errVal, respVal); err != nil {
-					return s.callbackError(ctx, err)
+					return s.jsError(ctx, err)
 				}
 			}
 		}
 	}
 }
 
-func (s *Session) callbackError(ctx context.Context, err error) error {
+// jsError returns ErrTimeout or ErrMemory if a limit stopped the
+// JavaScript call that failed with err, and err otherwise.
+func (s *Session) jsError(ctx context.Context, err error) error {
 	if ierr := interrupted(ctx, err); ierr != nil {
 		return ierr
+	}
+	if strings.HasPrefix(err.Error(), "scripts:") {
+		return err
 	}
 	return fmt.Errorf("scripts: %w", err)
 }
