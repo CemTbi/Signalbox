@@ -3,16 +3,13 @@
 package httpapi
 
 import (
-	"container/list"
 	"context"
 	"errors"
 	"mime"
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/google/uuid"
-	"golang.org/x/sync/singleflight"
 
 	"github.com/CemTbi/Signalbox/internal/modules/apis"
 	"github.com/CemTbi/Signalbox/internal/platform/id"
@@ -27,59 +24,6 @@ import (
 // MockSources finds the document a mock serves.
 type MockSources interface {
 	MockSource(ctx context.Context, specID uuid.UUID, name string) (uuid.UUID, string, error)
-}
-
-// mockCache keeps the most recently used built mocks. A revision never
-// changes, so a mock built for one never goes stale.
-type mockCache struct {
-	mu    sync.Mutex
-	max   int
-	order *list.List // of uuid.UUID, most recent first
-	items map[uuid.UUID]*list.Element
-	mocks map[uuid.UUID]mockOrError
-	group singleflight.Group
-}
-
-type mockOrError struct {
-	mock *mockengine.Mock
-	err  error
-}
-
-func newMockCache(size int) *mockCache {
-	return &mockCache{max: size, order: list.New(), items: map[uuid.UUID]*list.Element{}, mocks: map[uuid.UUID]mockOrError{}}
-}
-
-// get returns the mock of a revision, building it once even when many
-// requests ask at the same time.
-func (c *mockCache) get(revision uuid.UUID, content string) (*mockengine.Mock, error) {
-	c.mu.Lock()
-	if el, ok := c.items[revision]; ok {
-		c.order.MoveToFront(el)
-		m := c.mocks[revision]
-		c.mu.Unlock()
-		return m.mock, m.err
-	}
-	c.mu.Unlock()
-	v, _, _ := c.group.Do(revision.String(), func() (any, error) {
-		m, err := mockengine.New([]byte(content))
-		entry := mockOrError{mock: m, err: err}
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		if _, ok := c.items[revision]; !ok {
-			c.items[revision] = c.order.PushFront(revision)
-			c.mocks[revision] = entry
-			for c.order.Len() > c.max {
-				oldest := c.order.Back()
-				old, _ := oldest.Value.(uuid.UUID)
-				c.order.Remove(oldest)
-				delete(c.items, old)
-				delete(c.mocks, old)
-			}
-		}
-		return entry, nil
-	})
-	entry, _ := v.(mockOrError)
-	return entry.mock, entry.err
 }
 
 func (a *api) serveMock(w http.ResponseWriter, r *http.Request) {
@@ -115,7 +59,7 @@ func (a *api) serveMock(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, "mock", err)
 		return
 	}
-	mock, err := a.mockCache.get(revision, content)
+	mock, err := a.mockCache.get(revision, func() (string, error) { return content, nil })
 	if errors.Is(err, mockengine.ErrUnsupported) {
 		writeProblem(w, r, http.StatusNotImplemented, "mock-unsupported",
 			"This version is a Swagger 2.0 document. Mocks need OpenAPI 3.0 or later.")

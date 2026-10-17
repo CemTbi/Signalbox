@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api";
 import { ServiceForm, titleOf } from "./forms";
 import { SpecEditor } from "./SpecEditor";
+import { renderWithRouter } from "../../test/router";
 import { mockURL, Versions } from "./Versions";
 
 describe("titleOf", () => {
@@ -121,7 +122,7 @@ describe("Versions", () => {
     expect(screen.queryByRole("button", { name: /Publish/ })).toBeNull();
   });
 
-  it("says when the current revision is already published", () => {
+  it("says when the current revision is already published", async () => {
     const version = {
       id: "ver_01j9z3v2x4z6b8d0f2h4k6m8p0",
       specId: revision.specId,
@@ -131,12 +132,12 @@ describe("Versions", () => {
       publishedBy: revision.createdBy,
       publishedAt: "2026-10-17T12:30:00Z",
     };
-    render(<Versions {...props} versions={[version]} />);
-    expect(screen.getByText(/is published as/)).toHaveTextContent("1.4.0");
+    renderWithRouter(<Versions {...props} versions={[version]} />);
+    expect(await screen.findByText(/is published as/)).toHaveTextContent("1.4.0");
     expect(screen.getByText("1.4.0", { selector: ".row-title .mono" })).toBeInTheDocument();
   });
 
-  it("shows the mock addresses of published versions", () => {
+  it("shows the mock addresses and docs of published versions", async () => {
     const version = {
       id: "ver_01j9z3v2x4z6b8d0f2h4k6m8p0",
       specId: revision.specId,
@@ -146,9 +147,11 @@ describe("Versions", () => {
       publishedBy: revision.createdBy,
       publishedAt: "2026-10-17T12:30:00Z",
     };
-    render(<Versions {...props} versions={[version]} />);
-    expect(screen.getByLabelText("Mock of the latest version")).toHaveValue(mockURL(revision.specId, "latest"));
+    renderWithRouter(<Versions {...props} versions={[version]} />);
+    expect(await screen.findByLabelText("Mock of the latest version")).toHaveValue(mockURL(revision.specId, "latest"));
     expect(screen.getByText(mockURL(revision.specId, "1.4.0"))).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Read the docs" })).toHaveAttribute("href", `/specs/${revision.specId}/docs`);
+    expect(screen.getByRole("link", { name: "Docs of version 1.4.0" })).toHaveAttribute("href", `/specs/${revision.specId}/docs?version=1.4.0`);
   });
 
   it("builds mock addresses on this installation", () => {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { Revision, Version } from "@signalbox/api-client";
+import { Link } from "@tanstack/react-router";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { ApiError } from "../../api";
 import { Field, FormAlert, fieldError, useFocusOnError } from "../../components/Form";
@@ -98,6 +99,11 @@ export function Versions({
         ) : (
           <>
           <MockAddress label="Mock of the latest version" url={mockURL(versions[0]?.specId ?? "", "latest")} />
+          <p>
+            <Link to="/specs/$specId/docs" params={{ specId: versions[0]?.specId ?? "" }} search={{}} className="button secondary">
+              Read the docs
+            </Link>
+          </p>
           <p className="field-hint">
             Frontends can call the mock now. It answers from the spec's examples, or with data that fits its schemas, and
             checks each request. Add <code>Prefer: code=404</code> to a request to get another response.
@@ -114,6 +120,11 @@ export function Versions({
                     {v.notes ? ` · ${v.notes}` : ""}
                   </span>
                   <span className="row-sub mono">{mockURL(v.specId, v.name)}</span>
+                </span>
+                <span className="row-actions">
+                  <Link to="/specs/$specId/docs" params={{ specId: v.specId }} search={{ version: v.name }} aria-label={`Docs of version ${v.name}`}>
+                    Docs
+                  </Link>
                 </span>
               </li>
             ))}

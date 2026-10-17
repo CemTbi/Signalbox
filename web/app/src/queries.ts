@@ -199,3 +199,12 @@ export function versionsQuery(client: ApiClient, specId: string) {
     getNextPageParam: (page) => page.nextCursor,
   });
 }
+
+/** A published version's reference docs. Versions never change. */
+export function referenceQuery(client: ApiClient, versionId: string) {
+  return queryOptions({
+    queryKey: ["versions", versionId, "reference"],
+    queryFn: () => unwrap(client.GET("/api/v1/versions/{versionId}/reference", { params: { path: { versionId } } })),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}

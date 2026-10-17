@@ -847,6 +847,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/versions/{versionId}/reference": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The version's ID. */
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a version's reference docs
+         * @description Returns the reference that a published version's docs show: operations grouped by tag, with their parameters, bodies and responses, schemas with references resolved, and an example for every body. Descriptions are CommonMark, as the document wrote them.
+         *
+         *     A version never changes, so its reference doesn't either. The ETag is the version's revision, and `If-None-Match` with it gets `304`.
+         */
+        get: operations["getReference"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1851,6 +1876,461 @@ export interface components {
              */
             data: components["schemas"]["Revision"][];
             nextCursor?: components["schemas"]["NextCursor"];
+        };
+        /** @description An API's reference documentation, built from a published version. */
+        Reference: {
+            /**
+             * @description The API's name
+             * @example Orders API
+             */
+            title: string;
+            /**
+             * @description The document's `info.version`.
+             * @example 1.4.0
+             */
+            version: string;
+            /**
+             * @description The document's `info.summary`.
+             * @example Orders and refunds.
+             */
+            summary?: string;
+            /**
+             * @description The document's `info.description`, in CommonMark.
+             * @example Orders and **refunds**.
+             */
+            description?: string;
+            /**
+             * @description The API's base URLs.
+             * @example [
+             *       {
+             *         "url": "https://orders.example.com/v1"
+             *       }
+             *     ]
+             */
+            servers?: components["schemas"]["ReferenceServer"][];
+            /**
+             * @description Operations by tag, in the document's tag order. Operations without a tag come last, in a group with no name.
+             * @example [
+             *       {
+             *         "name": "orders",
+             *         "operations": []
+             *       }
+             *     ]
+             */
+            groups: components["schemas"]["ReferenceGroup"][];
+            /**
+             * @description The document's component schemas.
+             * @example [
+             *       {
+             *         "name": "Order",
+             *         "schema": {
+             *           "types": [
+             *             "object"
+             *           ]
+             *         }
+             *       }
+             *     ]
+             */
+            schemas?: components["schemas"]["ReferenceNamedSchema"][];
+            /**
+             * @description The ways to authorize calls.
+             * @example [
+             *       {
+             *         "name": "bearer",
+             *         "type": "http",
+             *         "scheme": "bearer"
+             *       }
+             *     ]
+             */
+            securitySchemes?: components["schemas"]["ReferenceSecurityScheme"][];
+        };
+        /** @description A base URL, with its variables set to their defaults. */
+        ReferenceServer: {
+            /**
+             * @description The URL. It may be relative to the document.
+             * @example https://orders.example.com/v1
+             */
+            url: string;
+            /**
+             * @description What the server is for.
+             * @example Production
+             */
+            description?: string;
+        };
+        /** @description A tag and its operations. An operation with several tags is in each of their groups. */
+        ReferenceGroup: {
+            /**
+             * @description The tag's name; empty for operations without a tag.
+             * @example orders
+             */
+            name: string;
+            /**
+             * @description The tag's summary (OpenAPI 3.2).
+             * @example Orders
+             */
+            summary?: string;
+            /**
+             * @description The tag's description, in CommonMark.
+             * @example Everything about orders.
+             */
+            description?: string;
+            /**
+             * @description The group this one is nested in (OpenAPI 3.2).
+             * @example shop
+             */
+            parent?: string;
+            /** @description The group's operations, in document order. */
+            operations: components["schemas"]["ReferenceOperation"][];
+        };
+        /** @description One method on one path. */
+        ReferenceOperation: {
+            /**
+             * @description Identifies the operation within the reference: its operationId, or its method and path.
+             * @example getOrder
+             */
+            id: string;
+            /**
+             * @description The document's operationId.
+             * @example getOrder
+             */
+            operationId?: string;
+            /**
+             * @description The HTTP method, in capitals.
+             * @example GET
+             */
+            method: string;
+            /**
+             * @description The path template.
+             * @example /orders/{id}
+             */
+            path: string;
+            /**
+             * @description The operation's summary.
+             * @example Get an order
+             */
+            summary?: string;
+            /**
+             * @description The operation's description, in CommonMark.
+             * @example Returns one order.
+             */
+            description?: string;
+            /**
+             * @description Whether the operation is deprecated.
+             * @example false
+             */
+            deprecated?: boolean;
+            /** @description Base URLs that replace the document's for this operation. */
+            servers?: components["schemas"]["ReferenceServer"][];
+            /** @description Path, query, header and cookie parameters, the path item's first. */
+            parameters?: components["schemas"]["ReferenceParameter"][];
+            requestBody?: components["schemas"]["ReferenceRequestBody"];
+            /** @description Responses by status code, lowest first, then ranges such as 4XX, then default. */
+            responses: components["schemas"]["ReferenceResponse"][];
+            /** @description The ways to authorize a call; any one is enough. An empty way means calls may be anonymous. Absent when no authorization is needed. */
+            security?: components["schemas"]["ReferenceSecurityUse"][][];
+        };
+        /** @description A parameter, or a response header. */
+        ReferenceParameter: {
+            /**
+             * @description The parameter's name.
+             * @example id
+             */
+            name: string;
+            /**
+             * @description Where it goes.
+             * @example path
+             * @enum {string}
+             */
+            in: "path" | "query" | "header" | "cookie" | "querystring";
+            /**
+             * @description The parameter's description, in CommonMark.
+             * @example The order's number.
+             */
+            description?: string;
+            /**
+             * @description Whether it must be sent.
+             * @example true
+             */
+            required?: boolean;
+            /**
+             * @description Whether the parameter is deprecated.
+             * @example false
+             */
+            deprecated?: boolean;
+            schema?: components["schemas"]["ReferenceSchema"];
+            /**
+             * @description An example of the parameter's value.
+             * @example 42
+             */
+            example?: string | number | boolean | Record<string, never> | unknown[] | null;
+        };
+        /** @description What an operation accepts. */
+        ReferenceRequestBody: {
+            /**
+             * @description The request body's description, in CommonMark.
+             * @example The order to create.
+             */
+            description?: string;
+            /**
+             * @description Whether a body must be sent.
+             * @example true
+             */
+            required?: boolean;
+            /** @description The request body in each media type it may have. */
+            content: components["schemas"]["ReferenceMedia"][];
+        };
+        /** @description The response for a status code. */
+        ReferenceResponse: {
+            /**
+             * @description A status code, a range such as 4XX, or default.
+             * @example 200
+             */
+            code: string;
+            /**
+             * @description The response's description, in CommonMark.
+             * @example The order.
+             */
+            description?: string;
+            /** @description Response headers. Content-Type is left out; the content describes it. */
+            headers?: components["schemas"]["ReferenceParameter"][];
+            /** @description The response body in each media type it may have. */
+            content?: components["schemas"]["ReferenceMedia"][];
+        };
+        /** @description A body in one media type. */
+        ReferenceMedia: {
+            /**
+             * @description The media type.
+             * @example application/json
+             */
+            type: string;
+            schema?: components["schemas"]["ReferenceSchema"];
+            /** @description The document's named examples, or one built from its example or schema, as the mock sends it. */
+            examples?: components["schemas"]["ReferenceExample"][];
+        };
+        /** @description An example body, as text in its media type. */
+        ReferenceExample: {
+            /**
+             * @description The example's name. `Prefer: example=name` asks the mock for it.
+             * @example large
+             */
+            name?: string;
+            /**
+             * @description The example's summary.
+             * @example A large order
+             */
+            summary?: string;
+            /**
+             * @description The example's description, in CommonMark.
+             * @example More than 100 lines.
+             */
+            description?: string;
+            /**
+             * @description The body.
+             * @example {"id": 42}
+             */
+            value: string;
+        };
+        /** @description A schema, with references to component schemas resolved in place; `name` says which component it is. A reference that would repeat one already being shown, or nest too deeply, isn't expanded: `ref` is true, and the component is in the reference's `schemas`. */
+        ReferenceSchema: {
+            /**
+             * @description The component schema this is.
+             * @example Order
+             */
+            name?: string;
+            /**
+             * @description Whether this is only a link to the component `name`.
+             * @example false
+             */
+            ref?: boolean;
+            /** @description The JSON types it allows. A null type sets `nullable` instead. */
+            types?: string[];
+            /**
+             * @description The format, such as date-time.
+             * @example date-time
+             */
+            format?: string;
+            /**
+             * @description The title.
+             * @example Order
+             */
+            title?: string;
+            /**
+             * @description The schema's description, in CommonMark.
+             * @example An order.
+             */
+            description?: string;
+            /** @description Limits on the value, in short phrases. */
+            constraints?: string[];
+            /** @description The values it allows. */
+            enum?: (string | number | boolean | Record<string, never> | unknown[] | null)[];
+            /**
+             * @description The one value it allows.
+             * @example paid
+             */
+            const?: string | number | boolean | Record<string, never> | unknown[] | null;
+            /**
+             * @description The value assumed when none is sent.
+             * @example open
+             */
+            default?: string | number | boolean | Record<string, never> | unknown[] | null;
+            /**
+             * @description An example of the schema's value.
+             * @example open
+             */
+            example?: string | number | boolean | Record<string, never> | unknown[] | null;
+            /**
+             * @description Whether null is allowed.
+             * @example false
+             */
+            nullable?: boolean;
+            /**
+             * @description Whether it appears only in responses.
+             * @example false
+             */
+            readOnly?: boolean;
+            /**
+             * @description Whether it appears only in requests.
+             * @example false
+             */
+            writeOnly?: boolean;
+            /**
+             * @description Whether the schema is deprecated.
+             * @example false
+             */
+            deprecated?: boolean;
+            /** @description An object's properties, in document order. */
+            properties?: components["schemas"]["ReferenceProperty"][];
+            additionalProperties?: components["schemas"]["ReferenceSchema"];
+            items?: components["schemas"]["ReferenceSchema"];
+            /** @description Schemas the value must match all of. */
+            allOf?: components["schemas"]["ReferenceSchema"][];
+            /** @description Schemas the value must match exactly one of. */
+            oneOf?: components["schemas"]["ReferenceSchema"][];
+            /** @description Schemas the value must match at least one of. */
+            anyOf?: components["schemas"]["ReferenceSchema"][];
+            not?: components["schemas"]["ReferenceSchema"];
+            /**
+             * @description The property that says which of oneOf or anyOf a value is.
+             * @example kind
+             */
+            discriminator?: string;
+        };
+        /** @description A property of an object schema. */
+        ReferenceProperty: {
+            /**
+             * @description The property's name.
+             * @example status
+             */
+            name: string;
+            /**
+             * @description Whether it must be present.
+             * @example true
+             */
+            required?: boolean;
+            schema: components["schemas"]["ReferenceSchema"];
+        };
+        /** @description A component schema. */
+        ReferenceNamedSchema: {
+            /**
+             * @description The component's name.
+             * @example Order
+             */
+            name: string;
+            schema: components["schemas"]["ReferenceSchema"];
+        };
+        /** @description A way to authorize calls. */
+        ReferenceSecurityScheme: {
+            /**
+             * @description The scheme's name in the document.
+             * @example bearer
+             */
+            name: string;
+            /**
+             * @description The scheme type, such as http, apiKey, oauth2 or openIdConnect.
+             * @example http
+             */
+            type: string;
+            /**
+             * @description The security scheme's description, in CommonMark.
+             * @example A token from the dashboard.
+             */
+            description?: string;
+            /**
+             * @description Where an API key goes.
+             * @example header
+             */
+            in?: string;
+            /**
+             * @description The header, query parameter or cookie of an API key.
+             * @example X-API-Key
+             */
+            parameterName?: string;
+            /**
+             * @description The HTTP authorization scheme.
+             * @example bearer
+             */
+            scheme?: string;
+            /**
+             * @description The format of a bearer token.
+             * @example JWT
+             */
+            bearerFormat?: string;
+            /**
+             * @description The OpenID Connect discovery URL.
+             * @example https://id.example.com/.well-known/openid-configuration
+             */
+            openIdConnectUrl?: string;
+            /** @description OAuth 2 flows. */
+            flows?: components["schemas"]["ReferenceFlow"][];
+        };
+        /** @description An OAuth 2 flow. */
+        ReferenceFlow: {
+            /**
+             * @description The flow.
+             * @example authorizationCode
+             * @enum {string}
+             */
+            type: "authorizationCode" | "clientCredentials" | "implicit" | "password";
+            /**
+             * @description Where users authorize.
+             * @example https://id.example.com/authorize
+             */
+            authorizationUrl?: string;
+            /**
+             * @description Where tokens are issued.
+             * @example https://id.example.com/token
+             */
+            tokenUrl?: string;
+            /**
+             * @description Where tokens are refreshed.
+             * @example https://id.example.com/token
+             */
+            refreshUrl?: string;
+            /** @description The flow's scopes. */
+            scopes?: components["schemas"]["ReferenceScope"][];
+        };
+        /** @description An OAuth 2 scope. */
+        ReferenceScope: {
+            /**
+             * @description The scope.
+             * @example orders:read
+             */
+            name: string;
+            /**
+             * @description What it allows.
+             * @example Read orders.
+             */
+            description?: string;
+        };
+        /** @description A security scheme an operation uses, with the scopes it needs. */
+        ReferenceSecurityUse: {
+            /**
+             * @description The security scheme's name.
+             * @example bearer
+             */
+            scheme: string;
+            /** @description The scopes needed. */
+            scopes?: string[];
         };
     };
     responses: {
@@ -4938,6 +5418,124 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getReference: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description The ETag of a reference already loaded. */
+                "If-None-Match"?: string;
+            };
+            path: {
+                /** @description The version's ID. */
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The reference. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "title": "Orders API",
+                     *       "version": "1.4.0",
+                     *       "servers": [
+                     *         {
+                     *           "url": "https://orders.example.com/v1"
+                     *         }
+                     *       ],
+                     *       "groups": [
+                     *         {
+                     *           "name": "orders",
+                     *           "operations": [
+                     *             {
+                     *               "id": "getOrder",
+                     *               "operationId": "getOrder",
+                     *               "method": "GET",
+                     *               "path": "/orders/{id}",
+                     *               "summary": "Get an order",
+                     *               "parameters": [
+                     *                 {
+                     *                   "name": "id",
+                     *                   "in": "path",
+                     *                   "required": true,
+                     *                   "schema": {
+                     *                     "types": [
+                     *                       "integer"
+                     *                     ]
+                     *                   }
+                     *                 }
+                     *               ],
+                     *               "responses": [
+                     *                 {
+                     *                   "code": "200",
+                     *                   "description": "The order.",
+                     *                   "content": [
+                     *                     {
+                     *                       "type": "application/json",
+                     *                       "schema": {
+                     *                         "name": "Order",
+                     *                         "types": [
+                     *                           "object"
+                     *                         ]
+                     *                       },
+                     *                       "examples": [
+                     *                         {
+                     *                           "value": "{\"id\": 42}"
+                     *                         }
+                     *                       ]
+                     *                     }
+                     *                   ]
+                     *                 }
+                     *               ]
+                     *             }
+                     *           ]
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Reference"];
+                };
+            };
+            /** @description The reference hasn't changed since the ETag in `If-None-Match`. */
+            304: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description The version is a Swagger 2.0 document, which reference docs don't support yet (`reference-unsupported`). */
+            501: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Not Implemented",
+                     *       "status": 501,
+                     *       "code": "reference-unsupported",
+                     *       "detail": "This version is a Swagger 2.0 document. Reference docs need OpenAPI 3.0 or later."
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             default: components["responses"]["Error"];
         };
     };

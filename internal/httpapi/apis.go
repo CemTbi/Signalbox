@@ -18,6 +18,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/id"
 	"github.com/CemTbi/Signalbox/internal/platform/validate"
+	"github.com/CemTbi/Signalbox/pkg/refdocs"
 	"github.com/CemTbi/Signalbox/pkg/specengine"
 )
 
@@ -569,6 +570,44 @@ func (a *api) getVersion(w http.ResponseWriter, r *http.Request, s *identity.Ses
 		return
 	}
 	writeJSON(w, http.StatusOK, versionJSON(v))
+}
+
+// getReference answers with a published version's reference docs.
+func (a *api) getReference(w http.ResponseWriter, r *http.Request, s *identity.Session) {
+	versionID, ok := pathID(w, r, "versionId", id.Version, "version")
+	if !ok {
+		return
+	}
+	v, err := a.APIs.GetVersion(r.Context(), s.User.ID, versionID)
+	if err != nil {
+		a.apisError(w, r, "version", err)
+		return
+	}
+	// A version never changes, so its revision tags the reference.
+	tag := `"` + id.Format(id.Revision, v.RevisionID) + `"`
+	w.Header().Set("ETag", tag)
+	w.Header().Set("Cache-Control", "private, no-cache")
+	if r.Header.Get("If-None-Match") == tag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	ref, err := a.referenceCache.get(v.RevisionID, func() (string, error) {
+		content, _, err := a.APIs.RevisionContent(r.Context(), s.User.ID, v.RevisionID)
+		return content, err
+	})
+	switch {
+	case errors.Is(err, refdocs.ErrUnsupported):
+		writeProblem(w, r, http.StatusNotImplemented, "reference-unsupported",
+			"This version is a Swagger 2.0 document. Reference docs need OpenAPI 3.0 or later.")
+		return
+	case errors.Is(err, apis.ErrNotFound), errors.Is(err, apis.ErrForbidden):
+		a.apisError(w, r, "version", err)
+		return
+	case err != nil:
+		a.fail(w, r, "reference", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, ref)
 }
 
 // APIs is what the API needs from the apis module.
