@@ -54,6 +54,18 @@ jobs:
         run: go test -count=1 -run TestLargeSpecMeetsBudget -v ./pkg/specengine/
       - name: Lint Signalbox's own API spec
         run: go run ./cmd/signalbox lint --fail-on warning --format github api/openapi.yaml
+      - name: Report changes to Signalbox's own API
+        # Annotates the pull request and summarizes the changes in the job
+        # summary. Before 1.0 the API may break, so this reports without
+        # failing.
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          git show FETCH_HEAD:api/openapi.yaml > "$RUNNER_TEMP/openapi-base.yaml"
+          go run ./cmd/signalbox diff --fail-on none --format github "$RUNNER_TEMP/openapi-base.yaml" api/openapi.yaml
+          go run ./cmd/signalbox diff --fail-on none --format markdown "$RUNNER_TEMP/openapi-base.yaml" api/openapi.yaml >> "$GITHUB_STEP_SUMMARY"
       - name: Check dependency licenses (ADR-0008)
         # go-licenses doesn't recognize MIT-0, which ADR-0015 allows, so the
         # one module under it is named here.
