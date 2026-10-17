@@ -170,7 +170,13 @@ function ReferenceView({ reference: ref, specId, version }: { reference: Referen
   // Links to a schema open its folded section.
   useEffect(() => {
     const open = () => {
-      const target = document.getElementById(decodeURIComponent(window.location.hash.slice(1)));
+      let id = window.location.hash.slice(1);
+      try {
+        id = decodeURIComponent(id);
+      } catch {
+        // A malformed escape, such as in #100%: look for the hash as it is.
+      }
+      const target = document.getElementById(id);
       if (target instanceof HTMLDetailsElement && !target.open) {
         target.open = true;
         target.scrollIntoView();

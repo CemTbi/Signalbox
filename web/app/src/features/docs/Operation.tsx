@@ -164,7 +164,7 @@ function Bodies({ content }: { content: ReferenceMedia[] }) {
         <figure key={ex.name ?? i} className="example">
           <figcaption>{ex.summary || (ex.name ? `Example ${ex.name}` : "Example")}</figcaption>
           <Markdown source={ex.description} />
-          <pre className="code">
+          <pre className="code" tabIndex={0}>
             <code>{ex.value}</code>
           </pre>
         </figure>
@@ -193,7 +193,7 @@ function CodeSamples({ op, target }: { op: ReferenceOperation; target: Target })
           </button>
         ))}
       </div>
-      <pre className="code">
+      <pre className="code" tabIndex={0}>
         <code>{code}</code>
       </pre>
       <button

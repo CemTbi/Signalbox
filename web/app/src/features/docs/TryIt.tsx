@@ -163,7 +163,7 @@ export function TryIt({ op, mock, schemes }: { op: ReferenceOperation; mock: str
             {result.applied ? ` · applied ${result.applied}` : ""}
           </p>
           {result.body ? (
-            <pre className="code">
+            <pre className="code" tabIndex={0}>
               <code>{result.body}</code>
             </pre>
           ) : null}

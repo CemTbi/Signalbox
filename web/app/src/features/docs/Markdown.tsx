@@ -11,7 +11,16 @@ import { useMemo } from "react";
  * those are micromark's defaults.
  */
 export function Markdown({ source, className }: { source: string | undefined; className?: string }) {
-  const html = useMemo(() => (source ? micromark(source, { extensions: [gfm()], htmlExtensions: [gfmHtml()] }) : ""), [source]);
+  const html = useMemo(
+    () =>
+      source
+        ? micromark(source, { extensions: [gfm()], htmlExtensions: [gfmHtml()] })
+            // Code blocks and tables scroll sideways; keyboards must reach them.
+            .replaceAll("<pre>", '<pre tabindex="0">')
+            .replaceAll("<table>", '<table tabindex="0">')
+        : "",
+    [source],
+  );
   if (!html) return null;
   return <div className={className ? `markdown ${className}` : "markdown"} dangerouslySetInnerHTML={{ __html: html }} />;
 }

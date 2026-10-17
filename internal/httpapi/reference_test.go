@@ -51,3 +51,31 @@ func TestReferenceDocs(t *testing.T) {
 	h.signIn("mallory@example.com")
 	h.do(call{method: http.MethodGet, path: "/api/v1/versions/" + v.ID + "/reference"}).expect(t, http.StatusNotFound, "not-found")
 }
+
+// Swagger 2.0 versions can be published, but have no reference docs yet.
+func TestReferenceDocsOfSwagger2(t *testing.T) {
+	h := newHarness(t)
+	h.setUp()
+	p := h.newProject("legacy")
+	var svc httpapi.ServiceJSON
+	h.do(call{method: http.MethodPost, path: "/api/v1/projects/" + p.ID + "/services", body: map[string]string{"name": "Legacy", "slug": "legacy"}}).decode(t, &svc)
+	var spec httpapi.SpecJSON
+	h.do(call{method: http.MethodPost, path: "/api/v1/services/" + svc.ID + "/specs", body: map[string]string{"name": "Legacy", "content": swagger2}}).decode(t, &spec)
+	var v httpapi.VersionJSON
+	h.do(call{method: http.MethodPost, path: "/api/v1/specs/" + spec.ID + "/versions", body: map[string]string{}}).decode(t, &v)
+	h.do(call{method: http.MethodGet, path: "/api/v1/versions/" + v.ID + "/reference"}).expect(t, http.StatusNotImplemented, "reference-unsupported")
+}
+
+const swagger2 = `swagger: '2.0'
+info:
+  title: Legacy
+  version: '1.0'
+basePath: /v1
+paths:
+  /ping:
+    get:
+      operationId: ping
+      responses:
+        '200':
+          description: Pong.
+`
