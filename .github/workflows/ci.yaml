@@ -45,7 +45,11 @@ jobs:
       - name: Lint Signalbox's own API spec
         run: go run ./cmd/signalbox lint --fail-on warning --format github api/openapi.yaml
       - name: Check dependency licenses (ADR-0008)
-        run: go run github.com/google/go-licenses/v2@v2.0.1 check ./... --disallowed_types=forbidden,restricted
+        # go-licenses doesn't recognize MIT-0, which ADR-0015 allows, so the
+        # one module under it is named here.
+        run: >-
+          go run github.com/google/go-licenses/v2@v2.0.1 check ./... --disallowed_types=forbidden,restricted
+          --ignore github.com/segmentio/asm
       - name: Check for known vulnerabilities
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 

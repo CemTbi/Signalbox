@@ -15,6 +15,7 @@ const allowed = new Set([
   "ISC",
   "Apache-2.0",
   "0BSD",
+  "MIT-0", // ADR-0015
   "Zlib",
   "Unicode-3.0",
   "Unicode-DFS-2016",
