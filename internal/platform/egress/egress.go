@@ -93,6 +93,7 @@ var builtin = []struct {
 	{netip.MustParsePrefix("::1/128"), "a loopback address"},
 	{netip.MustParsePrefix("fe80::/10"), "a link-local address"},
 	{netip.MustParsePrefix("fd00:ec2::254/128"), "the AWS metadata endpoint"},
+	{netip.MustParsePrefix("64:ff9b:1::/48"), "a local-use NAT64 address, which can carry any IPv4 address in a layout only the site's translator knows"},
 	{netip.MustParsePrefix("ff00::/8"), "a multicast address"},
 }
 
@@ -124,7 +125,7 @@ func (p *Policy) CheckAddr(host string, addr netip.Addr, port uint16, hostAllowe
 	if reason := p.refuse(addr, port, hostAllowed); reason != "" {
 		return &BlockedError{Host: host, Addr: addr, Reason: reason}
 	}
-	if v4, ok := embeddedIPv4(addr); ok {
+	for _, v4 := range embeddedIPv4(addr) {
 		if reason := p.refuse(v4, port, hostAllowed); reason != "" {
 			return &BlockedError{Host: host, Addr: addr, Reason: "it carries " + v4.String() + ", " + reason}
 		}
@@ -163,26 +164,40 @@ func (p *Policy) refuse(addr netip.Addr, port uint16, hostAllowed bool) string {
 	return ""
 }
 
-// embeddedIPv4 returns the IPv4 address inside an IPv6 address that
-// carries one: IPv4-compatible, NAT64, 6to4 and Teredo addresses. (Mapped
-// addresses were unmapped already.)
-func embeddedIPv4(a netip.Addr) (netip.Addr, bool) {
+// embeddedIPv4 returns the IPv4 addresses an IPv6 address may carry:
+// IPv4-compatible, NAT64, 6to4 and Teredo addresses. (Mapped addresses
+// were unmapped already.)
+//
+// The local-use NAT64 prefix 64:ff9b:1::/48 (RFC 8215) may hold any of the
+// RFC 6052 prefix lengths from /48 to /96, which put the IPv4 address in
+// different places, and an attacker picks the one that slips through. So
+// every place it could be is returned, and all must pass.
+func embeddedIPv4(a netip.Addr) []netip.Addr {
 	if !a.Is6() {
-		return netip.Addr{}, false
+		return nil
 	}
 	b := a.As16()
+	v4 := func(i, j, k, l int) netip.Addr { return netip.AddrFrom4([4]byte{b[i], b[j], b[k], b[l]}) }
 	switch {
-	case nat64.Contains(a), nat64Loc.Contains(a):
-		return netip.AddrFrom4([4]byte(b[12:16])), true
+	case nat64Loc.Contains(a):
+		// RFC 6052 section 2.2: byte 8 is always zero, so the address skips it.
+		return []netip.Addr{
+			v4(6, 7, 9, 10),    // /48
+			v4(7, 9, 10, 11),   // /56
+			v4(9, 10, 11, 12),  // /64
+			v4(12, 13, 14, 15), // /96
+		}
+	case nat64.Contains(a):
+		return []netip.Addr{v4(12, 13, 14, 15)}
 	case compat.Contains(a) && !a.IsUnspecified() && a != netip.IPv6Loopback():
-		return netip.AddrFrom4([4]byte(b[12:16])), true
+		return []netip.Addr{v4(12, 13, 14, 15)}
 	case sixToF.Contains(a):
-		return netip.AddrFrom4([4]byte(b[2:6])), true
+		return []netip.Addr{v4(2, 3, 4, 5)}
 	case teredo.Contains(a):
 		// The client's address, with every bit flipped.
-		return netip.AddrFrom4([4]byte{^b[12], ^b[13], ^b[14], ^b[15]}), true
+		return []netip.Addr{netip.AddrFrom4([4]byte{^b[12], ^b[13], ^b[14], ^b[15]})}
 	}
-	return netip.Addr{}, false
+	return nil
 }
 
 func normalizeHost(h string) string {

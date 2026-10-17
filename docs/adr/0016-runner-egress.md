@@ -30,7 +30,7 @@ Every outbound request on a user's behalf goes through `internal/platform/egress
 1. Signalbox's own services (`Protected`, which the runner role will fill from the configured database addresses): always refused.
 2. Ranges and hostnames an admin denies: refused.
 3. Ranges and hostnames an admin allows: allowed. An allowed hostname skips the built-in blocks, whatever it resolves to.
-4. Built-in blocks: loopback, unspecified, link-local (which holds the AWS, Azure, Google and Oracle metadata endpoints at `169.254.169.254`), the Alibaba and Oracle metadata endpoints elsewhere, AWS's IPv6 endpoint `fd00:ec2::254`, multicast, broadcast and reserved addresses, and addresses with an IPv6 zone.
+4. Built-in blocks: loopback, unspecified, link-local (which holds the AWS, Azure, Google and Oracle metadata endpoints at `169.254.169.254`), the Alibaba and Oracle metadata endpoints elsewhere, AWS's IPv6 endpoint `fd00:ec2::254`, the local-use NAT64 prefix `64:ff9b:1::/48`, multicast, broadcast and reserved addresses, and addresses with an IPv6 zone.
 5. Everything else, private networks included: allowed.
 
 An IPv6 address that carries an IPv4 address must pass for both.
@@ -54,6 +54,7 @@ An IPv6 address that carries an IPv4 address must pass for both.
 - Admins of installations without other protection can deny their private ranges and allow only the subnets they test.
 - `Protected` holds addresses, resolved when the server starts. If a database moves to another address while Signalbox runs, the old address stays protected and the new one isn't until a restart. The runner role must re-resolve them periodically when it is built.
 - Only TCP is covered. HTTP/3 over UDP, gRPC and WebSocket clients must use this dialer too when they arrive.
+- The local-use NAT64 prefix `64:ff9b:1::/48` (RFC 8215) is refused outright. A site's translator may put the IPv4 address in any of four places inside it, and the dialer can't know which, so an address that looks harmless in one layout could reach a metadata endpoint in another. If an admin allows the prefix, an address must still pass in all four layouts. A review of the first version found that it read only one layout.
 - Addresses are tried one after another, not in parallel as Happy Eyeballs does, so a host whose first address doesn't answer is reached only after the connect timeout.
 - `signalbox agent` runs on a person's own machine to reach localhost and their private networks. It needs a different default policy, decided when the agent is built.
 - Kubernetes installations should still isolate runner pods with a NetworkPolicy, as the build plan says. The dialer is the first line, not the only one.

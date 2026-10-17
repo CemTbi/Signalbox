@@ -55,12 +55,18 @@ func TestCheckAddr(t *testing.T) {
 		{egress.Policy{}, "::ffff:169.254.169.254", 80, true},
 		{egress.Policy{}, "::ffff:127.0.0.1", 80, true},
 		{egress.Policy{}, "::127.0.0.1", 80, true},
-		{egress.Policy{}, "64:ff9b::a9fe:a9fe", 80, true},    // NAT64 of 169.254.169.254
-		{egress.Policy{}, "64:ff9b:1::7f00:1", 80, true},     // local-use NAT64 of 127.0.0.1
-		{egress.Policy{}, "2002:a9fe:a9fe::1", 80, true},     // 6to4 of 169.254.169.254
-		{egress.Policy{}, "2001:0:1:2::8001:fffe", 80, true}, // Teredo, client 127.0.0.1
-		{egress.Policy{}, "64:ff9b::5db8:d70e", 443, false},  // NAT64 of a public address
-		{egress.Policy{}, "fe80::1%eth0", 80, true},          // zones are refused
+		{egress.Policy{}, "64:ff9b::a9fe:a9fe", 80, true}, // NAT64 of 169.254.169.254
+		{egress.Policy{}, "64:ff9b:1::7f00:1", 80, true},  // local-use NAT64 of 127.0.0.1
+		// Local-use NAT64 of 169.254.169.254 with each RFC 6052 prefix length.
+		{egress.Policy{}, "64:ff9b:1:a9fe:a9:fe00::", 80, true},   // /48
+		{egress.Policy{}, "64:ff9b:1:a9:fe:a9fe::", 80, true},     // /56
+		{egress.Policy{}, "64:ff9b:1:0:a9:fea9:fe00:0", 80, true}, // /64
+		{egress.Policy{}, "64:ff9b:1::a9fe:a9fe", 80, true},       // /96
+		{egress.Policy{}, "64:ff9b:1:5db8:d7:e00::", 443, true},   // refused even for a public address
+		{egress.Policy{}, "2002:a9fe:a9fe::1", 80, true},          // 6to4 of 169.254.169.254
+		{egress.Policy{}, "2001:0:1:2::8001:fffe", 80, true},      // Teredo, client 127.0.0.1
+		{egress.Policy{}, "64:ff9b::5db8:d70e", 443, false},       // NAT64 of a public address
+		{egress.Policy{}, "fe80::1%eth0", 80, true},               // zones are refused
 		// Admin rules: Deny before Allow, Allow before the built-in blocks,
 		// and Protected before everything.
 		{admin, "127.0.0.1", 8080, false},
@@ -75,6 +81,23 @@ func TestCheckAddr(t *testing.T) {
 		err := tt.policy.CheckAddr(tt.addr, netip.MustParseAddr(tt.addr), tt.port, false)
 		if blocked := errors.Is(err, egress.ErrBlocked); blocked != tt.blocked {
 			t.Errorf("%s port %d: error = %v, want blocked = %v", tt.addr, tt.port, err, tt.blocked)
+		}
+	}
+}
+
+func TestLocalNAT64AllowedByAnAdminIsStillChecked(t *testing.T) {
+	p := egress.Policy{Allow: []netip.Prefix{netip.MustParsePrefix("64:ff9b:1::/48")}}
+	for addr, blocked := range map[string]bool{
+		"64:ff9b:1:a9fe:a9:fe00::":       true,  // 169.254.169.254 in the /48 layout
+		"64:ff9b:1:a9:fe:a9fe::":         true,  // in the /56 layout
+		"64:ff9b:1:0:a9:fea9:fe00:0":     true,  // in the /64 layout
+		"64:ff9b:1::a9fe:a9fe":           true,  // in the /96 layout
+		"64:ff9b:1:5db8:d7:e00::":        true,  // public in /48, but 0.0.0.0 in /96
+		"64:ff9b:1:5db8:d7:e5d:b8d7:e08": false, // public in every layout
+	} {
+		err := p.CheckAddr(addr, netip.MustParseAddr(addr), 443, false)
+		if errors.Is(err, egress.ErrBlocked) != blocked {
+			t.Errorf("%s: error = %v, want blocked = %v", addr, err, blocked)
 		}
 	}
 }
