@@ -6,7 +6,9 @@ import (
 	"container/list"
 	"context"
 	"errors"
+	"mime"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/google/uuid"
@@ -134,11 +136,55 @@ func (a *api) serveMock(w http.ResponseWriter, r *http.Request) {
 	if r.URL.RawQuery != "" {
 		r2.RequestURI += "?" + r.URL.RawQuery
 	}
-	// The security headers suit Signalbox's pages, not a mocked API's
-	// responses, except nosniff.
-	h.Del("Content-Security-Policy")
-	h.Del("X-Frame-Options")
-	mock.ServeHTTP(w, r2)
+	// Mock responses come from specs anyone in a workspace can publish, on
+	// Signalbox's own origin. They must never run as a page there: the CSP
+	// sandboxes anything a browser renders into an origin of its own with
+	// no scripts, and types a browser would render are downloads instead.
+	h.Set("Content-Security-Policy", mockContentSecurityPolicy)
+	mock.ServeHTTP(&inertResponse{ResponseWriter: w}, r2)
+}
+
+// mockContentSecurityPolicy allows a mock's response nothing when a browser
+// shows it. API clients, such as a frontend's fetch, ignore it.
+const mockContentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'; sandbox"
+
+// inertResponse sends response types a browser could run, such as HTML
+// and SVG, as downloads.
+type inertResponse struct {
+	http.ResponseWriter
+	wrote bool
+}
+
+func (w *inertResponse) WriteHeader(code int) {
+	if !w.wrote {
+		w.wrote = true
+		if activeContent(w.Header().Get("Content-Type")) {
+			w.Header().Set("Content-Disposition", "attachment")
+		}
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *inertResponse) Write(b []byte) (int, error) {
+	if !w.wrote {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+// activeContent reports whether browsers may render a media type as a page
+// or run script in it.
+func activeContent(contentType string) bool {
+	mt, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return contentType != ""
+	}
+	switch {
+	case mt == "text/html", mt == "application/xhtml+xml", mt == "image/svg+xml", mt == "text/xml",
+		mt == "application/xml", strings.HasSuffix(mt, "+xml"), mt == "text/xsl", mt == "application/xslt+xml":
+		return true
+	}
+	return false
 }
 
 func noSuchMock(w http.ResponseWriter, r *http.Request) {

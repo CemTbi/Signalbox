@@ -22,6 +22,7 @@ Mocks need a stable document to serve: published versions ([ADR-0020](0020-publi
 **Mocks need no sign-in and allow any origin.** Frontends call them from their own development servers, with no Signalbox session. CORS preflights are answered, and `Preference-Applied` is exposed.
 - **What's exposed:** the published spec's paths and examples are readable by anyone who can reach the server and knows the spec's ID. That matches mocks' purpose on internal networks. Installations exposed to the internet can block `/mocks/` at their proxy until per-project mock access arrives.
 - **Rate limit:** 300 requests at once, then 100 a second, per client address.
+- **Responses can't run as pages.** Mocks share Signalbox's origin and session cookie, and anyone in a workspace can publish a spec. So every mock response carries `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; sandbox`. Types a browser could render as a document (HTML, SVG and other XML) also get `Content-Disposition: attachment`. API clients such as `fetch` ignore both headers.
 
 **`pkg/mockengine` answers requests**, built on libopenapi's mock generator and libopenapi-validator, the libraries the spec engine already uses. It is a public package, so the CLI can run the same mocks locally.
 

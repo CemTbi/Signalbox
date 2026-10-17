@@ -53,7 +53,8 @@ func TestHostedMocks(t *testing.T) {
 		if resp.StatusCode != http.StatusOK || resp.Header.Get("Access-Control-Allow-Origin") != "*" || !strings.HasPrefix(body, "{") {
 			t.Errorf("GET %s/orders/42 = %d %v %s", version, resp.StatusCode, resp.Header, body)
 		}
-		if resp.Header.Get("X-Frame-Options") != "" || resp.Header.Get("X-Content-Type-Options") != "nosniff" {
+		if csp := resp.Header.Get("Content-Security-Policy"); !strings.Contains(csp, "sandbox") || !strings.Contains(csp, "default-src 'none'") ||
+			resp.Header.Get("X-Content-Type-Options") != "nosniff" {
 			t.Errorf("security headers on a mock: %v", resp.Header)
 		}
 	}
@@ -105,4 +106,67 @@ paths:
       responses:
         '201':
           description: Created.
+`
+
+// A published spec mustn't be able to run script on Signalbox's origin
+// through its mock: anyone in a workspace can publish one.
+func TestMocksCantServeActivePages(t *testing.T) {
+	h := newHarness(t)
+	h.setUp()
+	p := h.newProject("shop")
+	var svc httpapi.ServiceJSON
+	h.do(call{method: http.MethodPost, path: "/api/v1/projects/" + p.ID + "/services", body: map[string]string{"name": "Pages", "slug": "pages"}}).decode(t, &svc)
+	var spec httpapi.SpecJSON
+	h.do(call{method: http.MethodPost, path: "/api/v1/services/" + svc.ID + "/specs", body: map[string]string{"name": "Pages", "content": htmlSpec}}).decode(t, &spec)
+	h.do(call{method: http.MethodPost, path: "/api/v1/specs/" + spec.ID + "/versions", body: map[string]string{}}).expect(t, http.StatusCreated, "")
+
+	for _, path := range []string{"/page", "/image"} {
+		resp, body := h.mockCall(http.MethodGet, "/mocks/"+spec.ID+"/latest"+path, nil)
+		// XML types are encoded as XML, so only the HTML example keeps its tag.
+		if resp.StatusCode != http.StatusOK || (path == "/page" && !strings.Contains(body, "<script>")) {
+			t.Fatalf("GET %s = %d %s", path, resp.StatusCode, body)
+		}
+		if resp.Header.Get("Content-Disposition") != "attachment" {
+			t.Errorf("GET %s: Content-Disposition = %q, want a download", path, resp.Header.Get("Content-Disposition"))
+		}
+		if csp := resp.Header.Get("Content-Security-Policy"); csp != "default-src 'none'; frame-ancestors 'none'; sandbox" {
+			t.Errorf("GET %s: CSP = %q", path, csp)
+		}
+	}
+	// JSON stays an ordinary response.
+	resp, _ := h.mockCall(http.MethodGet, "/mocks/"+spec.ID+"/latest/data", nil)
+	if resp.Header.Get("Content-Disposition") != "" {
+		t.Errorf("JSON: Content-Disposition = %q", resp.Header.Get("Content-Disposition"))
+	}
+}
+
+const htmlSpec = `openapi: 3.1.1
+info:
+  title: Pages
+  version: 1.0.0
+paths:
+  /page:
+    get:
+      responses:
+        '200':
+          description: A page.
+          content:
+            text/html:
+              example: "<html><script>fetch('/api/v1/me')</script></html>"
+  /image:
+    get:
+      responses:
+        '200':
+          description: An image.
+          content:
+            image/svg+xml:
+              example: "<svg xmlns='http://www.w3.org/2000/svg'><script>alert(1)</script></svg>"
+  /data:
+    get:
+      responses:
+        '200':
+          description: Data.
+          content:
+            application/json:
+              example: {ok: true}
 `
