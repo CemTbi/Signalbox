@@ -19,3 +19,4 @@ Write a new ADR by copying [template.md](template.md) to the next number. Propos
 | [0011](0011-public-domain-dependencies.md) | Public-domain dedications in shipped dependencies | Accepted |
 | [0012](0012-invitation-links.md) | Invitation links instead of email | Accepted |
 | [0013](0013-single-sign-on-accounts.md) | Single sign-on accounts through OpenID Connect | Accepted |
+| [0016](0016-runner-egress.md) | Where the runner may send requests | Accepted |
