@@ -33,6 +33,9 @@ type Identity interface {
 	CreateUserAndSignIn(ctx context.Context, in identity.UserInput, client identity.Client) (*identity.NewSession, error)
 	UserByEmail(ctx context.Context, email string) (identity.User, bool, error)
 	Users(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]identity.User, error)
+	SSOName() (string, bool)
+	StartSSO(ctx context.Context, returnPath string) (identity.StartedSSO, error)
+	FinishSSO(ctx context.Context, state, code, browserToken string, client identity.Client) (*identity.NewSession, string, error)
 }
 
 // Workspaces is what the API needs from the workspaces module.
@@ -85,12 +88,14 @@ type Deps struct {
 type api struct {
 	Deps
 	cookie       sessionCookie
+	ssoCookie    ssoCookie
 	publicOrigin string
 
 	setupByIP       *ratelimit.Limiter
 	signInByIP      *ratelimit.Limiter
 	signInByAccount *ratelimit.Limiter
 	invitationsByIP *ratelimit.Limiter
+	ssoByIP         *ratelimit.Limiter
 }
 
 // NewHandler returns the api role's HTTP handler.
@@ -101,14 +106,17 @@ func NewHandler(d Deps) http.Handler {
 	if d.PublicURL == nil {
 		d.PublicURL = &url.URL{Scheme: "http", Host: "localhost:8080"}
 	}
+	session := newSessionCookie(d.PublicURL)
 	a := &api{
 		Deps:            d,
-		cookie:          newSessionCookie(d.PublicURL),
+		cookie:          session,
+		ssoCookie:       newSSOCookie(session),
 		publicOrigin:    origin(d.PublicURL),
 		setupByIP:       ratelimit.New(5, 12*time.Second), // 5 at once, then 5 a minute
 		signInByIP:      ratelimit.New(10, 6*time.Second), // 10 at once, then 10 a minute
 		signInByAccount: ratelimit.New(5, 12*time.Second), // 5 at once, then 5 a minute
 		invitationsByIP: ratelimit.New(20, 3*time.Second), // 20 at once, then 20 a minute
+		ssoByIP:         ratelimit.New(20, 3*time.Second), // 20 at once, then 20 a minute
 	}
 
 	mux := http.NewServeMux()
@@ -122,6 +130,9 @@ func NewHandler(d Deps) http.Handler {
 		http.MethodPost: http.HandlerFunc(a.completeSetup),
 	})
 	mux.Handle("/api/v1/sessions", methods{http.MethodPost: http.HandlerFunc(a.createSession)})
+	mux.Handle("/api/v1/sign-in-options", methods{http.MethodGet: http.HandlerFunc(a.getSignInOptions)})
+	mux.Handle("/api/v1/sso/start", methods{http.MethodGet: http.HandlerFunc(a.startSSO)})
+	mux.Handle("/api/v1/sso/callback", methods{http.MethodGet: http.HandlerFunc(a.finishSSO)})
 	mux.Handle("/api/v1/sessions/current", methods{
 		http.MethodGet:    a.authenticated(a.getCurrentSession),
 		http.MethodDelete: a.authenticated(a.deleteCurrentSession),

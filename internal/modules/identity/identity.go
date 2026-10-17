@@ -88,6 +88,9 @@ type Config struct {
 	// MaxConcurrentHashes bounds password hashes in flight, each of which
 	// holds Argon2.Memory. Default 2.
 	MaxConcurrentHashes int
+	// SSO connects an OpenID Connect identity provider. Off when its Issuer
+	// is empty.
+	SSO SSOConfig
 }
 
 // Session lifetimes from ADR-0004.
@@ -106,6 +109,7 @@ type Service struct {
 	logger    *slog.Logger
 	cfg       Config
 	passwords *passwords
+	sso       *sso // nil without an identity provider
 	// setup holds the hash of the current setup code while setup is open.
 	setup atomic.Pointer[[32]byte]
 }
@@ -131,7 +135,13 @@ func New(db *pgxpool.Pool, logger *slog.Logger, cfg Config) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{db: db, logger: logger, cfg: cfg, passwords: pw}, nil
+	svc := &Service{db: db, logger: logger, cfg: cfg, passwords: pw}
+	if cfg.SSO.Issuer != "" {
+		if svc.sso, err = newSSO(cfg.SSO); err != nil {
+			return nil, err
+		}
+	}
+	return svc, nil
 }
 
 // querier is what both a pool and a transaction can do.

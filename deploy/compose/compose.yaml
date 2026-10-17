@@ -29,6 +29,15 @@ services:
       # Empty means the server logs a random setup code at startup.
       SIGNALBOX_SETUP_CODE: ${SIGNALBOX_SETUP_CODE:-}
       SIGNALBOX_TRUSTED_PROXIES: ${SIGNALBOX_TRUSTED_PROXIES:-}
+      # Single sign-on through an OpenID Connect provider, off while the
+      # issuer is empty. Register <public URL>/api/v1/sso/callback as the
+      # redirect URL at the provider. `signalbox-server serve --help` lists
+      # the other single sign-on settings.
+      SIGNALBOX_OIDC_ISSUER: ${SIGNALBOX_OIDC_ISSUER:-}
+      SIGNALBOX_OIDC_CLIENT_ID: ${SIGNALBOX_OIDC_CLIENT_ID:-}
+      SIGNALBOX_OIDC_CLIENT_SECRET: ${SIGNALBOX_OIDC_CLIENT_SECRET:-}
+      SIGNALBOX_OIDC_NAME: ${SIGNALBOX_OIDC_NAME:-}
+      SIGNALBOX_OIDC_ALLOWED_DOMAINS: ${SIGNALBOX_OIDC_ALLOWED_DOMAINS:-}
       SIGNALBOX_LOG_FORMAT: json
       SIGNALBOX_DRAIN_DELAY: 2s
       SIGNALBOX_DATABASE_URL: postgres://signalbox:${POSTGRES_PASSWORD:-signalbox}@postgres:5432/signalbox?sslmode=disable

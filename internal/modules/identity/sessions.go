@@ -167,6 +167,9 @@ func (s *Service) Run(ctx context.Context) {
 		} else if n > 0 {
 			s.logger.InfoContext(ctx, "removed expired sessions", "count", n)
 		}
+		if _, err := s.removeExpiredSSOAttempts(ctx); err != nil && ctx.Err() == nil {
+			s.logger.WarnContext(ctx, "couldn't remove expired single sign-on attempts", "error", err)
+		}
 		select {
 		case <-ctx.Done():
 			return

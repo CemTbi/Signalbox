@@ -3,7 +3,9 @@ module github.com/CemTbi/Signalbox
 go 1.27.2
 
 require (
+	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/daveshanley/vacuum v0.33.1
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/pb33f/go-yaml v0.1.1
@@ -15,6 +17,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
 	golang.org/x/crypto v0.58.0
+	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/text v0.43.0
 	golang.org/x/time v0.16.0

@@ -64,6 +64,9 @@ type Config struct {
 	// SetupCode, when set, unlocks first-run setup instead of a random code
 	// written to the log.
 	SetupCode string
+	// OIDC connects an OpenID Connect identity provider for single sign-on.
+	// Its redirect URL is derived from PublicURL.
+	OIDC identity.SSOConfig
 	// Identity tunes accounts and sessions. Tests lower its hashing cost.
 	Identity identity.Config
 }
@@ -122,11 +125,19 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 		return nil, errors.New("no database configured: set SIGNALBOX_DATABASE_URL or --database-url to a PostgreSQL URL, " +
 			"such as postgres://signalbox:password@localhost:5432/signalbox")
 	}
+	if cfg.OIDC.Issuer != "" && cfg.OIDC.ClientID == "" {
+		return nil, errors.New("single sign-on needs a client ID: set SIGNALBOX_OIDC_CLIENT_ID or --oidc-client-id " +
+			"to the client registered at the identity provider")
+	}
 	db, err := postgres.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return nil, err
 	}
 	cfg.Identity.SetupCode = cfg.SetupCode
+	if cfg.OIDC.Issuer != "" {
+		cfg.OIDC.RedirectURL = publicURL.JoinPath("api/v1/sso/callback").String()
+		cfg.Identity.SSO = cfg.OIDC
+	}
 	ids, err := identity.New(db, logger, cfg.Identity)
 	if err != nil {
 		db.Close()
@@ -265,6 +276,7 @@ func (s *Server) Run(ctx context.Context) error {
 // start connects to the database, migrates it and opens first-run setup.
 func (s *Server) start(ctx context.Context) error {
 	s.warnAboutPlainHTTP()
+	s.describeSSO()
 
 	waitCtx, cancel := context.WithTimeout(ctx, s.cfg.DatabaseWait)
 	defer cancel()
@@ -288,16 +300,36 @@ func (s *Server) start(ctx context.Context) error {
 // warnAboutPlainHTTP warns when people will reach Signalbox over plain HTTP
 // from another machine, where passwords and cookies travel unencrypted.
 func (s *Server) warnAboutPlainHTTP() {
-	if s.publicURL.Scheme != "http" || s.api == nil {
-		return
-	}
-	host := s.publicURL.Hostname()
-	if addr, err := netip.ParseAddr(host); host == "localhost" || err == nil && addr.IsLoopback() {
+	if s.publicURL.Scheme != "http" || s.api == nil || isLoopback(s.publicURL.Hostname()) {
 		return
 	}
 	s.logger.Warn("Signalbox is served over plain HTTP. Passwords and session cookies travel unencrypted; "+
 		"put Signalbox behind HTTPS and set SIGNALBOX_PUBLIC_URL to its https:// address.",
 		"public_url", s.publicURL.String())
+}
+
+// describeSSO logs how single sign-on is set up, so operators can check the
+// redirect URL to register at their identity provider.
+func (s *Server) describeSSO() {
+	o := s.cfg.Identity.SSO
+	if o.Issuer == "" || s.api == nil {
+		return
+	}
+	s.logger.Info("single sign-on is on; register this redirect URL with the identity provider",
+		"issuer", o.Issuer, "redirect_url", o.RedirectURL)
+	if len(o.AllowedDomains) == 0 {
+		s.logger.Info("single sign-on creates an account for anyone the identity provider vouches for; " +
+			"set SIGNALBOX_OIDC_ALLOWED_DOMAINS to limit it, especially with a public provider such as Google")
+	}
+	if u, err := url.Parse(o.Issuer); err == nil && u.Scheme == "http" && !isLoopback(u.Hostname()) {
+		s.logger.Warn("the identity provider's issuer URL uses plain HTTP, so the client secret and tokens travel unencrypted; "+
+			"use its https:// address outside a test setup", "issuer", o.Issuer)
+	}
+}
+
+func isLoopback(host string) bool {
+	addr, err := netip.ParseAddr(host)
+	return host == "localhost" || err == nil && addr.IsLoopback()
 }
 
 func serve(e *endpoint) error {
