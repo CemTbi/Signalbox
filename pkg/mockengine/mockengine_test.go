@@ -5,10 +5,13 @@ package mockengine_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/CemTbi/Signalbox/pkg/mockengine"
 )
@@ -259,4 +262,78 @@ func TestSwagger2IsRefused(t *testing.T) {
 	if !errors.Is(err, mockengine.ErrUnsupported) {
 		t.Errorf("error = %v", err)
 	}
+}
+
+// doubling is a document whose schema doubles at each level: each level
+// refers to the next twice. requestBody also sends it in requests.
+func doubling(levels int, requestBody bool) string {
+	var doc strings.Builder
+	doc.WriteString(`
+openapi: 3.1.1
+info: {title: Deep, version: '1'}
+paths:
+  /a:
+    post:
+`)
+	if requestBody {
+		doc.WriteString(`      requestBody:
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/L0'}
+`)
+	}
+	doc.WriteString(`      responses:
+        '200':
+          description: A.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/L0'}
+components:
+  schemas:
+`)
+	for i := range levels {
+		next := "{type: string}"
+		if i < levels-1 {
+			next = "{$ref: '#/components/schemas/L" + strconv.Itoa(i+1) + "'}"
+		}
+		fmt.Fprintf(&doc, `    L%d:
+      type: object
+      properties:
+        left: %s
+        right: %s
+`, i, next, next)
+	}
+	return doc.String()
+}
+
+// Schemas that expand to more than a server should build are refused at
+// once, instead of being prepared or generated for minutes.
+func TestSchemasTooLarge(t *testing.T) {
+	within := func(f func()) {
+		t.Helper()
+		done := make(chan struct{})
+		go func() { defer close(done); f() }()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatal("still working after 10s")
+		}
+	}
+	within(func() {
+		if _, err := mockengine.New([]byte(doubling(30, true))); !errors.Is(err, mockengine.ErrTooLarge) {
+			t.Errorf("New = %v", err)
+		}
+	})
+	// A document small enough to check requests against can still have a
+	// response too large to generate.
+	m, err := mockengine.New([]byte(doubling(16, false)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	within(func() {
+		w := do(t, m, http.MethodPost, "/a", "")
+		if p := readProblem(t, w); w.Code != http.StatusNotImplemented || p.Code != "schema-too-large" {
+			t.Errorf("POST /a = %d %+v", w.Code, p)
+		}
+	})
 }

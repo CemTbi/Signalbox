@@ -50,6 +50,10 @@ Mocks need a stable document to serve: published versions ([ADR-0020](0020-publi
 
 **Swagger 2.0 versions** answer `501 mock-unsupported`, because the request validator reads only OpenAPI 3.
 
+**Work is bounded.** libopenapi expands references in place, both when it prepares request checks and when it generates data. It copies shared schemas before its own budgets apply, so a schema that refers to another twice, at each of 30 levels, would take minutes and gigabytes. Before either step, the mock counts the schemas involved with references expanded. The count is memoized, so counting is linear in the document's size.
+- **Request checks:** if the parameters, request bodies and responses expand to more than 250,000 schemas, the version answers `422 mock-too-large`. Preparing takes about 15 µs a schema, so this bounds a build to a few seconds.
+- **Generated data:** if a response without an example expands to more than 10,000 schemas, that response answers `501 schema-too-large`. Adding an example avoids it.
+
 ## Results (2026-10-17)
 
 On an AMD Ryzen 5 3600, a cached mock answers a GET with a generated array of objects in 0.16 ms. A POST with its body checked against the schema takes the same. That is well under the 10 ms target.
