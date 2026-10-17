@@ -3,7 +3,7 @@
 import { expect, expectAccessible, openAsAdmin, runID, test } from "./support";
 
 // A service and its OpenAPI spec: add the service to a project, add the
-// spec, see its problems, fix one and save a new revision.
+// spec, see its problems, fix one, save a new revision and publish it.
 
 const ordersSpec = [
   "openapi: 3.1.1",
@@ -21,7 +21,7 @@ const ordersSpec = [
   "",
 ].join("\n");
 
-test("a service's spec is checked, edited and kept in revisions", async ({ page, request }) => {
+test("a service's spec is checked, edited, kept in revisions and published", async ({ page, request }) => {
   const run = runID();
   await openAsAdmin(page, request);
   await page.getByLabel("Name", { exact: true }).fill(`Orders ${run}`);
@@ -62,6 +62,16 @@ test("a service's spec is checked, edited and kept in revisions", async ({ page,
   const history = page.getByRole("region", { name: "History" });
   await expect(history.getByText("Revision 2 (current) · Name the operation")).toBeVisible();
   await expect(history.getByText("Revision 1", { exact: true })).toBeVisible();
+
+  // Publish it. The version comes from the document.
+  const versions = page.getByRole("region", { name: "Versions" });
+  await expect(versions.getByText("Nothing published yet")).toBeVisible();
+  await expect(page.getByLabel("Version", { exact: true })).toHaveValue("1.0.1");
+  await page.getByLabel("Release notes (optional)").fill("First release");
+  await page.getByRole("button", { name: "Publish 1.0.1" }).click();
+  await expect(versions.getByText(/1\.0\.1 · revision 2/)).toBeVisible();
+  await expect(page.getByText(/Revision 2 is published as/)).toBeVisible();
+  await expectAccessible(page);
 
   // The service page lists the spec.
   await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Orders API" }).click();

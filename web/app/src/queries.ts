@@ -182,3 +182,20 @@ export function revisionReportQuery(client: ApiClient, revisionId: string) {
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
+
+export const versionsKey = (specId: string) => ["specs", specId, "versions"] as const;
+
+/** A spec's published versions, newest first. */
+export function versionsQuery(client: ApiClient, specId: string) {
+  return infiniteQueryOptions({
+    queryKey: versionsKey(specId),
+    queryFn: ({ pageParam }) =>
+      unwrap(
+        client.GET("/api/v1/specs/{specId}/versions", {
+          params: { path: { specId }, query: { limit: PAGE_SIZE, cursor: pageParam } },
+        }),
+      ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor,
+  });
+}

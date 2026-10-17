@@ -136,7 +136,11 @@ func isModuleError(err error) bool {
 	if errors.As(err, &unreadable) {
 		return true
 	}
-	for _, e := range []error{ErrNotFound, ErrForbidden, ErrSlugTaken, ErrVersionMismatch, ErrPreconditionRequired, ErrCheckTimeout} {
+	var hasErrors *HasErrorsError
+	if errors.As(err, &hasErrors) {
+		return true
+	}
+	for _, e := range []error{ErrNotFound, ErrForbidden, ErrSlugTaken, ErrVersionMismatch, ErrPreconditionRequired, ErrCheckTimeout, ErrVersionExists} {
 		if errors.Is(err, e) {
 			return true
 		}

@@ -196,6 +196,11 @@ func NewHandler(d Deps) http.Handler {
 		http.MethodGet:  a.authenticated(a.listRevisions),
 		http.MethodPost: a.authenticated(a.createRevision),
 	})
+	mux.Handle("/api/v1/specs/{specId}/versions", methods{
+		http.MethodGet:  a.authenticated(a.listVersions),
+		http.MethodPost: a.authenticated(a.publishVersion),
+	})
+	mux.Handle("/api/v1/versions/{versionId}", methods{http.MethodGet: a.authenticated(a.getVersion)})
 	mux.Handle("/api/v1/revisions/{revisionId}", methods{http.MethodGet: a.authenticated(a.getRevision)})
 	mux.Handle("/api/v1/revisions/{revisionId}/content", methods{http.MethodGet: a.authenticated(a.getRevisionContent)})
 	mux.Handle("/api/v1/revisions/{revisionId}/report", methods{http.MethodGet: a.authenticated(a.getRevisionReport)})

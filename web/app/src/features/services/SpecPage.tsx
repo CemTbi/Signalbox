@@ -3,7 +3,7 @@
 import type { Revision } from "@signalbox/api-client";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi } from "@tanstack/react-router";
-import { api, describeError, unwrapTagged } from "../../api";
+import { api, describeError, unwrap, unwrapTagged } from "../../api";
 import { type Crumb, LoadError, Loading, PageHeader } from "../../components/Page";
 import {
   projectQuery,
@@ -14,10 +14,13 @@ import {
   revisionsQuery,
   serviceQuery,
   specQuery,
+  versionsKey,
+  versionsQuery,
   workspaceQuery,
 } from "../../queries";
 import { summarize } from "../spec-check/lines";
 import { SpecEditor } from "./SpecEditor";
+import { type PublishValues, Versions } from "./Versions";
 
 const specRoute = getRouteApi("/_app/specs/$specId");
 
@@ -31,6 +34,17 @@ export function SpecPage() {
   const content = useQuery({ ...revisionContentQuery(api, current), enabled: current !== "" });
   const report = useQuery({ ...revisionReportQuery(api, current), enabled: current !== "" });
   const history = useInfiniteQuery(revisionsQuery(api, specId));
+  const versions = useInfiniteQuery(versionsQuery(api, specId));
+  const publish = useMutation({
+    mutationFn: ({ name, notes }: PublishValues) =>
+      unwrap(
+        api.POST("/api/v1/specs/{specId}/versions", {
+          params: { path: { specId } },
+          body: { ...(name ? { name } : {}), ...(notes ? { notes } : {}), ...(current ? { revisionId: current } : {}) },
+        }),
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: versionsKey(specId) }),
+  });
   const service = useQuery({ ...serviceQuery(api, spec.data?.data.serviceId ?? ""), enabled: spec.isSuccess });
   const project = useQuery({ ...projectQuery(api, service.data?.projectId ?? ""), enabled: service.isSuccess });
   const workspace = useQuery({ ...workspaceQuery(api, project.data?.workspaceId ?? ""), enabled: project.isSuccess });
@@ -101,6 +115,14 @@ export function SpecPage() {
       ) : (
         <Loading label="Loading the document…" />
       )}
+      <Versions
+        versions={versions.data?.pages.flatMap((p) => p.data) ?? []}
+        current={revision.data}
+        canPublish={canEdit}
+        pending={publish.isPending}
+        error={publish.error}
+        onPublish={(v) => publish.mutate(v)}
+      />
       <section aria-labelledby="history">
         <h2 id="history" className="section-title">
           History

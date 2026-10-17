@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -71,6 +72,27 @@ type RevisionJSON struct {
 	CreatedAt  string            `json:"createdAt"`
 }
 
+// VersionJSON is a published version in API responses.
+type VersionJSON struct {
+	ID             string `json:"id"`
+	SpecID         string `json:"specId"`
+	Name           string `json:"name"`
+	RevisionID     string `json:"revisionId"`
+	RevisionNumber int    `json:"revisionNumber"`
+	APIVersion     string `json:"apiVersion,omitempty"`
+	Notes          string `json:"notes,omitempty"`
+	PublishedBy    string `json:"publishedBy"`
+	PublishedAt    string `json:"publishedAt"`
+}
+
+func versionJSON(v apis.Version) VersionJSON {
+	return VersionJSON{
+		ID: id.Format(id.Version, v.ID), SpecID: id.Format(id.Spec, v.SpecID), Name: v.Name,
+		RevisionID: id.Format(id.Revision, v.RevisionID), RevisionNumber: v.RevisionNumber, APIVersion: v.APIVersion,
+		Notes: v.Notes, PublishedBy: id.Format(id.User, v.PublishedBy), PublishedAt: timestamp(v.PublishedAt),
+	}
+}
+
 func serviceJSON(s apis.Service) ServiceJSON {
 	return ServiceJSON{
 		ID: id.Format(id.Service, s.ID), ProjectID: id.Format(id.Project, s.ProjectID),
@@ -105,8 +127,18 @@ func (a *api) apisError(w http.ResponseWriter, r *http.Request, what string, err
 	var (
 		fields     validate.Errors
 		unreadable *apis.UnreadableError
+		hasErrors  *apis.HasErrorsError
 	)
 	switch {
+	case errors.As(err, &hasErrors):
+		noun := "errors"
+		if hasErrors.Errors == 1 {
+			noun = "error"
+		}
+		writeProblem(w, r, http.StatusUnprocessableEntity, "spec-has-errors",
+			fmt.Sprintf("This revision has %d %s. Fix them and save a new revision, then publish it.", hasErrors.Errors, noun))
+	case errors.Is(err, apis.ErrVersionExists):
+		writeProblem(w, r, http.StatusConflict, "version-exists", "This spec already has a version with this name. Choose another.")
 	case errors.As(err, &fields):
 		writeInvalid(w, r, fields)
 	case errors.As(err, &unreadable):
@@ -469,6 +501,76 @@ func (a *api) getRevisionReport(w http.ResponseWriter, r *http.Request, s *ident
 	writeJSON(w, http.StatusOK, report)
 }
 
+func (a *api) listVersions(w http.ResponseWriter, r *http.Request, s *identity.Session) {
+	specID, ok := pathID(w, r, "specId", id.Spec, "spec")
+	if !ok {
+		return
+	}
+	req, ok := pageRequest(w, r, id.Version)
+	if !ok {
+		return
+	}
+	page, err := a.APIs.ListVersions(r.Context(), s.User.ID, specID, req)
+	if err != nil {
+		a.apisError(w, r, "spec", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, pageJSON(page, id.Version, func(v apis.Version) uuid.UUID { return v.ID }, versionJSON))
+}
+
+func (a *api) publishVersion(w http.ResponseWriter, r *http.Request, s *identity.Session) {
+	specID, ok := pathID(w, r, "specId", id.Spec, "spec")
+	if !ok {
+		return
+	}
+	var body struct {
+		Name       *string `json:"name"`
+		RevisionID *string `json:"revisionId"`
+		Notes      *string `json:"notes"`
+	}
+	if !decodeJSON(w, r, &body) {
+		return
+	}
+	var in apis.VersionInput
+	if body.Name != nil {
+		in.Name = *body.Name
+	}
+	if body.Notes != nil {
+		in.Notes = *body.Notes
+	}
+	if body.RevisionID != nil {
+		rev, err := id.Parse(id.Revision, *body.RevisionID)
+		if err != nil {
+			var fields validate.Errors
+			fields.Add("/revisionId", "pattern", "Use a revision ID, such as rev_01j9z3s7v9x1z3b5d7f9h1k3m5.")
+			writeInvalid(w, r, fields)
+			return
+		}
+		in.RevisionID = rev
+	}
+	v, err := a.APIs.PublishVersion(r.Context(), s.User.ID, specID, in)
+	if err != nil {
+		a.apisError(w, r, "spec or revision", err)
+		return
+	}
+	out := versionJSON(v)
+	w.Header().Set("Location", "/api/v1/versions/"+out.ID)
+	writeJSON(w, http.StatusCreated, out)
+}
+
+func (a *api) getVersion(w http.ResponseWriter, r *http.Request, s *identity.Session) {
+	versionID, ok := pathID(w, r, "versionId", id.Version, "version")
+	if !ok {
+		return
+	}
+	v, err := a.APIs.GetVersion(r.Context(), s.User.ID, versionID)
+	if err != nil {
+		a.apisError(w, r, "version", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, versionJSON(v))
+}
+
 // APIs is what the API needs from the apis module.
 type APIs interface {
 	ListServices(ctx context.Context, userID, projectID uuid.UUID, p workspaces.PageRequest) (workspaces.Page[apis.Service], error)
@@ -486,4 +588,7 @@ type APIs interface {
 	GetRevision(ctx context.Context, userID, revisionID uuid.UUID) (apis.Revision, error)
 	RevisionContent(ctx context.Context, userID, revisionID uuid.UUID) (string, string, error)
 	RevisionReport(ctx context.Context, userID, revisionID uuid.UUID) (specengine.Report, error)
+	PublishVersion(ctx context.Context, userID, specID uuid.UUID, in apis.VersionInput) (apis.Version, error)
+	ListVersions(ctx context.Context, userID, specID uuid.UUID, p workspaces.PageRequest) (workspaces.Page[apis.Version], error)
+	GetVersion(ctx context.Context, userID, versionID uuid.UUID) (apis.Version, error)
 }
