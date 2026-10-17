@@ -23,6 +23,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/buildinfo"
 	"github.com/CemTbi/Signalbox/internal/health"
 	"github.com/CemTbi/Signalbox/internal/httpapi"
+	"github.com/CemTbi/Signalbox/internal/modules/apis"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/postgres"
@@ -176,6 +177,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 			MaxSpecBytes:   cfg.MaxSpecBytes,
 			Identity:       ids,
 			Workspaces:     s.workspaces,
+			APIs:           apis.New(db, logger, s.workspaces),
 			PublicURL:      publicURL,
 			TrustedProxies: trusted,
 		})

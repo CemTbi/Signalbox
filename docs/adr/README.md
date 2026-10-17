@@ -24,3 +24,4 @@ Write a new ADR by copying [template.md](template.md) to the next number. Propos
 | [0016](0016-runner-egress.md) | Where the runner may send requests | Accepted |
 | [0017](0017-postman-scripts.md) | Running Postman scripts in Sobek | Accepted |
 | [0018](0018-live-canvas.md) | A live canvas of 200 services | Accepted |
+| [0019](0019-spec-revisions.md) | Services, specs and their revisions | Accepted |

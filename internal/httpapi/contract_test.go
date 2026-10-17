@@ -27,6 +27,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/buildinfo"
 	"github.com/CemTbi/Signalbox/internal/health"
 	"github.com/CemTbi/Signalbox/internal/httpapi"
+	"github.com/CemTbi/Signalbox/internal/modules/apis"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/oidctest"
@@ -124,13 +125,15 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *har
 	if err := ids.PrepareSetup(context.Background(), public.JoinPath("setup").String()); err != nil {
 		t.Fatal(err)
 	}
+	ws := workspaces.New(pool, logger)
 	srv.Config.Handler = httpapi.NewHandler(httpapi.Deps{
 		Logger:     logger,
 		Health:     health.New("signalbox-server", "test"),
 		Build:      buildinfo.Info{Version: "1.2.3"},
 		Roles:      []roles.Name{roles.API},
 		Identity:   ids,
-		Workspaces: workspaces.New(pool, logger),
+		Workspaces: ws,
+		APIs:       apis.New(pool, logger, ws),
 		PublicURL:  public,
 	})
 	srv.StartTLS()

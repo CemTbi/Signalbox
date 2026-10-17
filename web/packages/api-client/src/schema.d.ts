@@ -653,7 +653,9 @@ export interface paths {
         put?: never;
         /**
          * Add a spec
-         * @description Adds an OpenAPI document to the service. The first revision is created with it.
+         * @description Adds an OpenAPI document to the service. The first revision is created with it, and checked with the recommended rules.
+         *
+         *     A document with problems is saved, with its report. A document that can't be read as OpenAPI or Swagger at all is refused with 400 and the code `unreadable-document`.
          */
         post: operations["createSpec"];
         delete?: never;
@@ -713,7 +715,9 @@ export interface paths {
          * Save a new revision
          * @description Saves the document as the spec's new current revision and checks it.
          *
-         *     `If-Match` is required and must carry the spec's current `ETag`. If someone saved in the meantime, the request fails with 412, and the editor offers a three-way merge.
+         *     `If-Match` is required and must carry the spec's current `ETag`. If someone saved in the meantime, the request fails with 412, and the editor offers a three-way merge. The response's `ETag` is the spec's new one, for the next save.
+         *
+         *     A document with problems is saved, with its report. A document that can't be read as OpenAPI or Swagger at all is refused with 400 and the code `unreadable-document`.
          */
         post: operations["createRevision"];
         delete?: never;
@@ -1048,6 +1052,19 @@ export interface components {
              * @example 3.1.0
              */
             version?: string;
+            /** @description What the document's `info` object says. Missing when the document couldn't be read. */
+            info?: {
+                /**
+                 * @description `info.title`.
+                 * @example Orders API
+                 */
+                title: string;
+                /**
+                 * @description `info.version`, the version of the API.
+                 * @example 1.1.0
+                 */
+                version: string;
+            };
             /**
              * @description Every problem found, ordered by position.
              * @example [
@@ -1652,6 +1669,16 @@ export interface components {
              * @example 3.1.1
              */
             version: string;
+            /**
+             * @description The document's `info.title`.
+             * @example Orders API
+             */
+            title?: string;
+            /**
+             * @description The document's `info.version`, the version of the API it describes.
+             * @example 1.1.0
+             */
+            apiVersion?: string;
             /**
              * @description The size of the document in bytes.
              * @example 18342
@@ -4213,6 +4240,16 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             413: components["responses"]["ContentTooLarge"];
+            /** @description Checking the document took too long (`check-timeout`). */
+            422: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             default: components["responses"]["Error"];
         };
     };
@@ -4480,6 +4517,16 @@ export interface operations {
             404: components["responses"]["NotFound"];
             412: components["responses"]["PreconditionFailed"];
             413: components["responses"]["ContentTooLarge"];
+            /** @description Checking the new revision took too long (`check-timeout`). */
+            422: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             428: components["responses"]["PreconditionRequired"];
             default: components["responses"]["Error"];
         };

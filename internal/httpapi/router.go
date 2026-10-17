@@ -75,6 +75,7 @@ type Deps struct {
 
 	Identity   Identity
 	Workspaces Workspaces
+	APIs       APIs
 	// PublicURL is the address people open Signalbox at. It decides the
 	// session cookie's name and flags, and the origin that unsafe requests
 	// must come from. Default http://localhost:8080.
@@ -172,6 +173,32 @@ func NewHandler(d Deps) http.Handler {
 		http.MethodPatch:  a.authenticated(a.updateProject),
 		http.MethodDelete: a.authenticated(a.deleteProject),
 	})
+
+	mux.Handle("/api/v1/projects/{projectId}/services", methods{
+		http.MethodGet:  a.authenticated(a.listServices),
+		http.MethodPost: a.authenticated(a.createService),
+	})
+	mux.Handle("/api/v1/services/{serviceId}", methods{
+		http.MethodGet:    a.authenticated(a.getService),
+		http.MethodPatch:  a.authenticated(a.updateService),
+		http.MethodDelete: a.authenticated(a.deleteService),
+	})
+	mux.Handle("/api/v1/services/{serviceId}/specs", methods{
+		http.MethodGet:  a.authenticated(a.listSpecs),
+		http.MethodPost: a.authenticated(a.createSpec),
+	})
+	mux.Handle("/api/v1/specs/{specId}", methods{
+		http.MethodGet:    a.authenticated(a.getSpec),
+		http.MethodPatch:  a.authenticated(a.updateSpec),
+		http.MethodDelete: a.authenticated(a.deleteSpec),
+	})
+	mux.Handle("/api/v1/specs/{specId}/revisions", methods{
+		http.MethodGet:  a.authenticated(a.listRevisions),
+		http.MethodPost: a.authenticated(a.createRevision),
+	})
+	mux.Handle("/api/v1/revisions/{revisionId}", methods{http.MethodGet: a.authenticated(a.getRevision)})
+	mux.Handle("/api/v1/revisions/{revisionId}/content", methods{http.MethodGet: a.authenticated(a.getRevisionContent)})
+	mux.Handle("/api/v1/revisions/{revisionId}/report", methods{http.MethodGet: a.authenticated(a.getRevisionReport)})
 
 	mux.HandleFunc("/api/", notFound)
 	if d.UI != nil {

@@ -162,7 +162,7 @@ func (s *Service) UpdateWorkspace(ctx context.Context, userID, workspaceID uuid.
 		if !w.Role.allows(updateWorkspace) {
 			return ErrForbidden
 		}
-		if !pre.matches(w.Version) {
+		if !pre.Matches(w.Version) {
 			return ErrVersionMismatch
 		}
 		if patch.Name != nil {
@@ -198,7 +198,7 @@ func (s *Service) DeleteWorkspace(ctx context.Context, userID, workspaceID uuid.
 		if !w.Role.allows(deleteWorkspace) {
 			return ErrForbidden
 		}
-		if !pre.matches(w.Version) {
+		if !pre.Matches(w.Version) {
 			return ErrVersionMismatch
 		}
 		_, err = tx.Exec(ctx, `DELETE FROM workspaces WHERE id = $1`, workspaceID)
@@ -303,6 +303,14 @@ func (s *Service) GetProject(ctx context.Context, userID, projectID uuid.UUID) (
 	return p, err
 }
 
+// ProjectRole returns the user's role in the project's workspace, or
+// ErrNotFound if the project doesn't exist or the user can't see it. Other
+// modules use it to authorize work inside a project.
+func (s *Service) ProjectRole(ctx context.Context, userID, projectID uuid.UUID) (Role, error) {
+	_, r, err := getProject(ctx, s.db, userID, projectID, "")
+	return r, err
+}
+
 func getProject(ctx context.Context, q querier, userID, projectID uuid.UUID, lock string) (Project, Role, error) {
 	var (
 		p Project
@@ -350,7 +358,7 @@ func (s *Service) UpdateProject(ctx context.Context, userID, projectID uuid.UUID
 		if !r.allows(updateProject) {
 			return ErrForbidden
 		}
-		if !pre.matches(p.Version) {
+		if !pre.Matches(p.Version) {
 			return ErrVersionMismatch
 		}
 		if patch.Name != nil {
@@ -385,7 +393,7 @@ func (s *Service) DeleteProject(ctx context.Context, userID, projectID uuid.UUID
 		if !r.allows(deleteProject) {
 			return ErrForbidden
 		}
-		if !pre.matches(p.Version) {
+		if !pre.Matches(p.Version) {
 			return ErrVersionMismatch
 		}
 		_, err = tx.Exec(ctx, `DELETE FROM projects WHERE id = $1`, projectID)
