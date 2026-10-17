@@ -6,6 +6,10 @@
 # The build stages run on the build machine's platform and cross-compile, so
 # multi-platform images build without emulation.
 
+# built or prebuilt; see the binary stages below. FROM lines can only use
+# arguments declared before the first FROM.
+ARG BINARY=built
+
 # The web app, built into internal/webui/dist for go:embed. Its output is the
 # same on every platform.
 FROM --platform=$BUILDPLATFORM node:24-alpine AS web
@@ -38,9 +42,21 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
       -X github.com/CemTbi/Signalbox/internal/buildinfo.date=${DATE}" \
     -o /out/signalbox-server ./cmd/signalbox-server
 
+# Where the binary comes from: built above (the default), or prebuilt with
+# BINARY=prebuilt from ci-build/signalbox-server, as CI does for pull
+# requests with its warm Go build cache. BuildKit skips the stages the
+# choice doesn't need.
+FROM scratch AS binary-built
+COPY --from=server /out/signalbox-server /signalbox-server
+
+FROM scratch AS binary-prebuilt
+COPY ci-build/signalbox-server /signalbox-server
+
+FROM binary-${BINARY} AS binary
+
 # A distroless, non-root runtime: no shell, no package manager.
 FROM gcr.io/distroless/static-debian13:nonroot
-COPY --from=server /out/signalbox-server /signalbox-server
+COPY --from=binary /signalbox-server /signalbox-server
 USER nonroot:nonroot
 EXPOSE 8080 9090
 HEALTHCHECK --interval=10s --timeout=4s --start-period=10s --retries=3 CMD ["/signalbox-server", "healthcheck"]

@@ -112,28 +112,42 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      # The Dockerfile's go build and npm ci use BuildKit cache mounts, which
-      # the gha layer cache doesn't keep. Without them every build compiled
-      # the server from scratch, about 7 minutes. These steps keep the
-      # mounts in the Actions cache.
-      - name: Restore the image build's Go and npm caches
-        id: build-cache
+      # Pull requests build the web app and the server outside Docker,
+      # where the Go build cache below survives between runs, and put the
+      # binary into the image. A cold build inside Docker took about 7
+      # minutes. main and releases build the whole Dockerfile from source,
+      # so it keeps working.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            e2e/package-lock.json
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: github.event_name == 'pull_request'
+        with:
+          go-version-file: go.mod
+          # Its cache is the Go job's, made of race-detector builds this
+          # build can't use; the step below keeps a cache of its own.
+          cache: false
+      - name: Restore the server's Go build cache
+        if: github.event_name == 'pull_request'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            go-build-cache
-            npm-cache
-          key: image-build-${{ hashFiles('go.sum', 'web/package-lock.json') }}
-          restore-keys: image-build-
-      - name: Put the caches into BuildKit
-        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
-        with:
-          cache-map: |
-            {
-              "go-build-cache": "/root/.cache/go-build",
-              "npm-cache": "/root/.npm"
-            }
-          skip-extraction: ${{ steps.build-cache.outputs.cache-hit }}
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: image-go-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: image-go-
+      - name: Build the web app and the server
+        if: github.event_name == 'pull_request'
+        run: |
+          npm --prefix web ci
+          npm --prefix web run build
+          pkg=github.com/CemTbi/Signalbox/internal/buildinfo
+          flags="-s -w -X $pkg.version=0.0.0-ci -X $pkg.commit=${{ github.sha }}"
+          CGO_ENABLED=0 go build -trimpath -ldflags "$flags" -o ci-build/signalbox-server ./cmd/signalbox-server
       - name: Build the image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -146,6 +160,7 @@ jobs:
           build-args: |
             VERSION=0.0.0-ci
             COMMIT=${{ github.sha }}
+            BINARY=${{ github.event_name == 'pull_request' && 'prebuilt' || 'built' }}
       - name: Start the Compose stack
         run: docker compose up -d --no-build --wait --wait-timeout 180
       - name: Check the running server
@@ -156,11 +171,6 @@ jobs:
           curl -fsS "$BASE/api/v1/setup" | grep -q '"required":true'
           curl -fsS "$BASE/api/v1/sign-in-options" | grep -q '"name":"Dex"'
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: e2e/package-lock.json
       - name: Install the end-to-end tests and Chromium
         working-directory: e2e
         run: |
