@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: write
       issues: read
       id-token: write
     steps:
@@ -33,7 +33,22 @@ jobs:
         uses: anthropics/claude-code-action@f27be6b65a4652f08a2ba3cff79114829b588967 # v1.0.252
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
-          plugins: "code-review@claude-code-plugins"
-          prompt: "/code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}"
-          claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment"'
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request. Read its description and diff with
+            `gh pr view` and `gh pr diff`, and read the surrounding code in the
+            checkout when the diff alone doesn't settle a question. The
+            project's rules are in CONTRIBUTING.md and docs/adr.
+
+            Report only problems you are sure of: bugs, security issues,
+            behavior that contradicts the pull request's description or an
+            ADR, and missing tests for new behavior. Skip style and taste.
+            Put each problem in an inline comment on the line it concerns,
+            saying what goes wrong and how to fix it. Then post one summary
+            comment with `gh pr comment`: the problems found, or that you
+            found none and what you checked.
+          # The reviewer reads and comments; it can't push or change settings.
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Glob,Grep"
