@@ -17,7 +17,8 @@ All notable changes to Signalbox are recorded here. The format follows [Keep a C
 - Workspaces with owner, admin, editor and viewer roles, and projects with development, staging and production environments, in the API and the web app. Edits use ETags and lists page with cursors.
 - The web app now has sign-in, setup, workspace and project pages, an empty canvas for each project, and the spec check at `/spec-check`.
 - Workspace members and invitations. Owners and admins create an invitation link for an email address and a role, and send it however they like; the invitee creates an account from it, or signs in and accepts. Members' roles can change, people can be removed or leave, and a workspace always keeps an owner.
-- New settings: `SIGNALBOX_DATABASE_URL`, `SIGNALBOX_PUBLIC_URL`, `SIGNALBOX_TRUSTED_PROXIES`, `SIGNALBOX_SETUP_CODE`, `SIGNALBOX_MIGRATE` and `SIGNALBOX_DATABASE_WAIT`.
+- Single sign-on through an OpenID Connect provider, such as Okta, Microsoft Entra ID, Google, Keycloak or Dex. Someone signing in for the first time gets an account if the provider has verified their email address and no account has it; existing accounts are never taken over by email address. `SIGNALBOX_OIDC_ALLOWED_DOMAINS` limits which email domains get accounts. Invitation links work with single sign-on too.
+- New settings: `SIGNALBOX_DATABASE_URL`, `SIGNALBOX_PUBLIC_URL`, `SIGNALBOX_TRUSTED_PROXIES`, `SIGNALBOX_SETUP_CODE`, `SIGNALBOX_MIGRATE` and `SIGNALBOX_DATABASE_WAIT`; for single sign-on, `SIGNALBOX_OIDC_ISSUER`, `SIGNALBOX_OIDC_CLIENT_ID`, `SIGNALBOX_OIDC_CLIENT_SECRET` (or `SIGNALBOX_OIDC_CLIENT_SECRET_FILE`), `SIGNALBOX_OIDC_NAME`, `SIGNALBOX_OIDC_SCOPES`, `SIGNALBOX_OIDC_ALLOWED_DOMAINS` and `SIGNALBOX_OIDC_TRUST_UNVERIFIED_EMAIL`.
 
 ### Changed
 

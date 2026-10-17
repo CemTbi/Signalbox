@@ -17,6 +17,7 @@ import { describeError } from "./api";
 import { AppShell } from "./components/AppShell";
 import { LoadError, PageHeader } from "./components/Page";
 import { SetupPage, SignInPage } from "./features/auth/pages";
+import { ssoFailureMessages } from "./features/auth/sso";
 import { InvitePage } from "./features/invitations/InvitePage";
 import { WorkspaceMembers } from "./features/members/MembersPage";
 import { ProjectPage } from "./features/projects/ProjectPage";
@@ -51,9 +52,11 @@ const setupRoute = createRoute({
 const signInRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sign-in",
-  validateSearch: (search: Record<string, unknown>): { redirect?: string } => {
+  validateSearch: (search: Record<string, unknown>): { redirect?: string; sso?: string } => {
     const target = safeRedirect(search.redirect);
-    return target ? { redirect: target } : {};
+    // Only reasons the page knows how to explain.
+    const sso = typeof search.sso === "string" && search.sso in ssoFailureMessages ? search.sso : undefined;
+    return { ...(target ? { redirect: target } : {}), ...(sso ? { sso } : {}) };
   },
   beforeLoad: async ({ context }) => {
     const status = await context.queryClient.ensureQueryData(setupStatusQuery(context.api));

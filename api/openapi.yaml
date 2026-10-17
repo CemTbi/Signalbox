@@ -360,6 +360,112 @@ paths:
         '429': {$ref: '#/components/responses/TooManyRequests'}
         default: {$ref: '#/components/responses/Error'}
 
+  /api/v1/sign-in-options:
+    get:
+      operationId: getSignInOptions
+      summary: List the ways to sign in
+      description: Says whether single sign-on is set up, so the sign-in page can offer it. Signing in with an email address and password always works for accounts that have a password.
+      tags: [Sessions]
+      security: []
+      responses:
+        '200':
+          description: The ways to sign in.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SignInOptions'}
+              example: {sso: {name: Okta}}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/sso/start:
+    get:
+      operationId: startSingleSignOn
+      summary: Start signing in through the identity provider
+      description: |
+        A browser navigation, not an API call. It redirects to the OpenID Connect identity provider, using the authorization code flow with PKCE, and sets a short-lived cookie that ties the sign-in to this browser. The provider sends the browser back to `/api/v1/sso/callback`.
+
+        If single sign-on can't start, it redirects to `/sign-in?sso=<reason>` instead, where the reason is `rate-limited`, `unavailable` or `failed`. On an installation without accounts it redirects to `/setup`: the first account comes from first-run setup.
+      tags: [Sessions]
+      security: []
+      parameters:
+        - name: return
+          in: query
+          required: false
+          description: A path on this site to open after signing in. Anything that isn't a path on this site is replaced with `/`.
+          schema: {type: string, maxLength: 2048}
+          example: /projects/prj_01j9z3m2p4r6t8v0x2z4b6d8f0
+      responses:
+        '302':
+          description: Continue at the identity provider, or at the sign-in or setup page if single sign-on can't start.
+          headers:
+            Location: {$ref: '#/components/headers/Location'}
+            Set-Cookie:
+              description: The cookie that ties the sign-in to this browser, for 10 minutes.
+              schema: {type: string}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '404':
+          description: Single sign-on isn't set up on this installation.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example:
+                type: about:blank
+                title: Not Found
+                status: 404
+                detail: Single sign-on isn't set up on this installation.
+                code: sso-disabled
+                requestId: 9f8e7d6c5b4a39281706f5e4
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/sso/callback:
+    get:
+      operationId: finishSingleSignOn
+      summary: Come back from the identity provider
+      description: |
+        Where the identity provider sends the browser after the person signs in. Signalbox checks the provider's answer, signs the person in, and redirects to the path the sign-in started from. Someone signing in for the first time gets an account, if the provider vouches for their email address and no account has it; accounts are never linked by email address alone.
+
+        On failure it redirects to `/sign-in?sso=<reason>`, where the reason is `expired`, `failed`, `denied`, `unavailable`, `email-unverified`, `not-allowed` or `account-exists`.
+      tags: [Sessions]
+      security: []
+      parameters:
+        - name: state
+          in: query
+          required: false
+          description: The state Signalbox sent to the provider.
+          schema: {type: string, maxLength: 128}
+          example: Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8
+        - name: code
+          in: query
+          required: false
+          description: The authorization code from the provider.
+          schema: {type: string, maxLength: 2048}
+          example: SplxlOBeZQQYbYS6WxSbIA
+        - name: error
+          in: query
+          required: false
+          description: The provider's error code, when the sign-in didn't succeed.
+          schema: {type: string, maxLength: 256}
+          example: access_denied
+        - name: error_description
+          in: query
+          required: false
+          description: The provider's explanation of the error.
+          schema: {type: string, maxLength: 2048}
+          example: The user cancelled the sign-in.
+      responses:
+        '302':
+          description: Signed in and on the way to the page the sign-in started from, or on the way to the page that explains why it failed.
+          headers:
+            Location: {$ref: '#/components/headers/Location'}
+            Set-Cookie:
+              description: The session cookie, after a successful sign-in.
+              schema: {type: string}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        default: {$ref: '#/components/responses/Error'}
+
   /api/v1/sessions/current:
     get:
       operationId: getCurrentSession
@@ -2359,6 +2465,21 @@ components:
           type: boolean
           description: True when the account must confirm a second factor before the session is usable.
           examples: [false]
+    SignInOptions:
+      type: object
+      description: The ways to sign in besides an email address and password.
+      properties:
+        sso:
+          type: object
+          description: Single sign-on through an OpenID Connect identity provider. Missing when it isn't set up.
+          required: [name]
+          properties:
+            name:
+              type: string
+              description: The provider's name, for the sign-in button.
+              examples: [Okta]
+          examples:
+            - {name: Okta}
     SetupStatus:
       type: object
       description: Whether the installation still needs its first account.

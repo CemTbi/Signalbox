@@ -19,6 +19,7 @@ export type FieldError = Schemas["FieldError"];
 export type User = Schemas["User"];
 export type Session = Schemas["Session"];
 export type SetupStatus = Schemas["SetupStatus"];
+export type SignInOptions = Schemas["SignInOptions"];
 export type Workspace = Schemas["Workspace"];
 export type WorkspaceRole = Schemas["WorkspaceRole"];
 export type WorkspacePage = Schemas["WorkspacePage"];

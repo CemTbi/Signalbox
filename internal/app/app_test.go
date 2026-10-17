@@ -154,6 +154,7 @@ func TestNewValidatesConfiguration(t *testing.T) {
 		{"public URL with a path", func(c *app.Config) { c.PublicURL = "https://example.com/signalbox" }, "root of its host"},
 		{"bad trusted proxy", func(c *app.Config) { c.TrustedProxies = "10.0.0.0/33" }, "trusted proxies"},
 		{"weak setup code", func(c *app.Config) { c.SetupCode = "abc" }, "setup code"},
+		{"single sign-on without a client ID", func(c *app.Config) { c.OIDC.Issuer = "https://idp.example.com" }, "SIGNALBOX_OIDC_CLIENT_ID"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

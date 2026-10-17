@@ -134,6 +134,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sign-in-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the ways to sign in
+         * @description Says whether single sign-on is set up, so the sign-in page can offer it. Signing in with an email address and password always works for accounts that have a password.
+         */
+        get: operations["getSignInOptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sso/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Start signing in through the identity provider
+         * @description A browser navigation, not an API call. It redirects to the OpenID Connect identity provider, using the authorization code flow with PKCE, and sets a short-lived cookie that ties the sign-in to this browser. The provider sends the browser back to `/api/v1/sso/callback`.
+         *
+         *     If single sign-on can't start, it redirects to `/sign-in?sso=<reason>` instead, where the reason is `rate-limited`, `unavailable` or `failed`. On an installation without accounts it redirects to `/setup`: the first account comes from first-run setup.
+         */
+        get: operations["startSingleSignOn"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sso/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Come back from the identity provider
+         * @description Where the identity provider sends the browser after the person signs in. Signalbox checks the provider's answer, signs the person in, and redirects to the path the sign-in started from. Someone signing in for the first time gets an account, if the provider vouches for their email address and no account has it; accounts are never linked by email address alone.
+         *
+         *     On failure it redirects to `/sign-in?sso=<reason>`, where the reason is `expired`, `failed`, `denied`, `unavailable`, `email-unverified`, `not-allowed` or `account-exists`.
+         */
+        get: operations["finishSingleSignOn"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sessions/current": {
         parameters: {
             query?: never;
@@ -1132,6 +1196,22 @@ export interface components {
              * @example false
              */
             mfaRequired?: boolean;
+        };
+        /** @description The ways to sign in besides an email address and password. */
+        SignInOptions: {
+            /**
+             * @description Single sign-on through an OpenID Connect identity provider. Missing when it isn't set up.
+             * @example {
+             *       "name": "Okta"
+             *     }
+             */
+            sso?: {
+                /**
+                 * @description The provider's name, for the sign-in button.
+                 * @example Okta
+                 */
+                name: string;
+            };
         };
         /** @description Whether the installation still needs its first account. */
         SetupStatus: {
@@ -2349,6 +2429,128 @@ export interface operations {
             };
             403: components["responses"]["Forbidden"];
             429: components["responses"]["TooManyRequests"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getSignInOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The ways to sign in. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "sso": {
+                     *         "name": "Okta"
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["SignInOptions"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    startSingleSignOn: {
+        parameters: {
+            query?: {
+                /**
+                 * @description A path on this site to open after signing in. Anything that isn't a path on this site is replaced with `/`.
+                 * @example /projects/prj_01j9z3m2p4r6t8v0x2z4b6d8f0
+                 */
+                return?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Continue at the identity provider, or at the sign-in or setup page if single sign-on can't start. */
+            302: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    /** @description The cookie that ties the sign-in to this browser, for 10 minutes. */
+                    "Set-Cookie"?: string;
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Single sign-on isn't set up on this installation. */
+            404: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Not Found",
+                     *       "status": 404,
+                     *       "detail": "Single sign-on isn't set up on this installation.",
+                     *       "code": "sso-disabled",
+                     *       "requestId": "9f8e7d6c5b4a39281706f5e4"
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    finishSingleSignOn: {
+        parameters: {
+            query?: {
+                /**
+                 * @description The state Signalbox sent to the provider.
+                 * @example Zk9vX2JhcjEyMzQ1Njc4OTBhYmNkZWZnaGlqa2xtbm8
+                 */
+                state?: string;
+                /**
+                 * @description The authorization code from the provider.
+                 * @example SplxlOBeZQQYbYS6WxSbIA
+                 */
+                code?: string;
+                /**
+                 * @description The provider's error code, when the sign-in didn't succeed.
+                 * @example access_denied
+                 */
+                error?: string;
+                /**
+                 * @description The provider's explanation of the error.
+                 * @example The user cancelled the sign-in.
+                 */
+                error_description?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed in and on the way to the page the sign-in started from, or on the way to the page that explains why it failed. */
+            302: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    /** @description The session cookie, after a successful sign-in. */
+                    "Set-Cookie"?: string;
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             default: components["responses"]["Error"];
         };
     };

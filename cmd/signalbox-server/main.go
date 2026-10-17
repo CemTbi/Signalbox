@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/app"
 	"github.com/CemTbi/Signalbox/internal/buildinfo"
 	"github.com/CemTbi/Signalbox/internal/logging"
+	"github.com/CemTbi/Signalbox/internal/modules/identity"
 	"github.com/CemTbi/Signalbox/internal/platform/postgres"
 )
 
@@ -68,6 +70,9 @@ Flags win over environment variables.`,
 			if err != nil {
 				return err
 			}
+			if cfg.OIDC.ClientSecret, err = secret("SIGNALBOX_OIDC_CLIENT_SECRET"); err != nil {
+				return err
+			}
 			srv, err := app.New(cmd.Context(), cfg, logger)
 			if err != nil {
 				return err
@@ -88,6 +93,7 @@ Flags win over environment variables.`,
 		"reverse proxies whose X-Forwarded-For header is believed, as addresses or CIDR ranges [SIGNALBOX_TRUSTED_PROXIES]")
 	f.StringVar(&cfg.SetupCode, "setup-code", env("SIGNALBOX_SETUP_CODE", cfg.SetupCode),
 		"code that unlocks first-run setup; by default a random one is logged [SIGNALBOX_SETUP_CODE]")
+	addOIDCFlags(f, &cfg.OIDC)
 	addDatabaseFlags(f, &cfg.DatabaseURL, &cfg.DatabaseWait)
 	f.BoolVar(&cfg.Migrate, "migrate", envBool("SIGNALBOX_MIGRATE", cfg.Migrate),
 		"apply pending database migrations at startup [SIGNALBOX_MIGRATE]")
@@ -150,6 +156,43 @@ func addDatabaseFlags(f *pflag.FlagSet, url *string, wait *time.Duration) {
 		"PostgreSQL URL, such as postgres://signalbox:password@localhost:5432/signalbox [SIGNALBOX_DATABASE_URL]")
 	f.DurationVar(wait, "database-wait", envDuration("SIGNALBOX_DATABASE_WAIT", time.Minute),
 		"how long startup waits for the database to answer [SIGNALBOX_DATABASE_WAIT]")
+}
+
+// addOIDCFlags adds the single sign-on settings. The client secret has no
+// flag, because flags show up in process lists; it comes from
+// SIGNALBOX_OIDC_CLIENT_SECRET or the file in SIGNALBOX_OIDC_CLIENT_SECRET_FILE.
+func addOIDCFlags(f *pflag.FlagSet, o *identity.SSOConfig) {
+	f.StringVar(&o.Issuer, "oidc-issuer", env("SIGNALBOX_OIDC_ISSUER", ""),
+		"OpenID Connect issuer URL; turns on single sign-on [SIGNALBOX_OIDC_ISSUER]")
+	f.StringVar(&o.ClientID, "oidc-client-id", env("SIGNALBOX_OIDC_CLIENT_ID", ""),
+		"client ID registered at the identity provider [SIGNALBOX_OIDC_CLIENT_ID]")
+	f.StringVar(&o.Name, "oidc-name", env("SIGNALBOX_OIDC_NAME", ""),
+		"the provider's name on the sign-in button, such as Okta [SIGNALBOX_OIDC_NAME]")
+	f.StringSliceVar(&o.Scopes, "oidc-scopes", list(env("SIGNALBOX_OIDC_SCOPES", "email,profile")),
+		"scopes to request besides openid [SIGNALBOX_OIDC_SCOPES]")
+	f.StringSliceVar(&o.AllowedDomains, "oidc-allowed-domains", list(env("SIGNALBOX_OIDC_ALLOWED_DOMAINS", "")),
+		"email domains that may create an account at their first sign-in; empty allows all [SIGNALBOX_OIDC_ALLOWED_DOMAINS]")
+	f.BoolVar(&o.TrustUnverifiedEmail, "oidc-trust-unverified-email", envBool("SIGNALBOX_OIDC_TRUST_UNVERIFIED_EMAIL", false),
+		"accept email addresses the provider doesn't mark as verified [SIGNALBOX_OIDC_TRUST_UNVERIFIED_EMAIL]")
+}
+
+// secret reads a secret from the environment variable, or from the file
+// named by the variable with _FILE appended, as Docker and Kubernetes
+// secrets provide.
+func secret(key string) (string, error) {
+	if path, ok := os.LookupEnv(key + "_FILE"); ok && path != "" {
+		b, err := os.ReadFile(path) //nolint:gosec // G304: the operator names the file.
+		if err != nil {
+			return "", fmt.Errorf("read %s_FILE: %w", key, err)
+		}
+		return strings.TrimSpace(string(b)), nil
+	}
+	return os.Getenv(key), nil
+}
+
+// list splits a comma- or space-separated setting.
+func list(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' })
 }
 
 func addLogFlags(f *pflag.FlagSet, format, level *string) {

@@ -29,6 +29,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/httpapi"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
+	"github.com/CemTbi/Signalbox/internal/platform/oidctest"
 	"github.com/CemTbi/Signalbox/internal/platform/postgres/postgrestest"
 	"github.com/CemTbi/Signalbox/internal/roles"
 )
@@ -91,15 +92,35 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	return startHarness(t, nil)
+}
+
+// newHarnessWithSSO starts a harness whose single sign-on goes to idp.
+func newHarnessWithSSO(t *testing.T, idp *oidctest.Provider) *harness {
+	t.Helper()
+	return startHarness(t, func(cfg *identity.Config, public *url.URL) {
+		cfg.SSO = identity.SSOConfig{
+			Issuer: idp.Issuer, ClientID: idp.ClientID, ClientSecret: idp.ClientSecret, Name: "Test IdP",
+			RedirectURL: public.JoinPath("api/v1/sso/callback").String(),
+		}
+	})
+}
+
+func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *harness {
+	t.Helper()
 	loadContract(t)
 	pool := postgrestest.New(t)
 	logger := slog.New(slog.DiscardHandler)
-	ids, err := identity.New(pool, logger, identity.Config{SetupCode: setupCode, Argon2: cheapArgon2})
+	srv := httptest.NewUnstartedServer(nil)
+	public := &url.URL{Scheme: "https", Host: srv.Listener.Addr().String()}
+	cfg := identity.Config{SetupCode: setupCode, Argon2: cheapArgon2}
+	if configure != nil {
+		configure(&cfg, public)
+	}
+	ids, err := identity.New(pool, logger, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewUnstartedServer(nil)
-	public := &url.URL{Scheme: "https", Host: srv.Listener.Addr().String()}
 	if err := ids.PrepareSetup(context.Background(), public.JoinPath("setup").String()); err != nil {
 		t.Fatal(err)
 	}
@@ -133,6 +154,8 @@ type call struct {
 	// invalid marks a request that deliberately breaks the contract, so
 	// only the response is checked against it.
 	invalid bool
+	// stopAtRedirect returns a redirect instead of following it.
+	stopAtRedirect bool
 }
 
 type result struct {
@@ -186,7 +209,13 @@ func (h *harness) do(c call) result {
 		return req
 	}
 
-	resp, err := h.client.Do(build())
+	client := h.client
+	if c.stopAtRedirect {
+		copied := *h.client
+		copied.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		client = &copied
+	}
+	resp, err := client.Do(build())
 	if err != nil {
 		h.t.Fatal(err)
 	}
