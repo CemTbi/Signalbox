@@ -1007,3 +1007,118 @@ button.primary:disabled {
     transition: opacity 120ms ease;
   }
 }
+
+/* Service nodes on the canvas */
+
+.svc-node {
+  width: 224px;
+  height: 92px;
+  /* Fixed size: a change inside one node never lays out another. */
+  contain: strict;
+  padding: 10px 12px;
+  display: grid;
+  gap: 2px;
+  align-content: start;
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.svc-node.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.svc-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.svc-name {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.svc-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink-2);
+  flex: none;
+}
+
+/* A shape per state, so health never depends on color alone. */
+.svc-mark {
+  width: 9px;
+  height: 9px;
+  flex: none;
+}
+.svc-mark.ok {
+  background: var(--ok);
+  border-radius: 50%;
+}
+.svc-mark.warn {
+  background: var(--warn);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.svc-mark.down {
+  background: var(--bad);
+  border-radius: 1px;
+}
+.svc-mark.unknown {
+  border: 1.5px solid var(--muted);
+  border-radius: 50%;
+}
+
+.svc-sub {
+  color: var(--muted);
+}
+
+/* Zoomed out: the name, large enough to read, and the health shape. */
+.svc-node.compact {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+}
+.svc-node.compact .svc-name {
+  font-size: 24px;
+}
+.svc-node.compact .svc-mark {
+  width: 22px;
+  height: 22px;
+}
+
+.svc-metrics {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+.svc-mock {
+  border-style: dashed;
+}
+
+.react-flow__edge.declared path {
+  stroke-dasharray: 5 4;
+}
+
+.call-label rect {
+  fill: var(--surface);
+  stroke: var(--rule);
+}
+
+.call-label text {
+  fill: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}

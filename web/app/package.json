@@ -8,16 +8,20 @@
     "build": "tsc --noEmit -p tsconfig.json && vite build && node scripts/keep-dist.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bench:build": "vite build --config bench/vite.config.ts",
+    "bench:serve": "vite preview --config bench/vite.config.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.3",
     "@tanstack/react-router": "^1.170.44",
     "@xyflow/react": "^12.12.0",
+    "elkjs": "^0.12.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },
   "devDependencies": {
+    "@dagrejs/dagre": "^3.1.1",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
