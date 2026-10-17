@@ -33,6 +33,13 @@ jobs:
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.15.0
+      - name: Free disk space
+        # Race-detector test binaries and the PostgreSQL and ClickHouse
+        # containers outgrew the runner's free space. These toolchains come
+        # with the runner image and Signalbox doesn't use them.
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
       - name: Test with the race detector
         # Database tests start PostgreSQL with Testcontainers. In CI they
         # must run, not skip.
