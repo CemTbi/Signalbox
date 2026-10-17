@@ -388,7 +388,7 @@ func TestPublishingVersions(t *testing.T) {
 		t.Errorf("publishing revision 1 again: %+v, %v", old, err)
 	}
 	var verrs validate.Errors
-	for _, bad := range []string{"-1", "1.0 beta", strings.Repeat("9", 65)} {
+	for _, bad := range []string{"-1", "1.0 beta", strings.Repeat("9", 65), "Latest"} {
 		if _, err := f.mod.PublishVersion(f.ctx, f.owner, spec.ID, apis.VersionInput{Name: bad}); !errors.As(err, &verrs) {
 			t.Errorf("name %q: %v", bad, err)
 		}
@@ -414,6 +414,17 @@ func TestPublishingVersions(t *testing.T) {
 	}
 	if got, err := f.mod.GetVersion(f.ctx, f.owner, v1.ID); err != nil || got.Name != "1.0.0" {
 		t.Errorf("get v1 = %+v, %v", got, err)
+	}
+
+	// Mocks find versions by name or as latest, without a user.
+	if rev, content, err := f.mod.MockSource(f.ctx, spec.ID, "1.0.0"); err != nil || rev != first.ID || content != ordersV1 {
+		t.Errorf("mock source of 1.0.0 = %v, %v", rev, err)
+	}
+	if rev, _, err := f.mod.MockSource(f.ctx, spec.ID, "LATEST"); err != nil || rev != old.RevisionID {
+		t.Errorf("mock source of latest = %v, %v; want the newest version's revision", rev, err)
+	}
+	if _, _, err := f.mod.MockSource(f.ctx, spec.ID, "9.9.9"); !errors.Is(err, apis.ErrNotFound) {
+		t.Errorf("an unknown version: %v", err)
 	}
 
 	// Viewers read but can't publish.

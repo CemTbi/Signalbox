@@ -76,6 +76,8 @@ type Deps struct {
 	Identity   Identity
 	Workspaces Workspaces
 	APIs       APIs
+	// Mocks finds the documents hosted mocks serve.
+	Mocks MockSources
 	// PublicURL is the address people open Signalbox at. It decides the
 	// session cookie's name and flags, and the origin that unsafe requests
 	// must come from. Default http://localhost:8080.
@@ -97,6 +99,8 @@ type api struct {
 	signInByAccount *ratelimit.Limiter
 	invitationsByIP *ratelimit.Limiter
 	ssoByIP         *ratelimit.Limiter
+	mocksByIP       *ratelimit.Limiter
+	mockCache       *mockCache
 }
 
 // NewHandler returns the api role's HTTP handler.
@@ -113,11 +117,13 @@ func NewHandler(d Deps) http.Handler {
 		cookie:          session,
 		ssoCookie:       newSSOCookie(session),
 		publicOrigin:    origin(d.PublicURL),
-		setupByIP:       ratelimit.New(5, 12*time.Second), // 5 at once, then 5 a minute
-		signInByIP:      ratelimit.New(10, 6*time.Second), // 10 at once, then 10 a minute
-		signInByAccount: ratelimit.New(5, 12*time.Second), // 5 at once, then 5 a minute
-		invitationsByIP: ratelimit.New(20, 3*time.Second), // 20 at once, then 20 a minute
-		ssoByIP:         ratelimit.New(20, 3*time.Second), // 20 at once, then 20 a minute
+		setupByIP:       ratelimit.New(5, 12*time.Second),        // 5 at once, then 5 a minute
+		signInByIP:      ratelimit.New(10, 6*time.Second),        // 10 at once, then 10 a minute
+		signInByAccount: ratelimit.New(5, 12*time.Second),        // 5 at once, then 5 a minute
+		invitationsByIP: ratelimit.New(20, 3*time.Second),        // 20 at once, then 20 a minute
+		ssoByIP:         ratelimit.New(20, 3*time.Second),        // 20 at once, then 20 a minute
+		mocksByIP:       ratelimit.New(300, 10*time.Millisecond), // 300 at once, then 100 a second
+		mockCache:       newMockCache(64),
 	}
 
 	mux := http.NewServeMux()
@@ -206,6 +212,10 @@ func NewHandler(d Deps) http.Handler {
 	mux.Handle("/api/v1/revisions/{revisionId}/report", methods{http.MethodGet: a.authenticated(a.getRevisionReport)})
 
 	mux.HandleFunc("/api/", notFound)
+	if d.Mocks != nil {
+		mux.HandleFunc("/mocks/{specId}/{version}", a.serveMock)
+		mux.HandleFunc("/mocks/{specId}/{version}/{path...}", a.serveMock)
+	}
 	if d.UI != nil {
 		mux.Handle("/", d.UI)
 	} else {

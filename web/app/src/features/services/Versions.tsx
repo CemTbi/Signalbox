@@ -12,6 +12,36 @@ export interface PublishValues {
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
+/** The address of a published version's mock, on this installation. */
+export function mockURL(specId: string, version: string, origin = window.location.origin) {
+  return `${origin}/mocks/${specId}/${encodeURIComponent(version)}`;
+}
+
+/** A mock's address with a button that copies it. */
+function MockAddress({ label, url }: { label: string; url: string }) {
+  const [copied, setCopied] = useState(false);
+  const id = useId();
+  return (
+    <div className="mock-address">
+      <label htmlFor={id} className="field-label">
+        {label}
+      </label>
+      <div className="copy-row">
+        <input id={id} className="mono" readOnly value={url} onFocus={(e) => e.target.select()} />
+        <button
+          type="button"
+          className="button secondary"
+          onClick={() => {
+            void navigator.clipboard?.writeText(url).then(() => setCopied(true));
+          }}
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * A spec's published versions, and a form that publishes the current
  * revision. A revision with errors can't be published, so the form says so
@@ -66,6 +96,12 @@ export function Versions({
             <p>Mocks, docs and generated code use published versions. Publish one when the spec is ready to share.</p>
           </div>
         ) : (
+          <>
+          <MockAddress label="Mock of the latest version" url={mockURL(versions[0]?.specId ?? "", "latest")} />
+          <p className="field-hint">
+            Frontends can call the mock now. It answers from the spec's examples, or with data that fits its schemas, and
+            checks each request. Add <code>Prefer: code=404</code> to a request to get another response.
+          </p>
           <ol className="rows">
             {versions.map((v) => (
               <li key={v.id} className="row">
@@ -77,10 +113,12 @@ export function Versions({
                     Published {dateFormat.format(new Date(v.publishedAt))}
                     {v.notes ? ` · ${v.notes}` : ""}
                   </span>
+                  <span className="row-sub mono">{mockURL(v.specId, v.name)}</span>
                 </span>
               </li>
             ))}
           </ol>
+          </>
         )}
       </div>
       {canPublish && current ? (

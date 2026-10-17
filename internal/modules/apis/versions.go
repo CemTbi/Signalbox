@@ -33,6 +33,10 @@ func (e *HasErrorsError) Error() string {
 	return fmt.Sprintf("apis: the revision has %d errors", e.Errors)
 }
 
+// LatestVersion names the newest published version wherever a version name
+// is expected, such as in a mock's URL. No version can be named latest.
+const LatestVersion = "latest"
+
 // Version is a published revision of a spec. Versions never change.
 type Version struct {
 	ID             uuid.UUID
@@ -152,6 +156,8 @@ func versionName(errs *validate.Errors, name string) string {
 		errs.Add("/name", "required", "Name the version, such as 1.4.0.")
 	case utf8.RuneCountInString(name) > maxVersionName:
 		errs.Add("/name", "maxLength", fmt.Sprintf("Use at most %d characters.", maxVersionName))
+	case strings.EqualFold(name, LatestVersion):
+		errs.Add("/name", "pattern", "latest always means the newest version, so it can't name one.")
 	case !versionNamePattern.MatchString(name):
 		errs.Add("/name", "pattern", "Use letters, digits, dots, hyphens, underscores and plus signs, starting with a letter or digit, such as 1.4.0.")
 	}
@@ -195,4 +201,29 @@ func (m *Module) GetVersion(ctx context.Context, userID, versionID uuid.UUID) (V
 		return Version{}, fmt.Errorf("get version: %w", err)
 	}
 	return v, nil
+}
+
+// MockSource returns the revision a published version of a spec publishes,
+// and its document, for serving the version's mock. name is a version name
+// or LatestVersion. Mocks are open to anyone who can reach the server, so
+// this checks no user; ErrNotFound means there's no such version.
+func (m *Module) MockSource(ctx context.Context, specID uuid.UUID, name string) (revisionID uuid.UUID, content string, err error) {
+	query := `
+		SELECT r.id, r.content FROM spec_versions v JOIN spec_revisions r ON r.id = v.revision_id
+		WHERE v.spec_id = $1 AND v.name = $2`
+	args := []any{specID, name}
+	if strings.EqualFold(name, LatestVersion) {
+		query = `
+			SELECT r.id, r.content FROM spec_versions v JOIN spec_revisions r ON r.id = v.revision_id
+			WHERE v.spec_id = $1 ORDER BY v.id DESC LIMIT 1`
+		args = []any{specID}
+	}
+	err = m.db.QueryRow(ctx, query, args...).Scan(&revisionID, &content)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, "", ErrNotFound
+	}
+	if err != nil {
+		return uuid.Nil, "", fmt.Errorf("find mock source: %w", err)
+	}
+	return revisionID, content, nil
 }

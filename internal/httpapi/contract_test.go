@@ -126,6 +126,7 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *har
 		t.Fatal(err)
 	}
 	ws := workspaces.New(pool, logger)
+	mods := apis.New(pool, logger, ws)
 	srv.Config.Handler = httpapi.NewHandler(httpapi.Deps{
 		Logger:     logger,
 		Health:     health.New("signalbox-server", "test"),
@@ -133,7 +134,8 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *har
 		Roles:      []roles.Name{roles.API},
 		Identity:   ids,
 		Workspaces: ws,
-		APIs:       apis.New(pool, logger, ws),
+		APIs:       mods,
+		Mocks:      mods,
 		PublicURL:  public,
 	})
 	srv.StartTLS()

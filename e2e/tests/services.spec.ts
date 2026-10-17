@@ -73,6 +73,15 @@ test("a service's spec is checked, edited, kept in revisions and published", asy
   await expect(page.getByText(/Revision 2 is published as/)).toBeVisible();
   await expectAccessible(page);
 
+  // A frontend calls the mock, without signing in, from another origin.
+  const mock = await page.getByLabel("Mock of the latest version").inputValue();
+  const answer = await request.get(`${mock}/orders/42`, { headers: { Origin: "http://localhost:3000" } });
+  expect(answer.status()).toBe(200);
+  expect(answer.headers()["access-control-allow-origin"]).toBe("*");
+  const missing = await request.get(`${mock}/refunds`);
+  expect(missing.status()).toBe(404);
+  expect(((await missing.json()) as { code: string }).code).toBe("no-such-path");
+
   // The service page lists the spec.
   await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Orders API" }).click();
   await expect(page.getByRole("link", { name: /Orders API/ })).toBeVisible();

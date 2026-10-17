@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api";
 import { ServiceForm, titleOf } from "./forms";
 import { SpecEditor } from "./SpecEditor";
-import { Versions } from "./Versions";
+import { mockURL, Versions } from "./Versions";
 
 describe("titleOf", () => {
   it("finds the title in YAML and JSON documents", () => {
@@ -134,6 +134,27 @@ describe("Versions", () => {
     render(<Versions {...props} versions={[version]} />);
     expect(screen.getByText(/is published as/)).toHaveTextContent("1.4.0");
     expect(screen.getByText("1.4.0", { selector: ".row-title .mono" })).toBeInTheDocument();
+  });
+
+  it("shows the mock addresses of published versions", () => {
+    const version = {
+      id: "ver_01j9z3v2x4z6b8d0f2h4k6m8p0",
+      specId: revision.specId,
+      name: "1.4.0",
+      revisionId: revision.id,
+      revisionNumber: 3,
+      publishedBy: revision.createdBy,
+      publishedAt: "2026-10-17T12:30:00Z",
+    };
+    render(<Versions {...props} versions={[version]} />);
+    expect(screen.getByLabelText("Mock of the latest version")).toHaveValue(mockURL(revision.specId, "latest"));
+    expect(screen.getByText(mockURL(revision.specId, "1.4.0"))).toBeInTheDocument();
+  });
+
+  it("builds mock addresses on this installation", () => {
+    expect(mockURL("spec_1", "1.0.0+build", "https://signalbox.example.com")).toBe(
+      "https://signalbox.example.com/mocks/spec_1/1.0.0%2Bbuild",
+    );
   });
 
   it("names a taken version at the field", () => {
