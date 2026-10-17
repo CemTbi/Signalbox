@@ -462,26 +462,27 @@ func expandedSize(proxy *base.SchemaProxy, limit int, sizes map[string]int, acti
 			n += expandedSize(p, limit-n, sizes, active)
 		}
 	}
-	if s.Properties != nil {
-		for _, p := range s.Properties.FromOldest() {
-			add(p)
+	// Every keyword that holds a schema; libopenapi expands references in
+	// all of them.
+	for _, m := range []*orderedmap.Map[string, *base.SchemaProxy]{s.Properties, s.PatternProperties, s.DependentSchemas} {
+		if m != nil {
+			for _, p := range m.FromOldest() {
+				add(p)
+			}
 		}
 	}
-	if s.Items != nil && s.Items.IsA() {
-		add(s.Items.A)
-	}
-	if s.AdditionalProperties != nil && s.AdditionalProperties.IsA() {
-		add(s.AdditionalProperties.A)
+	for _, d := range []*base.DynamicValue[*base.SchemaProxy, bool]{s.Items, s.AdditionalProperties, s.UnevaluatedProperties} {
+		if d != nil && d.IsA() {
+			add(d.A)
+		}
 	}
 	for _, list := range [][]*base.SchemaProxy{s.AllOf, s.OneOf, s.AnyOf, s.PrefixItems} {
 		for _, p := range list {
 			add(p)
 		}
 	}
-	if s.DependentSchemas != nil {
-		for _, p := range s.DependentSchemas.FromOldest() {
-			add(p)
-		}
+	for _, p := range []*base.SchemaProxy{s.Not, s.If, s.Then, s.Else, s.Contains, s.PropertyNames, s.UnevaluatedItems, s.ContentSchema} {
+		add(p)
 	}
 	// A count cut short at the limit is only good for this limit.
 	if ref != "" && n <= limit {

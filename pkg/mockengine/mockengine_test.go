@@ -267,6 +267,12 @@ func TestSwagger2IsRefused(t *testing.T) {
 // doubling is a document whose schema doubles at each level: each level
 // refers to the next twice. requestBody also sends it in requests.
 func doubling(levels int, requestBody bool) string {
+	return doublingThrough(levels, requestBody, "properties")
+}
+
+// doublingThrough is doubling with the references in one keyword:
+// "properties", or "if" (with "then").
+func doublingThrough(levels int, requestBody bool, keyword string) string {
 	var doc strings.Builder
 	doc.WriteString(`
 openapi: 3.1.1
@@ -296,6 +302,13 @@ components:
 		if i < levels-1 {
 			next = "{$ref: '#/components/schemas/L" + strconv.Itoa(i+1) + "'}"
 		}
+		if keyword == "if" {
+			fmt.Fprintf(&doc, `    L%d:
+      if: %s
+      then: %s
+`, i, next, next)
+			continue
+		}
 		fmt.Fprintf(&doc, `    L%d:
       type: object
       properties:
@@ -319,11 +332,13 @@ func TestSchemasTooLarge(t *testing.T) {
 			t.Fatal("still working after 10s")
 		}
 	}
-	within(func() {
-		if _, err := mockengine.New([]byte(doubling(30, true))); !errors.Is(err, mockengine.ErrTooLarge) {
-			t.Errorf("New = %v", err)
-		}
-	})
+	for _, keyword := range []string{"properties", "if"} {
+		within(func() {
+			if _, err := mockengine.New([]byte(doublingThrough(30, true, keyword))); !errors.Is(err, mockengine.ErrTooLarge) {
+				t.Errorf("New, through %s = %v", keyword, err)
+			}
+		})
+	}
 	// A document small enough to check requests against can still have a
 	// response too large to generate.
 	m, err := mockengine.New([]byte(doubling(16, false)))
