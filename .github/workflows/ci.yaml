@@ -21,6 +21,12 @@ jobs:
     name: Go
     runs-on: ubuntu-latest
     steps:
+      - name: Free disk space in the background
+        # Race-detector test binaries and the PostgreSQL and ClickHouse
+        # containers outgrew the runner's free space. These toolchains come
+        # with the runner image and Signalbox doesn't use them. Deleting them
+        # takes a minute or two, so it runs while the next steps do.
+        run: sudo nohup rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL > /dev/null 2>&1 &
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -33,12 +39,9 @@ jobs:
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.15.0
-      - name: Free disk space
-        # Race-detector test binaries and the PostgreSQL and ClickHouse
-        # containers outgrew the runner's free space. These toolchains come
-        # with the runner image and Signalbox doesn't use them.
+      - name: Wait for the disk space
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          while pgrep -x rm > /dev/null; do sleep 2; done
           df -h /
       - name: Test with the race detector
         # Database tests start PostgreSQL with Testcontainers. In CI they
@@ -95,11 +98,11 @@ jobs:
 
   image:
     name: Image, Compose stack and end-to-end tests
-    # The slowest job. Draft pull requests skip it to save Actions minutes;
-    # it runs once they are marked ready for review.
+    # The slowest job, so it runs alongside the others instead of after
+    # them. Draft pull requests skip it to save Actions minutes; it runs
+    # once they are marked ready for review.
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
-    needs: [go, web]
     env:
       BASE: http://localhost:8080
       SIGNALBOX_SETUP_CODE: CI-E2E-SETUP-CODE-0001
@@ -109,6 +112,28 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # The Dockerfile's go build and npm ci use BuildKit cache mounts, which
+      # the gha layer cache doesn't keep. Without them every build compiled
+      # the server from scratch, about 7 minutes. These steps keep the
+      # mounts in the Actions cache.
+      - name: Restore the image build's Go and npm caches
+        id: build-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            go-build-cache
+            npm-cache
+          key: image-build-${{ hashFiles('go.sum', 'web/package-lock.json') }}
+          restore-keys: image-build-
+      - name: Put the caches into BuildKit
+        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
+        with:
+          cache-map: |
+            {
+              "go-build-cache": "/root/.cache/go-build",
+              "npm-cache": "/root/.npm"
+            }
+          skip-extraction: ${{ steps.build-cache.outputs.cache-hit }}
       - name: Build the image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
