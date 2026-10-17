@@ -1122,3 +1122,20 @@ button.primary:disabled {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
+
+/* A mock's address and its copy button */
+.mock-address {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.copy-row {
+  display: flex;
+  gap: 8px;
+}
+
+.copy-row input {
+  flex: 1;
+  min-width: 0;
+}

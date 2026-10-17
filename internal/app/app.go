@@ -168,6 +168,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 		if n != roles.API {
 			continue
 		}
+		mods := apis.New(db, logger, s.workspaces)
 		handler := httpapi.NewHandler(httpapi.Deps{
 			Logger:         logger,
 			Health:         checker,
@@ -177,7 +178,8 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 			MaxSpecBytes:   cfg.MaxSpecBytes,
 			Identity:       ids,
 			Workspaces:     s.workspaces,
-			APIs:           apis.New(db, logger, s.workspaces),
+			APIs:           mods,
+			Mocks:          mods,
 			PublicURL:      publicURL,
 			TrustedProxies: trusted,
 		})

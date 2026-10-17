@@ -26,3 +26,4 @@ Write a new ADR by copying [template.md](template.md) to the next number. Propos
 | [0018](0018-live-canvas.md) | A live canvas of 200 services | Accepted |
 | [0019](0019-spec-revisions.md) | Services, specs and their revisions | Accepted |
 | [0020](0020-published-versions.md) | Published versions and the publish gate | Accepted |
+| [0021](0021-hosted-mocks.md) | Hosted mocks of published versions | Accepted |
