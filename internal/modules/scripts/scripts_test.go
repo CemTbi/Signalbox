@@ -349,15 +349,19 @@ func TestMemoryLimit(t *testing.T) {
 // A deadline that fires as a script ends must not fail the next script in
 // the session.
 func TestLateInterruptsDontLeak(t *testing.T) {
-	s := session(t, scripts.Options{Timeout: 3 * time.Millisecond})
+	// The session's own limit is generous; each edge script gets a 3 ms
+	// deadline from its context instead, so only the edge scripts race it.
+	s := session(t, scripts.Options{Timeout: 10 * time.Second})
 	for i := range 300 {
 		// Ends right around its deadline: either outcome is fine.
-		_, err := s.Run(context.Background(), scripts.Input{Event: "test", Info: scripts.Info{RequestName: "edge"},
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Millisecond)
+		_, err := s.Run(ctx, scripts.Input{Event: "test", Info: scripts.Info{RequestName: "edge"},
 			Source: "const t = Date.now(); while (Date.now() - t < 3) {}"})
+		cancel()
 		if err != nil && !errors.Is(err, scripts.ErrTimeout) {
 			t.Fatal(err)
 		}
-		// Finishes long before its own deadline, so it must pass.
+		// Has 10 seconds, so a timeout here can only be the edge script's.
 		res, err := s.Run(context.Background(), scripts.Input{Event: "test", Info: scripts.Info{RequestName: "quick"},
 			Source: "tests['quick'] = true;"})
 		if err != nil {

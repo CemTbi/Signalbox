@@ -86,6 +86,14 @@ func (r Role) allows(a action) bool {
 	return false
 }
 
+// CanEdit reports whether the role may change what's in a project, such as
+// its services and specs: owners, admins and editors.
+func (r Role) CanEdit() bool { return r.allows(updateProject) }
+
+// CanDelete reports whether the role may delete things from a project:
+// owners and admins.
+func (r Role) CanDelete() bool { return r.allows(deleteProject) }
+
 // Valid reports whether r is one of the four roles.
 func (r Role) Valid() bool {
 	switch r {
@@ -154,7 +162,8 @@ type Precondition struct {
 	Versions []int64
 }
 
-func (p Precondition) matches(version int64) bool {
+// Matches reports whether version satisfies the precondition.
+func (p Precondition) Matches(version int64) bool {
 	if len(p.Versions) == 0 {
 		return true
 	}

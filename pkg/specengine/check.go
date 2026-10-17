@@ -6,8 +6,11 @@ import "context"
 
 // Report is the combined result of parsing, validating and linting a document.
 type Report struct {
-	Format      Format       `json:"format,omitempty"`
-	Version     string       `json:"version,omitempty"`
+	Format  Format `json:"format,omitempty"`
+	Version string `json:"version,omitempty"`
+	// Info is the document's title and API version; nil when the document
+	// couldn't be read.
+	Info        *Info        `json:"info,omitempty"`
 	Diagnostics []Diagnostic `json:"diagnostics"`
 	Counts      Counts       `json:"counts"`
 }
@@ -29,7 +32,10 @@ func Check(ctx context.Context, data []byte, opts Options, sets ...RuleSet) (Rep
 	}
 	diags = append(diags, lint...)
 	SortDiagnostics(diags)
-	return newReport(doc.Format(), doc.Version(), dedupe(diags)), nil
+	report := newReport(doc.Format(), doc.Version(), dedupe(diags))
+	info := doc.Info()
+	report.Info = &info
+	return report, nil
 }
 
 func newReport(format Format, version string, diags []Diagnostic) Report {

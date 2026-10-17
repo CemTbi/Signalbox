@@ -37,6 +37,7 @@ type Options struct {
 type Document struct {
 	format   Format
 	version  string
+	info     Info
 	fileType string
 	raw      []byte
 	opts     Options
@@ -48,6 +49,18 @@ func (d *Document) Format() Format { return d.format }
 
 // Version returns the exact version the document declares, such as "3.1.0".
 func (d *Document) Version() string { return d.version }
+
+// Info returns the document's title and its own version, from its info
+// object.
+func (d *Document) Info() Info { return d.info }
+
+// Info is what a document says about the API it describes.
+type Info struct {
+	Title string `json:"title"`
+	// Version is the API's version, such as 1.4.0, not the version of
+	// OpenAPI the document is written in.
+	Version string `json:"version"`
+}
 
 // FileType returns "yaml" or "json".
 func (d *Document) FileType() string { return d.fileType }
@@ -77,6 +90,7 @@ func Parse(data []byte, opts Options) (*Document, []Diagnostic) {
 	return &Document{
 		format:   format,
 		version:  info.Version,
+		info:     Info{Title: infoField(info.RootNode, "title"), Version: infoField(info.RootNode, "version")},
 		fileType: info.SpecFileType,
 		raw:      data,
 		opts:     opts,

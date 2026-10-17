@@ -34,6 +34,12 @@ const (
 // of the wrong type and anything after the object are errors. When it
 // returns false it has already written the problem response.
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any, mediaTypes ...string) bool {
+	return decodeJSONUpTo(w, r, dst, maxJSONBody, mediaTypes...)
+}
+
+// decodeJSONUpTo is decodeJSON with another size limit, for bodies that
+// carry an OpenAPI document.
+func decodeJSONUpTo(w http.ResponseWriter, r *http.Request, dst any, limit int64, mediaTypes ...string) bool {
 	if len(mediaTypes) == 0 {
 		mediaTypes = []string{jsonMediaType}
 	}
@@ -42,10 +48,10 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any, mediaTypes ...s
 			"Send the request body as "+strings.Join(mediaTypes, " or ")+".")
 		return false
 	}
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody))
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
-		writeDecodeError(w, r, err)
+		writeDecodeError(w, r, err, limit)
 		return false
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
@@ -68,7 +74,7 @@ func hasMediaType(r *http.Request, allowed []string) bool {
 	return false
 }
 
-func writeDecodeError(w http.ResponseWriter, r *http.Request, err error) {
+func writeDecodeError(w http.ResponseWriter, r *http.Request, err error, limit int64) {
 	var (
 		tooLarge  *http.MaxBytesError
 		syntax    *json.SyntaxError
@@ -77,7 +83,7 @@ func writeDecodeError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.As(err, &tooLarge):
 		writeProblem(w, r, http.StatusRequestEntityTooLarge, "body-too-large",
-			fmt.Sprintf("The request body is larger than %d KiB.", maxJSONBody>>10))
+			fmt.Sprintf("The request body is larger than %d KiB.", limit>>10))
 	case errors.Is(err, io.EOF):
 		writeProblem(w, r, http.StatusBadRequest, "invalid-json", "Send a JSON object as the request body.")
 	case errors.Is(err, io.ErrUnexpectedEOF):

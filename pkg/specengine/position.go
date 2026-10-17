@@ -85,6 +85,30 @@ func syntaxMessage(msg string) string {
 
 // versionRange finds the openapi or swagger field so an unsupported version
 // can be pointed at.
+// infoField returns info.<name> from the document's root as a string, or
+// "" when it is missing or not a scalar.
+func infoField(root *yaml.Node, name string) string {
+	if root == nil || len(root.Content) == 0 {
+		return ""
+	}
+	m := root
+	if m.Kind == yaml.DocumentNode {
+		m = m.Content[0]
+	}
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value != "info" {
+			continue
+		}
+		info := m.Content[i+1]
+		for j := 0; j+1 < len(info.Content); j += 2 {
+			if v := info.Content[j+1]; info.Content[j].Value == name && v.Kind == yaml.ScalarNode {
+				return v.Value
+			}
+		}
+	}
+	return ""
+}
+
 func versionRange(root *yaml.Node) Range {
 	if root == nil || len(root.Content) == 0 {
 		return pointAt(0, 0)
