@@ -1,6 +1,6 @@
 # 0008. Dependency policy
 
-- Status: Accepted; amended by [ADR-0011](0011-public-domain-dependencies.md)
+- Status: Accepted; amended by [ADR-0011](0011-public-domain-dependencies.md) and [ADR-0015](0015-mit-no-attribution-dependencies.md)
 - Date: 2026-10-16
 - Deciders: project lead
 

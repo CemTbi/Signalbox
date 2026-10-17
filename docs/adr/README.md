@@ -13,10 +13,12 @@ Write a new ADR by copying [template.md](template.md) to the next number. Propos
 | [0005](0005-http-api-conventions.md) | HTTP API conventions | Accepted |
 | [0006](0006-frontend-architecture.md) | Frontend architecture | Accepted |
 | [0007](0007-license-and-dco.md) | Apache-2.0 license and DCO sign-off | Accepted |
-| [0008](0008-dependency-policy.md) | Dependency policy | Accepted; amended by 0011 |
+| [0008](0008-dependency-policy.md) | Dependency policy | Accepted; amended by 0011 and 0015 |
 | [0009](0009-database-conventions.md) | Database conventions | Accepted |
 | [0010](0010-first-run-setup.md) | First-run setup, the public URL and request origins | Accepted |
 | [0011](0011-public-domain-dependencies.md) | Public-domain dedications in shipped dependencies | Accepted |
 | [0012](0012-invitation-links.md) | Invitation links instead of email | Accepted |
 | [0013](0013-single-sign-on-accounts.md) | Single sign-on accounts through OpenID Connect | Accepted |
+| [0014](0014-span-storage.md) | Span storage in ClickHouse | Accepted |
+| [0015](0015-mit-no-attribution-dependencies.md) | MIT No Attribution in shipped dependencies | Accepted |
 | [0016](0016-runner-egress.md) | Where the runner may send requests | Accepted |

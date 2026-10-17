@@ -144,9 +144,11 @@ The security review before 1.0 is an external audit if a funding program for ope
 | Spec engine (spike 1): parse, validate and lint 2.0 to 3.2 with positions, 10,000 lines in 0.19 s | Done |
 | `signalbox lint` | Done |
 | `signalbox-server` api role, health endpoints, spec checks over HTTP | Done |
-| ADR-0001 to ADR-0013 | Done |
+| ADR-0001 to ADR-0016 | Done |
 | `api/openapi.yaml` v0 | Done |
-| Spikes 2 to 5: ClickHouse span schema, canvas with 200 live nodes, Sobek with Postman scripts, runner safe dialer | Not started |
+| Spike 2: ClickHouse span schema at 5,000 spans per second (ADR-0014) | Done |
+| Spike 5: the runner's safe dialer (ADR-0016) | Done |
+| Spikes 3 and 4: canvas with 200 live nodes, Sobek with Postman scripts | Not started |
 | Sign-in with local accounts, workspaces and projects backed by PostgreSQL | Done |
 | App shell, sign-in and setup pages, workspace and project pages, empty canvas | Done |
 | End-to-end journey in CI against the Compose stack, with accessibility checks | Done |

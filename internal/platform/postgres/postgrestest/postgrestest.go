@@ -31,9 +31,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 
+	"github.com/CemTbi/Signalbox/internal/platform/containertest"
 	"github.com/CemTbi/Signalbox/internal/platform/postgres"
 )
 
@@ -63,7 +63,7 @@ func NewWithURL(tb testing.TB) (*pgxpool.Pool, string) {
 	tb.Helper()
 	once.Do(start)
 	if skip != "" {
-		if os.Getenv("SIGNALBOX_REQUIRE_DATABASE_TESTS") != "" {
+		if os.Getenv(containertest.RequireEnv) != "" {
 			tb.Fatalf("database tests are required but can't run: %s", skip)
 		}
 		tb.Skip(skip)
@@ -100,11 +100,13 @@ func start() {
 
 	server = os.Getenv("SIGNALBOX_TEST_DATABASE_URL")
 	if server == "" {
-		if reason := dockerUnavailable(ctx); reason != "" {
+		if reason := containertest.DockerUnavailable(ctx); reason != "" {
 			skip = "no PostgreSQL for database tests: start Docker or set SIGNALBOX_TEST_DATABASE_URL (" + reason + ")"
 			return
 		}
-		ctr, err := runContainer(ctx)
+		ctr, err := containertest.Run(ctx, func(ctx context.Context) (*tcpostgres.PostgresContainer, error) {
+			return tcpostgres.Run(ctx, Image, tcpostgres.BasicWaitStrategies())
+		})
 		if err != nil {
 			failure = fmt.Errorf("start PostgreSQL with Testcontainers: %w", err)
 			return
@@ -116,49 +118,6 @@ func start() {
 		}
 	}
 	template, failure = migrateTemplate(ctx)
-}
-
-// runContainer starts PostgreSQL. The test binaries of one `go test` run
-// share Testcontainers' reaper container, and a binary can find it before
-// it is running; a short wait and another try fixes that.
-func runContainer(ctx context.Context) (*tcpostgres.PostgresContainer, error) {
-	var err error
-	for attempt := 1; attempt <= 4; attempt++ {
-		var ctr *tcpostgres.PostgresContainer
-		ctr, err = tcpostgres.Run(ctx, Image, tcpostgres.BasicWaitStrategies())
-		if err == nil {
-			return ctr, nil
-		}
-		if ctr != nil {
-			_ = testcontainers.TerminateContainer(ctr)
-		}
-		if !strings.Contains(err.Error(), "reaper") {
-			return nil, err
-		}
-		select {
-		case <-ctx.Done():
-			return nil, err
-		case <-time.After(time.Duration(attempt) * time.Second):
-		}
-	}
-	return nil, err
-}
-
-// dockerUnavailable returns why Testcontainers can't reach Docker, or "".
-func dockerUnavailable(ctx context.Context) (reason string) {
-	defer func() {
-		if p := recover(); p != nil {
-			reason = fmt.Sprint(p)
-		}
-	}()
-	provider, err := testcontainers.ProviderDocker.GetProvider()
-	if err != nil {
-		return err.Error()
-	}
-	if err := provider.Health(ctx); err != nil {
-		return err.Error()
-	}
-	return ""
 }
 
 // migrateTemplate creates the template database for the current set of
