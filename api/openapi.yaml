@@ -1915,6 +1915,65 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         default: {$ref: '#/components/responses/Error'}
 
+  /api/v1/versions/{versionId}/reference:
+    parameters:
+      - $ref: '#/components/parameters/VersionId'
+    get:
+      operationId: getReference
+      summary: Get a version's reference docs
+      description: |
+        Returns the reference that a published version's docs show: operations grouped by tag, with their parameters, bodies and responses, schemas with references resolved, and an example for every body. Descriptions are CommonMark, as the document wrote them.
+
+        A version never changes, so its reference doesn't either. The ETag is the version's revision, and `If-None-Match` with it gets `304`.
+      tags: [Specs]
+      parameters:
+        - name: If-None-Match
+          in: header
+          description: The ETag of a reference already loaded.
+          schema: {type: string, maxLength: 200, examples: ['"rev_01j9z3s7v9x1z3b5d7f9h1k3m5"']}
+      responses:
+        '200':
+          description: The reference.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            ETag: {$ref: '#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Reference'}
+              example:
+                title: Orders API
+                version: 1.4.0
+                servers: [{url: 'https://orders.example.com/v1'}]
+                groups:
+                  - name: orders
+                    operations:
+                      - id: getOrder
+                        operationId: getOrder
+                        method: GET
+                        path: '/orders/{id}'
+                        summary: Get an order
+                        parameters: [{name: id, in: path, required: true, schema: {types: [integer]}}]
+                        responses:
+                          - code: '200'
+                            description: The order.
+                            content: [{type: application/json, schema: {name: Order, types: [object]}, examples: [{value: '{"id": 42}'}]}]
+        '304':
+          description: The reference hasn't changed since the ETag in `If-None-Match`.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            ETag: {$ref: '#/components/headers/ETag'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '501':
+          description: The version is a Swagger 2.0 document, which reference docs don't support yet (`reference-unsupported`).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example: {type: about:blank, title: Not Implemented, status: 501, code: reference-unsupported, detail: This version is a Swagger 2.0 document. Reference docs need OpenAPI 3.0 or later.}
+        default: {$ref: '#/components/responses/Error'}
+
 components:
   securitySchemes:
     sessionCookie:
@@ -3201,3 +3260,253 @@ components:
           examples:
             - - {id: rev_01j9z3s7v9x1z3b5d7f9h1k3m5, specId: spec_01j9z3r4t6v8x0z2b4d6f8h0k2, number: 2, format: openapi-3.1, version: 3.1.1, sizeBytes: 18342, sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08, counts: {errors: 0, warnings: 3, infos: 0, hints: 1}, createdBy: usr_01j9z3kq4m8r2t6v0x5w7y9a1b, createdAt: '2026-10-16T12:00:00Z'}
         nextCursor: {$ref: '#/components/schemas/NextCursor'}
+    Reference:
+      type: object
+      description: An API's reference documentation, built from a published version.
+      required: [title, version, groups]
+      properties:
+        title: {type: string, description: The API's name, from `info.title`., examples: [Orders API]}
+        version: {type: string, description: The document's `info.version`., examples: [1.4.0]}
+        summary: {type: string, description: The document's `info.summary`., examples: [Orders and refunds.]}
+        description: {type: string, description: 'The document''s `info.description`, in CommonMark.', examples: ['Orders and **refunds**.']}
+        servers:
+          type: array
+          description: The API's base URLs.
+          items: {$ref: '#/components/schemas/ReferenceServer'}
+          examples: [[{url: 'https://orders.example.com/v1'}]]
+        groups:
+          type: array
+          description: Operations by tag, in the document's tag order. Operations without a tag come last, in a group with no name.
+          items: {$ref: '#/components/schemas/ReferenceGroup'}
+          examples: [[{name: orders, operations: []}]]
+        schemas:
+          type: array
+          description: The document's component schemas.
+          items: {$ref: '#/components/schemas/ReferenceNamedSchema'}
+          examples: [[{name: Order, schema: {types: [object]}}]]
+        securitySchemes:
+          type: array
+          description: The ways to authorize calls.
+          items: {$ref: '#/components/schemas/ReferenceSecurityScheme'}
+          examples: [[{name: bearer, type: http, scheme: bearer}]]
+    ReferenceServer:
+      type: object
+      description: A base URL, with its variables set to their defaults.
+      required: [url]
+      properties:
+        url: {type: string, description: The URL. It may be relative to the document., examples: ['https://orders.example.com/v1']}
+        description: {type: string, description: What the server is for., examples: [Production]}
+    ReferenceGroup:
+      type: object
+      description: A tag and its operations. An operation with several tags is in each of their groups.
+      required: [name, operations]
+      properties:
+        name: {type: string, description: 'The tag''s name; empty for operations without a tag.', examples: [orders]}
+        summary: {type: string, description: The tag's summary (OpenAPI 3.2)., examples: [Orders]}
+        description: {type: string, description: 'The tag''s description, in CommonMark.', examples: [Everything about orders.]}
+        parent: {type: string, description: The group this one is nested in (OpenAPI 3.2)., examples: [shop]}
+        operations:
+          type: array
+          description: The group's operations, in document order.
+          items: {$ref: '#/components/schemas/ReferenceOperation'}
+    ReferenceOperation:
+      type: object
+      description: One method on one path.
+      required: [id, method, path, responses]
+      properties:
+        id: {type: string, description: 'Identifies the operation within the reference: its operationId, or its method and path.', examples: [getOrder]}
+        operationId: {type: string, description: The document's operationId., examples: [getOrder]}
+        method: {type: string, description: 'The HTTP method, in capitals.', examples: [GET]}
+        path: {type: string, description: The path template., examples: ['/orders/{id}']}
+        summary: {type: string, description: The operation's summary., examples: [Get an order]}
+        description: {type: string, description: 'The operation''s description, in CommonMark.', examples: [Returns one order.]}
+        deprecated: {type: boolean, description: Whether the operation is deprecated., examples: [false]}
+        servers:
+          type: array
+          description: Base URLs that replace the document's for this operation.
+          items: {$ref: '#/components/schemas/ReferenceServer'}
+        parameters:
+          type: array
+          description: 'Path, query, header and cookie parameters, the path item''s first.'
+          items: {$ref: '#/components/schemas/ReferenceParameter'}
+        requestBody: {$ref: '#/components/schemas/ReferenceRequestBody'}
+        responses:
+          type: array
+          description: 'Responses by status code, lowest first, then ranges such as 4XX, then default.'
+          items: {$ref: '#/components/schemas/ReferenceResponse'}
+        security:
+          type: array
+          description: The ways to authorize a call; any one is enough. An empty way means calls may be anonymous. Absent when no authorization is needed.
+          items:
+            type: array
+            description: Security schemes that must all be used.
+            items: {$ref: '#/components/schemas/ReferenceSecurityUse'}
+    ReferenceParameter:
+      type: object
+      description: A parameter, or a response header.
+      required: [name, in]
+      properties:
+        name: {type: string, description: The parameter's name., examples: [id]}
+        in: {type: string, description: Where it goes., examples: [path], enum: [path, query, header, cookie, querystring]}
+        description: {type: string, description: 'The parameter''s description, in CommonMark.', examples: [The order's number.]}
+        required: {type: boolean, description: Whether it must be sent., examples: [true]}
+        deprecated: {type: boolean, description: Whether the parameter is deprecated., examples: [false]}
+        schema: {$ref: '#/components/schemas/ReferenceSchema'}
+        example: {type: [string, number, boolean, object, array, 'null'], description: An example of the parameter's value., examples: [42]}
+    ReferenceRequestBody:
+      type: object
+      description: What an operation accepts.
+      required: [content]
+      properties:
+        description: {type: string, description: 'The request body''s description, in CommonMark.', examples: [The order to create.]}
+        required: {type: boolean, description: Whether a body must be sent., examples: [true]}
+        content:
+          type: array
+          description: The request body in each media type it may have.
+          items: {$ref: '#/components/schemas/ReferenceMedia'}
+    ReferenceResponse:
+      type: object
+      description: The response for a status code.
+      required: [code]
+      properties:
+        code: {type: string, description: 'A status code, a range such as 4XX, or default.', examples: ['200']}
+        description: {type: string, description: 'The response''s description, in CommonMark.', examples: [The order.]}
+        headers:
+          type: array
+          description: Response headers. Content-Type is left out; the content describes it.
+          items: {$ref: '#/components/schemas/ReferenceParameter'}
+        content:
+          type: array
+          description: The response body in each media type it may have.
+          items: {$ref: '#/components/schemas/ReferenceMedia'}
+    ReferenceMedia:
+      type: object
+      description: A body in one media type.
+      required: [type]
+      properties:
+        type: {type: string, description: The media type., examples: [application/json]}
+        schema: {$ref: '#/components/schemas/ReferenceSchema'}
+        examples:
+          type: array
+          description: 'The document''s named examples, or one built from its example or schema, as the mock sends it.'
+          items: {$ref: '#/components/schemas/ReferenceExample'}
+    ReferenceExample:
+      type: object
+      description: 'An example body, as text in its media type.'
+      required: [value]
+      properties:
+        name: {type: string, description: 'The example''s name. `Prefer: example=name` asks the mock for it.', examples: [large]}
+        summary: {type: string, description: The example's summary., examples: [A large order]}
+        description: {type: string, description: 'The example''s description, in CommonMark.', examples: [More than 100 lines.]}
+        value: {type: string, description: The body., examples: ['{"id": 42}']}
+    ReferenceSchema:
+      type: object
+      description: |
+        A schema, with references to component schemas resolved in place; `name` says which component it is. A reference that would repeat one already being shown, or nest too deeply, isn't expanded: `ref` is true, and the component is in the reference's `schemas`.
+      properties:
+        name: {type: string, description: The component schema this is., examples: [Order]}
+        ref: {type: boolean, description: Whether this is only a link to the component `name`., examples: [false]}
+        types:
+          type: array
+          description: The JSON types it allows. A null type sets `nullable` instead.
+          items: {type: string, description: A JSON type., examples: [object]}
+        format: {type: string, description: 'The format, such as date-time.', examples: [date-time]}
+        title: {type: string, description: The title., examples: [Order]}
+        description: {type: string, description: 'The schema''s description, in CommonMark.', examples: [An order.]}
+        constraints:
+          type: array
+          description: 'Limits on the value, in short phrases.'
+          items: {type: string, description: A limit., examples: ['>= 1']}
+        enum:
+          type: array
+          description: The values it allows.
+          items: {type: [string, number, boolean, object, array, 'null'], description: An allowed value., examples: [paid]}
+        const: {type: [string, number, boolean, object, array, 'null'], description: The one value it allows., examples: [paid]}
+        default: {type: [string, number, boolean, object, array, 'null'], description: The value assumed when none is sent., examples: [open]}
+        example: {type: [string, number, boolean, object, array, 'null'], description: An example of the schema's value., examples: [open]}
+        nullable: {type: boolean, description: Whether null is allowed., examples: [false]}
+        readOnly: {type: boolean, description: Whether it appears only in responses., examples: [false]}
+        writeOnly: {type: boolean, description: Whether it appears only in requests., examples: [false]}
+        deprecated: {type: boolean, description: Whether the schema is deprecated., examples: [false]}
+        properties:
+          type: array
+          description: 'An object''s properties, in document order.'
+          items: {$ref: '#/components/schemas/ReferenceProperty'}
+        additionalProperties: {$ref: '#/components/schemas/ReferenceSchema'}
+        items: {$ref: '#/components/schemas/ReferenceSchema'}
+        allOf:
+          type: array
+          description: Schemas the value must match all of.
+          items: {$ref: '#/components/schemas/ReferenceSchema'}
+        oneOf:
+          type: array
+          description: Schemas the value must match exactly one of.
+          items: {$ref: '#/components/schemas/ReferenceSchema'}
+        anyOf:
+          type: array
+          description: Schemas the value must match at least one of.
+          items: {$ref: '#/components/schemas/ReferenceSchema'}
+        not: {$ref: '#/components/schemas/ReferenceSchema'}
+        discriminator: {type: string, description: The property that says which of oneOf or anyOf a value is., examples: [kind]}
+    ReferenceProperty:
+      type: object
+      description: A property of an object schema.
+      required: [name, schema]
+      properties:
+        name: {type: string, description: The property's name., examples: [status]}
+        required: {type: boolean, description: Whether it must be present., examples: [true]}
+        schema: {$ref: '#/components/schemas/ReferenceSchema'}
+    ReferenceNamedSchema:
+      type: object
+      description: A component schema.
+      required: [name, schema]
+      properties:
+        name: {type: string, description: The component's name., examples: [Order]}
+        schema: {$ref: '#/components/schemas/ReferenceSchema'}
+    ReferenceSecurityScheme:
+      type: object
+      description: A way to authorize calls.
+      required: [name, type]
+      properties:
+        name: {type: string, description: The scheme's name in the document., examples: [bearer]}
+        type: {type: string, description: 'The scheme type, such as http, apiKey, oauth2 or openIdConnect.', examples: [http]}
+        description: {type: string, description: 'The security scheme''s description, in CommonMark.', examples: [A token from the dashboard.]}
+        in: {type: string, description: Where an API key goes., examples: [header]}
+        parameterName: {type: string, description: 'The header, query parameter or cookie of an API key.', examples: [X-API-Key]}
+        scheme: {type: string, description: The HTTP authorization scheme., examples: [bearer]}
+        bearerFormat: {type: string, description: The format of a bearer token., examples: [JWT]}
+        openIdConnectUrl: {type: string, description: The OpenID Connect discovery URL., examples: ['https://id.example.com/.well-known/openid-configuration']}
+        flows:
+          type: array
+          description: OAuth 2 flows.
+          items: {$ref: '#/components/schemas/ReferenceFlow'}
+    ReferenceFlow:
+      type: object
+      description: An OAuth 2 flow.
+      required: [type]
+      properties:
+        type: {type: string, description: The flow., examples: [authorizationCode], enum: [authorizationCode, clientCredentials, implicit, password]}
+        authorizationUrl: {type: string, description: Where users authorize., examples: ['https://id.example.com/authorize']}
+        tokenUrl: {type: string, description: Where tokens are issued., examples: ['https://id.example.com/token']}
+        refreshUrl: {type: string, description: Where tokens are refreshed., examples: ['https://id.example.com/token']}
+        scopes:
+          type: array
+          description: The flow's scopes.
+          items: {$ref: '#/components/schemas/ReferenceScope'}
+    ReferenceScope:
+      type: object
+      description: An OAuth 2 scope.
+      required: [name]
+      properties:
+        name: {type: string, description: The scope., examples: ['orders:read']}
+        description: {type: string, description: What it allows., examples: [Read orders.]}
+    ReferenceSecurityUse:
+      type: object
+      description: 'A security scheme an operation uses, with the scopes it needs.'
+      required: [scheme]
+      properties:
+        scheme: {type: string, description: The security scheme's name., examples: [bearer]}
+        scopes:
+          type: array
+          description: The scopes needed.
+          items: {type: string, description: A scope., examples: ['orders:read']}

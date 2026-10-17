@@ -18,6 +18,8 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/ratelimit"
 	"github.com/CemTbi/Signalbox/internal/roles"
+	"github.com/CemTbi/Signalbox/pkg/mockengine"
+	"github.com/CemTbi/Signalbox/pkg/refdocs"
 )
 
 // DefaultMaxSpecBytes bounds the size of a document sent for checking.
@@ -100,7 +102,8 @@ type api struct {
 	invitationsByIP *ratelimit.Limiter
 	ssoByIP         *ratelimit.Limiter
 	mocksByIP       *ratelimit.Limiter
-	mockCache       *mockCache
+	mockCache       *revisionCache[*mockengine.Mock]
+	referenceCache  *revisionCache[*refdocs.Reference]
 }
 
 // NewHandler returns the api role's HTTP handler.
@@ -123,7 +126,8 @@ func NewHandler(d Deps) http.Handler {
 		invitationsByIP: ratelimit.New(20, 3*time.Second),        // 20 at once, then 20 a minute
 		ssoByIP:         ratelimit.New(20, 3*time.Second),        // 20 at once, then 20 a minute
 		mocksByIP:       ratelimit.New(300, 10*time.Millisecond), // 300 at once, then 100 a second
-		mockCache:       newMockCache(64),
+		mockCache:       newRevisionCache(64, func(c string) (*mockengine.Mock, error) { return mockengine.New([]byte(c)) }),
+		referenceCache:  newRevisionCache(64, func(c string) (*refdocs.Reference, error) { return refdocs.Build([]byte(c)) }),
 	}
 
 	mux := http.NewServeMux()
@@ -207,6 +211,7 @@ func NewHandler(d Deps) http.Handler {
 		http.MethodPost: a.authenticated(a.publishVersion),
 	})
 	mux.Handle("/api/v1/versions/{versionId}", methods{http.MethodGet: a.authenticated(a.getVersion)})
+	mux.Handle("/api/v1/versions/{versionId}/reference", methods{http.MethodGet: a.authenticated(a.getReference)})
 	mux.Handle("/api/v1/revisions/{revisionId}", methods{http.MethodGet: a.authenticated(a.getRevision)})
 	mux.Handle("/api/v1/revisions/{revisionId}/content", methods{http.MethodGet: a.authenticated(a.getRevisionContent)})
 	mux.Handle("/api/v1/revisions/{revisionId}/report", methods{http.MethodGet: a.authenticated(a.getRevisionReport)})

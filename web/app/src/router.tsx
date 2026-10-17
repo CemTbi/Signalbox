@@ -7,6 +7,7 @@ import {
   createRoute,
   createRouter,
   type ErrorComponentProps,
+  lazyRouteComponent,
   Link,
   Outlet,
   redirect,
@@ -146,6 +147,15 @@ const specRoute = createRoute({
   component: SpecPage,
 });
 
+const docsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/specs/$specId/docs",
+  validateSearch: (search: Record<string, unknown>): { version?: string } =>
+    typeof search.version === "string" && search.version !== "" ? { version: search.version } : {},
+  // Docs bring a Markdown renderer that other pages don't need.
+  component: lazyRouteComponent(() => import("./features/docs/DocsPage"), "DocsPage"),
+});
+
 const specCheckRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/spec-check",
@@ -170,6 +180,7 @@ const routeTree = rootRoute.addChildren([
     projectRoute,
     serviceRoute,
     specRoute,
+    docsRoute,
     specCheckRoute,
   ]),
 ]);

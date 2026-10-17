@@ -33,6 +33,14 @@ export type Service = Schemas["Service"];
 export type Spec = Schemas["Spec"];
 export type Revision = Schemas["Revision"];
 export type Version = Schemas["Version"];
+export type Reference = Schemas["Reference"];
+export type ReferenceGroup = Schemas["ReferenceGroup"];
+export type ReferenceOperation = Schemas["ReferenceOperation"];
+export type ReferenceParameter = Schemas["ReferenceParameter"];
+export type ReferenceMedia = Schemas["ReferenceMedia"];
+export type ReferenceResponse = Schemas["ReferenceResponse"];
+export type ReferenceSchema = Schemas["ReferenceSchema"];
+export type ReferenceSecurityScheme = Schemas["ReferenceSecurityScheme"];
 
 export type ApiClient = ReturnType<typeof createClient<paths>>;
 

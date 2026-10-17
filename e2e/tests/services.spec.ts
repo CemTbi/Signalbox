@@ -3,7 +3,8 @@
 import { expect, expectAccessible, openAsAdmin, runID, test } from "./support";
 
 // A service and its OpenAPI spec: add the service to a project, add the
-// spec, see its problems, fix one, save a new revision and publish it.
+// spec, see its problems, fix one, save a new revision, publish it, and
+// read its docs.
 
 const ordersSpec = [
   "openapi: 3.1.1",
@@ -81,6 +82,20 @@ test("a service's spec is checked, edited, kept in revisions and published", asy
   const missing = await request.get(`${mock}/refunds`);
   expect(missing.status()).toBe(404);
   expect(((await missing.json()) as { code: string }).code).toBe("no-such-path");
+
+  // The docs show the published version, and try it against the mock.
+  await versions.getByRole("link", { name: "Read the docs" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Orders API" })).toBeVisible();
+  await expect(page.getByLabel("Version", { exact: true })).toHaveValue("1.0.1");
+  const operation = page.getByRole("region", { name: "GET /orders/{id}" });
+  await expect(operation.getByText("The order.").first()).toBeVisible();
+  await operation.getByRole("button", { name: "Try it against the mock" }).click();
+  await operation.getByLabel(/^id/).fill("42");
+  await operation.getByRole("button", { name: "Send" }).click();
+  await expect(operation.getByText(/ms$/)).toContainText("200");
+  await expectAccessible(page);
+  await page.goBack();
+  await expect(page.getByText(/Revision 2 is published as/)).toBeVisible();
 
   // The service page lists the spec.
   await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Orders API" }).click();
