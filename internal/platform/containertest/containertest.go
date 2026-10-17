@@ -7,7 +7,6 @@ package containertest
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/testcontainers/testcontainers-go"
@@ -34,9 +33,12 @@ func DockerUnavailable(ctx context.Context) (reason string) {
 	return ""
 }
 
-// Run starts a container with run. The test binaries of one `go test` run
-// share Testcontainers' reaper container, and a binary can find it before it
-// is running; a short wait and another try fixes that.
+// Run starts a container with run, and tries again when that fails.
+// Starting fails now and then for reasons that don't last: the test
+// binaries of one `go test` run share Testcontainers' reaper container,
+// which one binary can find before it runs, and Docker Desktop on Windows
+// sometimes can't bind the random port it picked. A short wait fixes both,
+// and a container that can't start at all fails after four tries.
 func Run[C testcontainers.Container](ctx context.Context, run func(context.Context) (C, error)) (C, error) {
 	var (
 		ctr C
@@ -48,9 +50,6 @@ func Run[C testcontainers.Container](ctx context.Context, run func(context.Conte
 			return ctr, nil
 		}
 		_ = testcontainers.TerminateContainer(ctr) // a no-op for a nil container
-		if !strings.Contains(err.Error(), "reaper") {
-			return ctr, err
-		}
 		select {
 		case <-ctx.Done():
 			return ctr, err
