@@ -77,6 +77,14 @@ jobs:
       - run: npm run build
       - name: Check dependency licenses (ADR-0008)
         run: npm run licenses
+      - name: Check that the script sandbox bundle matches its sources
+        # internal/modules/scripts embeds sandbox.js; this rebuilds it, which
+        # also checks the licenses of what it bundles.
+        working-directory: internal/modules/scripts/sandbox
+        run: |
+          npm ci
+          npm run build
+          git diff --exit-code -- sandbox.js THIRD_PARTY_LICENSES.txt
 
   image:
     name: Image, Compose stack and end-to-end tests

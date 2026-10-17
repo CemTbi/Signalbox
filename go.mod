@@ -8,6 +8,7 @@ require (
 	github.com/daveshanley/vacuum v0.33.1
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/google/uuid v1.6.0
+	github.com/grafana/sobek v0.0.0-20260908083152-4698bc773ae7
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/pb33f/go-yaml v0.1.1
 	github.com/pb33f/libopenapi v0.41.6
@@ -58,7 +59,7 @@ require (
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/dlclark/regexp2 v1.12.0 // indirect
-	github.com/dlclark/regexp2/v2 v2.2.1 // indirect
+	github.com/dlclark/regexp2/v2 v2.7.2 // indirect
 	github.com/docker/go-connections v0.8.2 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dop251/goja v0.0.0-20260701091749-b07b74453ea9 // indirect
