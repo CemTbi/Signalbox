@@ -1,0 +1,38 @@
+# A Dex identity provider for the end-to-end tests: one OAuth client for
+# Signalbox and two people, with no consent screen. Not for production.
+#
+# Browsers reach Dex as http://dex:5556 too; the tests map the name dex to
+# 127.0.0.1, so the issuer is the same for the browser and for the server.
+
+issuer: http://dex:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+oauth2:
+  skipApprovalScreen: true
+
+staticClients:
+  - id: signalbox
+    name: Signalbox
+    secret: e2e-client-secret
+    redirectURIs:
+      - http://localhost:8080/api/v1/sso/callback
+
+enablePasswordDB: true
+
+# Both passwords are "correct horse battery staple".
+staticPasswords:
+  - email: lin@example.com
+    hash: "$2a$10$RRix2S8kxD5Fmt//CskL5ORspklCEYkaHxH0NQAZYJXzK0L5d3nO2"
+    username: Lin Okafor
+    userID: 0b7c4a2e-5d9f-4e61-9c3a-8f2d1e6b7a90
+  # The admin account the tests create has this email address too. Signalbox
+  # must not treat this person as that account.
+  - email: ada@example.com
+    hash: "$2a$10$RRix2S8kxD5Fmt//CskL5ORspklCEYkaHxH0NQAZYJXzK0L5d3nO2"
+    username: Ada Lovelace
+    userID: 5f1d3c9a-7e2b-4a68-b0c4-2d9e8f6a1b37

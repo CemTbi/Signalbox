@@ -2,14 +2,17 @@
 
 import { defineConfig, devices } from "@playwright/test";
 
-// The tests drive a running installation, such as the Compose stack:
+// The tests drive a running installation, such as the Compose stack with the
+// Dex identity provider for the single sign-on tests:
 //
-//   SIGNALBOX_SETUP_CODE=E2E-SETUP-CODE-0001 docker compose -f deploy/compose/compose.yaml up -d --wait
+//   export COMPOSE_FILE=deploy/compose/compose.yaml:deploy/compose/compose.e2e.yaml
+//   SIGNALBOX_SETUP_CODE=E2E-SETUP-CODE-0001 docker compose up -d --wait
 //   SIGNALBOX_E2E_SETUP_CODE=E2E-SETUP-CODE-0001 npm --prefix e2e test
 //
-// Against a new installation they complete first-run setup; against one that
-// is already set up they sign in with SIGNALBOX_E2E_EMAIL and
-// SIGNALBOX_E2E_PASSWORD.
+// (On Windows, separate the files in COMPOSE_FILE with ";".) Against a new
+// installation they complete first-run setup; against one that is already
+// set up they sign in with SIGNALBOX_E2E_EMAIL and SIGNALBOX_E2E_PASSWORD.
+// Without Dex, the single sign-on tests are skipped.
 
 export default defineConfig({
   testDir: "tests",
@@ -25,5 +28,15 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        // The server reaches Dex as dex:5556 on the Compose network, and the
+        // browser must use the same address, the issuer's.
+        launchOptions: { args: ["--host-resolver-rules=MAP dex 127.0.0.1"] },
+      },
+    },
+  ],
 });

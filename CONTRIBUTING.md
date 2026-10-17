@@ -80,21 +80,21 @@ A change is done when:
 | `make test` | Every Go test with the race detector, including performance budgets |
 | `make test-short` | Go tests without the slower performance budgets |
 | `make web-check` | Web app lint, type check and unit tests |
-| `npm --prefix e2e test` | The end-to-end journey in Chromium, against a running installation |
+| `npm --prefix e2e test` | The end-to-end tests in Chromium, against a running installation |
 
 Tests that need PostgreSQL start it with Testcontainers and skip themselves when Docker isn't available; CI sets `SIGNALBOX_REQUIRE_DATABASE_TESTS` so they can't skip there. To use an existing server instead, set `SIGNALBOX_TEST_DATABASE_URL`.
 
 The API tests check every request and response against `api/openapi.yaml`, so a handler that drifts from the contract fails them.
 
-The end-to-end tests expect a new installation started with a known setup code:
+The end-to-end tests expect a new installation started with a known setup code. `compose.e2e.yaml` adds Dex, an OpenID Connect provider, for the single sign-on tests:
 
 ```sh
-SIGNALBOX_SETUP_CODE=E2E-SETUP-CODE-0001 docker compose -f deploy/compose/compose.yaml up -d --build --wait
+SIGNALBOX_SETUP_CODE=E2E-SETUP-CODE-0001 docker compose -f deploy/compose/compose.yaml -f deploy/compose/compose.e2e.yaml up -d --build --wait
 npm --prefix e2e ci && npx --prefix e2e playwright install chromium
 SIGNALBOX_E2E_SETUP_CODE=E2E-SETUP-CODE-0001 npm --prefix e2e test
 ```
 
-They also run axe-core on every page and fail on WCAG 2.2 AA violations.
+They also run axe-core on every page and fail on WCAG 2.2 AA violations. Without Dex, the single sign-on tests are skipped.
 
 ## Releases
 
