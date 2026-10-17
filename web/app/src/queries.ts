@@ -2,7 +2,7 @@
 
 import type { ApiClient } from "@signalbox/api-client";
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
-import { unwrap } from "./api";
+import { unwrap, unwrapTagged } from "./api";
 
 const PAGE_SIZE = 50;
 
@@ -81,5 +81,104 @@ export function projectQuery(client: ApiClient, projectId: string) {
   return queryOptions({
     queryKey: ["projects", projectId],
     queryFn: () => unwrap(client.GET("/api/v1/projects/{projectId}", { params: { path: { projectId } } })),
+  });
+}
+
+export const servicesKey = (projectId: string) => ["projects", projectId, "services"] as const;
+
+/** A project's services, oldest first, a page at a time. */
+export function servicesQuery(client: ApiClient, projectId: string) {
+  return infiniteQueryOptions({
+    queryKey: servicesKey(projectId),
+    queryFn: ({ pageParam }) =>
+      unwrap(
+        client.GET("/api/v1/projects/{projectId}/services", {
+          params: { path: { projectId }, query: { limit: 200, cursor: pageParam } },
+        }),
+      ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor,
+  });
+}
+
+export function serviceQuery(client: ApiClient, serviceId: string) {
+  return queryOptions({
+    queryKey: ["services", serviceId],
+    queryFn: () => unwrap(client.GET("/api/v1/services/{serviceId}", { params: { path: { serviceId } } })),
+  });
+}
+
+export const specsKey = (serviceId: string) => ["services", serviceId, "specs"] as const;
+
+/** A service's specs, oldest first. */
+export function specsQuery(client: ApiClient, serviceId: string) {
+  return infiniteQueryOptions({
+    queryKey: specsKey(serviceId),
+    queryFn: ({ pageParam }) =>
+      unwrap(
+        client.GET("/api/v1/services/{serviceId}/specs", {
+          params: { path: { serviceId }, query: { limit: 200, cursor: pageParam } },
+        }),
+      ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor,
+  });
+}
+
+/** A spec with its ETag, which a save must send back. */
+export function specQuery(client: ApiClient, specId: string) {
+  return queryOptions({
+    queryKey: ["specs", specId],
+    queryFn: () => unwrapTagged(client.GET("/api/v1/specs/{specId}", { params: { path: { specId } } })),
+  });
+}
+
+export const revisionsKey = (specId: string) => ["specs", specId, "revisions"] as const;
+
+/** A spec's revisions, newest first, a page at a time. */
+export function revisionsQuery(client: ApiClient, specId: string) {
+  return infiniteQueryOptions({
+    queryKey: revisionsKey(specId),
+    queryFn: ({ pageParam }) =>
+      unwrap(
+        client.GET("/api/v1/specs/{specId}/revisions", {
+          params: { path: { specId }, query: { limit: PAGE_SIZE, cursor: pageParam } },
+        }),
+      ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor,
+  });
+}
+
+/** A revision's details. Revisions never change, so they never go stale. */
+export function revisionQuery(client: ApiClient, revisionId: string) {
+  return queryOptions({
+    queryKey: ["revisions", revisionId],
+    queryFn: () => unwrap(client.GET("/api/v1/revisions/{revisionId}", { params: { path: { revisionId } } })),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+/** A revision's document, as text. */
+export function revisionContentQuery(client: ApiClient, revisionId: string) {
+  return queryOptions({
+    queryKey: ["revisions", revisionId, "content"],
+    queryFn: () =>
+      unwrap(
+        client.GET("/api/v1/revisions/{revisionId}/content", {
+          params: { path: { revisionId } },
+          parseAs: "text",
+        }),
+      ) as Promise<string>,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+/** The check report saved with a revision. */
+export function revisionReportQuery(client: ApiClient, revisionId: string) {
+  return queryOptions({
+    queryKey: ["revisions", revisionId, "report"],
+    queryFn: () => unwrap(client.GET("/api/v1/revisions/{revisionId}/report", { params: { path: { revisionId } } })),
+    staleTime: Number.POSITIVE_INFINITY,
   });
 }

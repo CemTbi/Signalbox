@@ -97,6 +97,18 @@ export async function unwrap<T>(call: Promise<{ data?: T; error?: unknown; respo
   throw new ApiError(response.status, problem);
 }
 
+/**
+ * Like unwrap, and also returns the response's ETag, which a later change
+ * must send back in If-Match.
+ */
+export async function unwrapTagged<T>(
+  call: Promise<{ data?: T; error?: unknown; response: Response }>,
+): Promise<{ data: T; etag: string }> {
+  const { response } = await call;
+  const data = await unwrap(call);
+  return { data, etag: response.headers.get("ETag") ?? "" };
+}
+
 /** A sentence that explains an error to a person. */
 export function describeError(error: unknown): string {
   if (error instanceof ApiError) {

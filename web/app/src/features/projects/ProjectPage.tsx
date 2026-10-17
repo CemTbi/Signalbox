@@ -6,6 +6,7 @@ import { lazy, Suspense } from "react";
 import { api, describeError } from "../../api";
 import { LoadError, Loading, PageHeader } from "../../components/Page";
 import { projectQuery, workspaceQuery } from "../../queries";
+import { ServicesSection } from "../services/ServicesSection";
 
 // The canvas library is large, so it loads only when a canvas is shown.
 const Canvas = lazy(() => import("./Canvas"));
@@ -44,6 +45,7 @@ export function ProjectPage() {
           <Canvas />
         </Suspense>
       </section>
+      <ServicesSection projectId={p.id} canEdit={workspace.data !== undefined && workspace.data.role !== "viewer"} />
     </div>
   );
 }
