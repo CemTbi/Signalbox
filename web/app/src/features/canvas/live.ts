@@ -2,6 +2,9 @@
 
 import type { ServiceData } from "./model";
 
+/** A line's live value: calls per second, undefined without traffic. */
+export type LiveEdge = { rps: number | undefined };
+
 /** The values of a node that change while the canvas is open. */
 export type LiveNode = Pick<ServiceData, "health" | "p95Ms" | "errorRate" | "rps">;
 
@@ -13,7 +16,8 @@ export type LiveNode = Pick<ServiceData, "health" | "p95Ms" | "errorRate" | "rps
  */
 export class LiveMetrics {
   private nodes = new Map<string, LiveNode>();
-  private edges = new Map<string, number | undefined>();
+  // Entries are replaced, never changed, so a subscriber can compare them.
+  private edges = new Map<string, LiveEdge>();
   private listeners = new Map<string, Set<() => void>>();
   private held = new Set<string>();
   private holding = false;
@@ -28,9 +32,10 @@ export class LiveMetrics {
         changed.push(`n:${id}`);
       }
     }
-    for (const [id, v] of edges) {
-      if (this.edges.get(id) !== v) {
-        this.edges.set(id, v);
+    for (const [id, rps] of edges) {
+      const old = this.edges.get(id);
+      if (!old || old.rps !== rps) {
+        this.edges.set(id, { rps });
         changed.push(`e:${id}`);
       }
     }
@@ -60,7 +65,8 @@ export class LiveMetrics {
     return this.nodes.get(id);
   }
 
-  edge(id: string) {
+  /** The line's live value, or undefined if no metrics came for it. */
+  edge(id: string): LiveEdge | undefined {
     return this.edges.get(id);
   }
 

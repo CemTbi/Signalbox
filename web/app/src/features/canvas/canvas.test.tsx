@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { ReactFlowProvider } from "@xyflow/react";
+import { Position, ReactFlowProvider } from "@xyflow/react";
+import { CallEdge } from "./CallEdge";
 import { act, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { demoShop, nextMetrics, rng } from "./demo";
@@ -57,7 +58,7 @@ describe("LiveMetrics", () => {
     expect(a).not.toHaveBeenCalled();
     live.hold(false);
     expect(a).toHaveBeenCalledTimes(1);
-    expect(live.edge("a-b")).toBe(6);
+    expect(live.edge("a-b")?.rps).toBe(6);
   });
 
   it("stops notifying after unsubscribe", () => {
@@ -67,6 +68,40 @@ describe("LiveMetrics", () => {
     off();
     live.update(new Map([["a", ok]]), new Map());
     expect(a).not.toHaveBeenCalled();
+  });
+});
+
+describe("CallEdge", () => {
+  const edgeProps = {
+    id: "a-b",
+    source: "a",
+    target: "b",
+    sourceX: 0,
+    sourceY: 0,
+    targetX: 200,
+    targetY: 0,
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
+    data: { rps: 42 },
+  };
+
+  it("drops the rate when live metrics say there is no traffic", () => {
+    const live = new LiveMetrics();
+    const { container } = render(
+      <ReactFlowProvider>
+        <LiveMetricsContext.Provider value={live}>
+          <svg>
+            <CallEdge {...edgeProps} />
+          </svg>
+        </LiveMetricsContext.Provider>
+      </ReactFlowProvider>,
+    );
+    // Before live metrics, the line shows the rate it came with.
+    expect(container.querySelector(".call-label text")?.textContent).toBe("42/s");
+    act(() => live.update(new Map(), new Map([["a-b", 7]])));
+    expect(container.querySelector(".call-label text")?.textContent).toBe("7/s");
+    act(() => live.update(new Map(), new Map([["a-b", undefined]])));
+    expect(container.querySelector(".call-label")).toBeNull();
   });
 });
 

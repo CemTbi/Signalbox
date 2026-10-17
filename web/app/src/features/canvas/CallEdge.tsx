@@ -12,7 +12,9 @@ import type { CallEdge as CallEdgeType } from "./model";
  */
 export const CallEdge = memo(function CallEdge(props: EdgeProps<CallEdgeType>) {
   const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd } = props;
-  const rps = useLiveEdge(id) ?? data?.rps;
+  // A live entry wins even when it says there's no traffic now.
+  const live = useLiveEdge(id);
+  const rps = live ? live.rps : data?.rps;
   const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
   const label = data?.declared ? "declared" : rps !== undefined ? `${rps}/s` : undefined;
   // The label is plain SVG text on a pill sized from its length. React
