@@ -32,6 +32,7 @@ export type InvitationDetails = Schemas["InvitationDetails"];
 export type Service = Schemas["Service"];
 export type Spec = Schemas["Spec"];
 export type Revision = Schemas["Revision"];
+export type Version = Schemas["Version"];
 
 export type ApiClient = ReturnType<typeof createClient<paths>>;
 

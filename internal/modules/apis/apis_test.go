@@ -326,3 +326,115 @@ paths:
     get:
       responses: {}
 `
+
+// ordersWithErrors has a reference that doesn't resolve, an error.
+const ordersWithErrors = `openapi: 3.1.1
+info:
+  title: Orders API
+  version: 1.3.0
+paths:
+  /orders:
+    get:
+      operationId: listOrders
+      responses:
+        '200':
+          $ref: '#/components/responses/Missing'
+`
+
+func TestPublishingVersions(t *testing.T) {
+	f := setup(t)
+	s := f.service(t, "orders")
+	spec, first, err := f.mod.CreateSpec(f.ctx, f.owner, s.ID, "Orders API", ordersV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The current revision, named after the document's own version.
+	v1, err := f.mod.PublishVersion(f.ctx, f.owner, spec.ID, apis.VersionInput{Notes: "  First release "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v1.Name != "1.0.0" || v1.RevisionID != first.ID || v1.RevisionNumber != 1 || v1.Notes != "First release" || v1.PublishedBy != f.owner {
+		t.Errorf("v1 = %+v", v1)
+	}
+	if _, err := f.mod.PublishVersion(f.ctx, f.owner, spec.ID, apis.VersionInput{}); !errors.Is(err, apis.ErrVersionExists) {
+		t.Errorf("publishing 1.0.0 again: %v", err)
+	}
+
+	// A revision with errors can't be published; one with only warnings can.
+	spec2, broken, err := f.mod.CreateRevision(f.ctx, f.owner, spec.ID, pre(spec.Version), ordersWithErrors, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hasErrors *apis.HasErrorsError
+	if _, err := f.mod.PublishVersion(f.ctx, f.owner, spec.ID, apis.VersionInput{}); !errors.As(err, &hasErrors) || hasErrors.Errors != broken.Counts.Errors {
+		t.Errorf("publishing a revision with %d errors: %v", broken.Counts.Errors, err)
+	}
+	_, warned, err := f.mod.CreateRevision(f.ctx, f.owner, spec.ID, pre(spec2.Version), ordersWarningsOnly, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if warned.Counts.Errors != 0 || warned.Counts.Warnings == 0 {
+		t.Fatalf("expected warnings only: %+v", warned.Counts)
+	}
+	v2, err := f.mod.PublishVersion(f.ctx, f.owner, spec.ID, apis.VersionInput{Name: "1.2.0-beta.1"})
+	if err != nil || v2.RevisionNumber != 3 {
+		t.Fatalf("v2 = %+v, %v", v2, err)
+	}
+
+	// An older revision by ID.
+	old, err := f.mod.PublishVersion(f.ctx, f.owner, spec.ID, apis.VersionInput{RevisionID: first.ID, Name: "1.0.0+hotfix"})
+	if err != nil || old.RevisionNumber != 1 {
+		t.Errorf("publishing revision 1 again: %+v, %v", old, err)
+	}
+	var verrs validate.Errors
+	for _, bad := range []string{"-1", "1.0 beta", strings.Repeat("9", 65)} {
+		if _, err := f.mod.PublishVersion(f.ctx, f.owner, spec.ID, apis.VersionInput{Name: bad}); !errors.As(err, &verrs) {
+			t.Errorf("name %q: %v", bad, err)
+		}
+	}
+	// A revision of another spec isn't this spec's.
+	other, otherRev, err := f.mod.CreateSpec(f.ctx, f.owner, s.ID, "Other", ordersV1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.mod.PublishVersion(f.ctx, f.owner, spec.ID, apis.VersionInput{RevisionID: otherRev.ID, Name: "x"}); !errors.Is(err, apis.ErrNotFound) {
+		t.Errorf("another spec's revision: %v", err)
+	}
+	_ = other
+
+	// Newest first, in pages.
+	p1, err := f.mod.ListVersions(f.ctx, f.owner, spec.ID, workspaces.PageRequest{Limit: 2})
+	if err != nil || len(p1.Items) != 2 || !p1.More || p1.Items[0].Name != "1.0.0+hotfix" || p1.Items[1].Name != "1.2.0-beta.1" {
+		t.Fatalf("first page = %+v, %v", p1, err)
+	}
+	p2, err := f.mod.ListVersions(f.ctx, f.owner, spec.ID, workspaces.PageRequest{Limit: 2, After: p1.Items[1].ID})
+	if err != nil || len(p2.Items) != 1 || p2.Items[0].Name != "1.0.0" {
+		t.Errorf("second page = %+v, %v", p2, err)
+	}
+	if got, err := f.mod.GetVersion(f.ctx, f.owner, v1.ID); err != nil || got.Name != "1.0.0" {
+		t.Errorf("get v1 = %+v, %v", got, err)
+	}
+
+	// Viewers read but can't publish.
+	viewer := f.member(t, "linus", workspaces.Viewer)
+	if _, err := f.mod.PublishVersion(f.ctx, viewer, spec.ID, apis.VersionInput{Name: "9"}); !errors.Is(err, apis.ErrForbidden) {
+		t.Errorf("a viewer publishes: %v", err)
+	}
+	if _, err := f.mod.GetVersion(f.ctx, viewer, v1.ID); err != nil {
+		t.Errorf("a viewer can't read a version: %v", err)
+	}
+}
+
+// ordersWarningsOnly breaks style rules but has no errors.
+const ordersWarningsOnly = `openapi: 3.1.1
+info:
+  title: Orders API
+  version: 1.2.0
+paths:
+  /orders:
+    get:
+      responses:
+        '200':
+          description: The orders.
+`

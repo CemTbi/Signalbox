@@ -1802,6 +1802,119 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         default: {$ref: '#/components/responses/Error'}
 
+  /api/v1/specs/{specId}/versions:
+    parameters:
+      - $ref: '#/components/parameters/SpecId'
+    get:
+      operationId: listVersions
+      summary: List a spec's published versions
+      description: Lists the versions, newest first.
+      tags: [Specs]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of versions.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VersionPage'}
+              example:
+                data:
+                  - id: ver_01j9z3v2x4z6b8d0f2h4k6m8p0
+                    specId: spec_01j9z3r4t6v8x0z2b4d6f8h0k2
+                    name: 1.4.0
+                    revisionId: rev_01j9z3s7v9x1z3b5d7f9h1k3m5
+                    revisionNumber: 7
+                    apiVersion: 1.4.0
+                    notes: Adds refunds.
+                    publishedBy: usr_01j9z3kq4m8r2t6v0x5w7y9a1b
+                    publishedAt: '2026-10-17T12:00:00Z'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: publishVersion
+      summary: Publish a version
+      description: |
+        Publishes a revision under a name, such as `1.4.0`. Mocks, docs and code generation serve published versions. Versions never change, and a name is used once per spec.
+
+        A revision with errors can't be published: the request fails with 422 and the code `spec-has-errors`. Warnings don't block publishing.
+      tags: [Specs]
+      requestBody:
+        required: true
+        description: What to publish. Every field is optional.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/VersionCreate'}
+            example:
+              name: 1.4.0
+              notes: Adds refunds.
+      responses:
+        '201':
+          description: The new version.
+          headers:
+            Location: {$ref: '#/components/headers/Location'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Version'}
+              example:
+                id: ver_01j9z3v2x4z6b8d0f2h4k6m8p0
+                specId: spec_01j9z3r4t6v8x0z2b4d6f8h0k2
+                name: 1.4.0
+                revisionId: rev_01j9z3s7v9x1z3b5d7f9h1k3m5
+                revisionNumber: 7
+                apiVersion: 1.4.0
+                notes: Adds refunds.
+                publishedBy: usr_01j9z3kq4m8r2t6v0x5w7y9a1b
+                publishedAt: '2026-10-17T12:00:00Z'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422':
+          description: The revision has errors (`spec-has-errors`).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/versions/{versionId}:
+    parameters:
+      - $ref: '#/components/parameters/VersionId'
+    get:
+      operationId: getVersion
+      summary: Get a published version
+      description: Returns one version. Its document is its revision's content.
+      tags: [Specs]
+      responses:
+        '200':
+          description: The version.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Version'}
+              example:
+                id: ver_01j9z3v2x4z6b8d0f2h4k6m8p0
+                specId: spec_01j9z3r4t6v8x0z2b4d6f8h0k2
+                name: 1.4.0
+                revisionId: rev_01j9z3s7v9x1z3b5d7f9h1k3m5
+                revisionNumber: 7
+                apiVersion: 1.4.0
+                notes: Adds refunds.
+                publishedBy: usr_01j9z3kq4m8r2t6v0x5w7y9a1b
+                publishedAt: '2026-10-17T12:00:00Z'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+
 components:
   securitySchemes:
     sessionCookie:
@@ -1854,6 +1967,12 @@ components:
       required: true
       description: The revision's ID.
       schema: {$ref: '#/components/schemas/RevisionId'}
+    VersionId:
+      name: versionId
+      in: path
+      required: true
+      description: The version's ID.
+      schema: {$ref: '#/components/schemas/VersionId'}
     UserId:
       name: userId
       in: path
@@ -2130,6 +2249,11 @@ components:
       description: A revision ID.
       pattern: '^rev_[0-9a-hjkmnp-tv-z]{26}$'
       examples: [rev_01j9z3s7v9x1z3b5d7f9h1k3m5]
+    VersionId:
+      type: string
+      description: A published version's ID.
+      pattern: '^ver_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [ver_01j9z3v2x4z6b8d0f2h4k6m8p0]
     UserId:
       type: string
       description: A user ID.
@@ -2992,6 +3116,78 @@ components:
           maxLength: 500
           description: A short note on what changed, shown in the revision history.
           examples: [Add refunds]
+    Version:
+      type: object
+      description: A published revision of a spec, under a name. Versions never change.
+      required: [id, specId, name, revisionId, revisionNumber, publishedBy, publishedAt]
+      properties:
+        id: {$ref: '#/components/schemas/VersionId'}
+        specId: {$ref: '#/components/schemas/SpecId'}
+        name: {$ref: '#/components/schemas/VersionName'}
+        revisionId: {$ref: '#/components/schemas/RevisionId'}
+        revisionNumber:
+          type: integer
+          minimum: 1
+          description: The published revision's number.
+          examples: [7]
+        apiVersion:
+          type: string
+          maxLength: 1000
+          description: The published document's `info.version`.
+          examples: [1.4.0]
+        notes:
+          type: string
+          maxLength: 2000
+          description: Release notes.
+          examples: [Adds refunds.]
+        publishedBy: {$ref: '#/components/schemas/UserId'}
+        publishedAt: {$ref: '#/components/schemas/Timestamp'}
+    VersionName:
+      type: string
+      description: A version's name, unique in its spec.
+      minLength: 1
+      maxLength: 64
+      pattern: '^[0-9A-Za-z][0-9A-Za-z.+_-]*$'
+      examples: [1.4.0]
+    VersionCreate:
+      type: object
+      description: What to publish.
+      additionalProperties: false
+      properties:
+        name:
+          $ref: '#/components/schemas/VersionName'
+          type: string
+          description: Defaults to the revision's `info.version`.
+          examples: [1.4.0]
+        revisionId:
+          $ref: '#/components/schemas/RevisionId'
+          type: string
+          description: Defaults to the spec's current revision.
+          examples: [rev_01j9z3s7v9x1z3b5d7f9h1k3m5]
+        notes:
+          type: string
+          maxLength: 2000
+          description: Release notes to publish with the version.
+          examples: [Adds refunds.]
+    VersionPage:
+      type: object
+      description: One page of a spec's versions, with a cursor for the next page.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The versions on this page, newest first.
+          maxItems: 200
+          items: {$ref: '#/components/schemas/Version'}
+          examples:
+            - - id: ver_01j9z3v2x4z6b8d0f2h4k6m8p0
+                specId: spec_01j9z3r4t6v8x0z2b4d6f8h0k2
+                name: 1.4.0
+                revisionId: rev_01j9z3s7v9x1z3b5d7f9h1k3m5
+                revisionNumber: 7
+                publishedBy: usr_01j9z3kq4m8r2t6v0x5w7y9a1b
+                publishedAt: '2026-10-17T12:00:00Z'
+        nextCursor: {$ref: '#/components/schemas/NextCursor'}
     RevisionPage:
       type: object
       description: One page of the revision history, with a cursor for the next page.

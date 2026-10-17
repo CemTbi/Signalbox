@@ -31,6 +31,7 @@ const (
 	Service     Prefix = "svc"
 	Spec        Prefix = "spec"
 	Revision    Prefix = "rev"
+	Version     Prefix = "ver"
 	Invitation  Prefix = "inv"
 )
 

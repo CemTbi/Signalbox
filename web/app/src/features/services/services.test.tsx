@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api";
 import { ServiceForm, titleOf } from "./forms";
 import { SpecEditor } from "./SpecEditor";
+import { Versions } from "./Versions";
 
 describe("titleOf", () => {
   it("finds the title in YAML and JSON documents", () => {
@@ -85,5 +86,64 @@ describe("SpecEditor", () => {
     rerender(<SpecEditor {...props} content={`${doc}# v2\n`} />);
     expect(screen.getByLabelText("Document (YAML or JSON)")).toHaveValue(`${doc}# v2\n`);
     expect(screen.queryByText("Unsaved changes")).toBeNull();
+  });
+});
+
+describe("Versions", () => {
+  const revision = {
+    id: "rev_01j9z3s7v9x1z3b5d7f9h1k3m5",
+    specId: "spec_01j9z3r4t6v8x0z2b4d6f8h0k2",
+    number: 3,
+    format: "openapi-3.1" as const,
+    version: "3.1.1",
+    apiVersion: "1.4.0",
+    sizeBytes: 100,
+    sha256: "0".repeat(64),
+    counts: { errors: 0, warnings: 2, infos: 0, hints: 0 },
+    createdBy: "usr_01j9z3kq4m8r2t6v0x5w7y9a1b",
+    createdAt: "2026-10-17T12:00:00Z",
+  };
+  const props = { versions: [], current: revision, canPublish: true, pending: false, error: null, onPublish: vi.fn() };
+
+  it("publishes the current revision under the document's version", async () => {
+    const onPublish = vi.fn();
+    render(<Versions {...props} onPublish={onPublish} />);
+    expect(screen.getByText("Nothing published yet")).toBeInTheDocument();
+    expect(screen.getByLabelText("Version")).toHaveValue("1.4.0");
+    await userEvent.type(screen.getByLabelText("Release notes (optional)"), "Adds refunds.");
+    await userEvent.click(screen.getByRole("button", { name: "Publish 1.4.0" }));
+    expect(onPublish).toHaveBeenCalledWith({ name: "1.4.0", notes: "Adds refunds." });
+  });
+
+  it("explains why a revision with errors can't be published", () => {
+    render(<Versions {...props} current={{ ...revision, counts: { ...revision.counts, errors: 2 } }} />);
+    expect(screen.getByText(/Revision 3 has 2 errors/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Publish/ })).toBeNull();
+  });
+
+  it("says when the current revision is already published", () => {
+    const version = {
+      id: "ver_01j9z3v2x4z6b8d0f2h4k6m8p0",
+      specId: revision.specId,
+      name: "1.4.0",
+      revisionId: revision.id,
+      revisionNumber: 3,
+      publishedBy: revision.createdBy,
+      publishedAt: "2026-10-17T12:30:00Z",
+    };
+    render(<Versions {...props} versions={[version]} />);
+    expect(screen.getByText(/is published as/)).toHaveTextContent("1.4.0");
+    expect(screen.getByText("1.4.0", { selector: ".row-title .mono" })).toBeInTheDocument();
+  });
+
+  it("names a taken version at the field", () => {
+    const taken = new ApiError(409, { type: "about:blank", title: "Conflict", status: 409, code: "version-exists" });
+    render(<Versions {...props} error={taken} />);
+    expect(screen.getByText("This spec already has a version with this name.")).toBeInTheDocument();
+  });
+
+  it("offers nothing to people who can't publish", () => {
+    render(<Versions {...props} canPublish={false} />);
+    expect(screen.queryByRole("button", { name: /Publish/ })).toBeNull();
   });
 });

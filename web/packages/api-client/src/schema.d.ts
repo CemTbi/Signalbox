@@ -795,6 +795,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/specs/{specId}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The spec's ID. */
+                specId: components["parameters"]["SpecId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List a spec's published versions
+         * @description Lists the versions, newest first.
+         */
+        get: operations["listVersions"];
+        put?: never;
+        /**
+         * Publish a version
+         * @description Publishes a revision under a name, such as `1.4.0`. Mocks, docs and code generation serve published versions. Versions never change, and a name is used once per spec.
+         *
+         *     A revision with errors can't be published: the request fails with 422 and the code `spec-has-errors`. Warnings don't block publishing.
+         */
+        post: operations["publishVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/versions/{versionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The version's ID. */
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a published version
+         * @description Returns one version. Its document is its revision's content.
+         */
+        get: operations["getVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -829,6 +881,11 @@ export interface components {
          * @example rev_01j9z3s7v9x1z3b5d7f9h1k3m5
          */
         RevisionId: string;
+        /**
+         * @description A published version's ID.
+         * @example ver_01j9z3v2x4z6b8d0f2h4k6m8p0
+         */
+        VersionId: string;
         /**
          * @description A user ID.
          * @example usr_01j9z3kq4m8r2t6v0x5w7y9a1b
@@ -1702,6 +1759,72 @@ export interface components {
              */
             message?: string;
         };
+        /** @description A published revision of a spec, under a name. Versions never change. */
+        Version: {
+            id: components["schemas"]["VersionId"];
+            specId: components["schemas"]["SpecId"];
+            name: components["schemas"]["VersionName"];
+            revisionId: components["schemas"]["RevisionId"];
+            /**
+             * @description The published revision's number.
+             * @example 7
+             */
+            revisionNumber: number;
+            /**
+             * @description The published document's `info.version`.
+             * @example 1.4.0
+             */
+            apiVersion?: string;
+            /**
+             * @description Release notes.
+             * @example Adds refunds.
+             */
+            notes?: string;
+            publishedBy: components["schemas"]["UserId"];
+            publishedAt: components["schemas"]["Timestamp"];
+        };
+        /**
+         * @description A version's name, unique in its spec.
+         * @example 1.4.0
+         */
+        VersionName: string;
+        /** @description What to publish. */
+        VersionCreate: {
+            /**
+             * @description Defaults to the revision's `info.version`.
+             * @example 1.4.0
+             */
+            name?: components["schemas"]["VersionName"];
+            /**
+             * @description Defaults to the spec's current revision.
+             * @example rev_01j9z3s7v9x1z3b5d7f9h1k3m5
+             */
+            revisionId?: components["schemas"]["RevisionId"];
+            /**
+             * @description Release notes to publish with the version.
+             * @example Adds refunds.
+             */
+            notes?: string;
+        };
+        /** @description One page of a spec's versions, with a cursor for the next page. */
+        VersionPage: {
+            /**
+             * @description The versions on this page, newest first.
+             * @example [
+             *       {
+             *         "id": "ver_01j9z3v2x4z6b8d0f2h4k6m8p0",
+             *         "specId": "spec_01j9z3r4t6v8x0z2b4d6f8h0k2",
+             *         "name": "1.4.0",
+             *         "revisionId": "rev_01j9z3s7v9x1z3b5d7f9h1k3m5",
+             *         "revisionNumber": 7,
+             *         "publishedBy": "usr_01j9z3kq4m8r2t6v0x5w7y9a1b",
+             *         "publishedAt": "2026-10-17T12:00:00Z"
+             *       }
+             *     ]
+             */
+            data: components["schemas"]["Version"][];
+            nextCursor?: components["schemas"]["NextCursor"];
+        };
         /** @description One page of the revision history, with a cursor for the next page. */
         RevisionPage: {
             /**
@@ -1993,6 +2116,8 @@ export interface components {
         SpecId: components["schemas"]["SpecId"];
         /** @description The revision's ID. */
         RevisionId: components["schemas"]["RevisionId"];
+        /** @description The version's ID. */
+        VersionId: components["schemas"]["VersionId"];
         /** @description The user's ID. */
         UserId: components["schemas"]["UserId"];
         /** @description The invitation's ID. */
@@ -4649,6 +4774,166 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["Report"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listVersions: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Maximum number of items to return.
+                 * @example 50
+                 */
+                limit?: components["parameters"]["Limit"];
+                /**
+                 * @description The `nextCursor` value from the previous page.
+                 * @example eyJpZCI6IndzXzAxajl6M2txNG04cjJ0NnYweDV3N3k5YTFiIn0
+                 */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description The spec's ID. */
+                specId: components["parameters"]["SpecId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of versions. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "id": "ver_01j9z3v2x4z6b8d0f2h4k6m8p0",
+                     *           "specId": "spec_01j9z3r4t6v8x0z2b4d6f8h0k2",
+                     *           "name": "1.4.0",
+                     *           "revisionId": "rev_01j9z3s7v9x1z3b5d7f9h1k3m5",
+                     *           "revisionNumber": 7,
+                     *           "apiVersion": "1.4.0",
+                     *           "notes": "Adds refunds.",
+                     *           "publishedBy": "usr_01j9z3kq4m8r2t6v0x5w7y9a1b",
+                     *           "publishedAt": "2026-10-17T12:00:00Z"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["VersionPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    publishVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The spec's ID. */
+                specId: components["parameters"]["SpecId"];
+            };
+            cookie?: never;
+        };
+        /** @description What to publish. Every field is optional. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "name": "1.4.0",
+                 *       "notes": "Adds refunds."
+                 *     }
+                 */
+                "application/json": components["schemas"]["VersionCreate"];
+            };
+        };
+        responses: {
+            /** @description The new version. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "ver_01j9z3v2x4z6b8d0f2h4k6m8p0",
+                     *       "specId": "spec_01j9z3r4t6v8x0z2b4d6f8h0k2",
+                     *       "name": "1.4.0",
+                     *       "revisionId": "rev_01j9z3s7v9x1z3b5d7f9h1k3m5",
+                     *       "revisionNumber": 7,
+                     *       "apiVersion": "1.4.0",
+                     *       "notes": "Adds refunds.",
+                     *       "publishedBy": "usr_01j9z3kq4m8r2t6v0x5w7y9a1b",
+                     *       "publishedAt": "2026-10-17T12:00:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Version"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            /** @description The revision has errors (`spec-has-errors`). */
+            422: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The version's ID. */
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The version. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "ver_01j9z3v2x4z6b8d0f2h4k6m8p0",
+                     *       "specId": "spec_01j9z3r4t6v8x0z2b4d6f8h0k2",
+                     *       "name": "1.4.0",
+                     *       "revisionId": "rev_01j9z3s7v9x1z3b5d7f9h1k3m5",
+                     *       "revisionNumber": 7,
+                     *       "apiVersion": "1.4.0",
+                     *       "notes": "Adds refunds.",
+                     *       "publishedBy": "usr_01j9z3kq4m8r2t6v0x5w7y9a1b",
+                     *       "publishedAt": "2026-10-17T12:00:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Version"];
                 };
             };
             401: components["responses"]["Unauthorized"];
