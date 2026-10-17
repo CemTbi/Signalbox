@@ -27,3 +27,5 @@ Thumbs.db
 # End-to-end test output
 /e2e/test-results/
 /e2e/playwright-report/
+# The server binary CI builds outside Docker for pull requests.
+ci-build/
