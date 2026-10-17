@@ -3,10 +3,11 @@
 import type { InvitationDetails, Session } from "@signalbox/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { ApiError, api, describeError, unwrap } from "../../api";
 import { forgetSession, sessionQuery, storeSession } from "../../session";
 import { AuthLayout } from "../auth/AuthLayout";
+import { rememberReturnHash, signInOptionsQuery, ssoStartURL, takeStashedHash } from "../auth/sso";
 import { roleLabels } from "../workspaces/roles";
 import { SignUpForm, type SignUpValues } from "./SignUpForm";
 
@@ -17,7 +18,8 @@ import { SignUpForm, type SignUpValues } from "./SignUpForm";
  */
 export function InvitePage() {
   const hash = useRouterState({ select: (s) => s.location.hash });
-  const token = hash.replace(/^#/, "");
+  // After single sign-on, the token waited in session storage.
+  const [token] = useState(() => hash.replace(/^#/, "") || takeStashedHash("/invite") || "");
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -28,6 +30,7 @@ export function InvitePage() {
     retry: false,
   });
   const session = useQuery(sessionQuery(api));
+  const options = useQuery(signInOptionsQuery(api));
 
   const goToWorkspace = (workspaceId: string) => navigate({ to: "/workspaces/$workspaceId", params: { workspaceId } });
   const accept = useMutation({
@@ -82,6 +85,7 @@ export function InvitePage() {
       details={details.data}
       session={session.data ?? null}
       token={token}
+      ssoName={options.data?.sso?.name}
       accept={{ run: () => accept.mutate(), pending: accept.isPending, error: accept.error }}
       signUp={{ run: (v) => signUp.mutate(v), pending: signUp.isPending, error: signUp.error }}
       signOut={{ run: () => signOut.mutate(), pending: signOut.isPending }}
@@ -100,6 +104,7 @@ export function InviteView({
   details,
   session,
   token,
+  ssoName,
   accept,
   signUp,
   signOut,
@@ -107,6 +112,8 @@ export function InviteView({
   details: InvitationDetails;
   session: Session | null;
   token: string;
+  // The identity provider's name, when single sign-on is set up.
+  ssoName?: string;
   accept: Action;
   signUp: Action<SignUpValues>;
   signOut: Action;
@@ -149,6 +156,21 @@ export function InviteView({
     );
   }
 
+  const sso = ssoName ? (
+    <>
+      <a
+        className="button secondary wide"
+        href={ssoStartURL("/invite")}
+        onClick={() => rememberReturnHash(`/invite#${token}`)}
+      >
+        Continue with {ssoName}
+      </a>
+      <p className="divider" aria-hidden="true">
+        <span>or</span>
+      </p>
+    </>
+  ) : null;
+
   if (details.accountExists) {
     return (
       <AuthLayout title={title} lede={offer}>
@@ -162,6 +184,7 @@ export function InviteView({
 
   return (
     <AuthLayout title={title} lede={offer}>
+      {sso}
       <SignUpForm
         email={details.email}
         onSubmit={(v) => signUp.run(v)}

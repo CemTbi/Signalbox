@@ -115,6 +115,22 @@ describe("InviteView", () => {
     expect(a.accept.run).toHaveBeenCalled();
   });
 
+  it("offers single sign-on and keeps the token out of the server's view", async () => {
+    // Stop the link from navigating, which jsdom can't do.
+    const stop = (e: Event) => e.preventDefault();
+    document.addEventListener("click", stop, { capture: true });
+    try {
+      renderWithRouter(<InviteView details={details} session={null} token="tok-1" ssoName="Okta" {...actions()} />);
+      const link = await screen.findByRole("link", { name: "Continue with Okta" });
+      expect(link.getAttribute("href")).toBe("/api/v1/sso/start?return=%2Finvite");
+      await userEvent.click(link);
+      expect(JSON.parse(sessionStorage.getItem("signalbox.sso.return") ?? "{}")).toEqual({ path: "/invite", hash: "tok-1" });
+    } finally {
+      document.removeEventListener("click", stop, { capture: true });
+      sessionStorage.clear();
+    }
+  });
+
   it("explains when someone else is signed in", async () => {
     const a = actions();
     renderWithRouter(<InviteView details={details} session={session("ada@example.com")} token="tok" {...a} />);
