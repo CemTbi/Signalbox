@@ -30,6 +30,7 @@ const allowed = new Set([
 /** Reads the license of a package.json, old formats included. */
 function licenseOf(pkg) {
   if (typeof pkg.license === "string") return pkg.license;
+  if (Array.isArray(pkg.license)) return pkg.license.map((l) => l.type ?? l).join(" OR ");
   if (pkg.license?.type) return pkg.license.type;
   if (Array.isArray(pkg.licenses)) return pkg.licenses.map((l) => l.type ?? l).join(" OR ");
   return "UNKNOWN";

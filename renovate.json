@@ -1,23 +1,48 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests"
+  ],
   "timezone": "UTC",
-  "schedule": ["before 6am on monday"],
-  "postUpdateOptions": ["gomodTidy"],
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "postUpdateOptions": [
+    "gomodTidy"
+  ],
   "vulnerabilityAlerts": {
     "enabled": true,
-    "schedule": ["at any time"]
+    "schedule": [
+      "at any time"
+    ]
   },
   "packageRules": [
     {
       "description": "Batch routine updates into one weekly pull request per ecosystem.",
-      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest"
+      ],
       "groupName": "{{manager}} minor and patch updates"
     },
     {
       "description": "openapi-typescript and typescript-eslint don't support TypeScript 6 yet. See ADR-0006.",
-      "matchPackageNames": ["typescript"],
+      "matchPackageNames": [
+        "typescript"
+      ],
       "allowedVersions": "<6.0.0"
+    },
+    {
+      "description": "The script sandbox's libraries follow the versions Postman ships, so scripts behave the same; only minor, patch and security updates. An update needs `npm run build` in that folder, which CI checks. See ADR-0017.",
+      "matchFileNames": [
+        "internal/modules/scripts/sandbox/package.json"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
     }
   ]
 }
