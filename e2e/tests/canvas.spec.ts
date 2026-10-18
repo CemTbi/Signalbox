@@ -93,7 +93,31 @@ test("services are placed on the canvas by hand and stay where they are put", as
   const response = page.getByRole("region", { name: "Response" });
   await expect(response.getByText("200", { exact: true })).toBeVisible();
   await expect(response.getByText(/"version"/)).toBeVisible();
-  await expect(page.getByRole("region", { name: "Your history" }).getByText("http://signalbox:8080/api/v1/meta")).toBeVisible();
+  await page.getByRole("tab", { name: "History" }).click();
+  await expect(page.getByRole("tabpanel", { name: "Your history" }).getByText("http://signalbox:8080/api/v1/meta")).toBeVisible();
+  await expectAccessible(page);
+
+  // Saved in a collection, it opens again after a reload.
+  await page.getByRole("tab", { name: "Collections" }).click();
+  await page.getByRole("button", { name: "New collection" }).click();
+  await page.getByLabel("Collection name").fill("Shop API");
+  await page.getByRole("button", { name: "Add collection" }).click();
+  await page.getByRole("button", { name: "Save as…" }).click();
+  const saveForm = page.getByRole("form", { name: "Save request" });
+  await saveForm.getByLabel("Name").fill("Meta");
+  await saveForm.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Meta" })).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Open Shop API" }).click();
+  await page.getByRole("button", { name: /GET Meta/ }).click();
+  await expect(page.getByLabel("URL")).toHaveValue("http://signalbox:8080/api/v1/meta");
+  await page.getByLabel("URL").fill("http://signalbox:8080/livez");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+  await page.reload();
+  await page.getByRole("button", { name: "Open Shop API" }).click();
+  await page.getByRole("button", { name: /GET Meta/ }).click();
+  await expect(page.getByLabel("URL")).toHaveValue("http://signalbox:8080/livez");
   await expectAccessible(page);
   // Cloud metadata endpoints are never reached.
   await page.getByLabel("URL").fill("http://169.254.169.254/latest/meta-data/");

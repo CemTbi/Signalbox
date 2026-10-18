@@ -234,3 +234,23 @@ export function historyEntryQuery(client: ApiClient, entryId: string) {
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
+
+export const collectionsKey = (projectId: string) => ["projects", projectId, "collections"] as const;
+
+/** A project's collections of saved requests, by name. */
+export function collectionsQuery(client: ApiClient, projectId: string) {
+  return queryOptions({
+    queryKey: collectionsKey(projectId),
+    queryFn: () => unwrap(client.GET("/api/v1/projects/{projectId}/collections", { params: { path: { projectId } } })),
+  });
+}
+
+export const itemsKey = (collectionId: string) => ["collections", collectionId, "items"] as const;
+
+/** A collection's folders and requests, each folder's in order. */
+export function itemsQuery(client: ApiClient, collectionId: string) {
+  return queryOptions({
+    queryKey: itemsKey(collectionId),
+    queryFn: () => unwrap(client.GET("/api/v1/collections/{collectionId}/items", { params: { path: { collectionId } } })),
+  });
+}

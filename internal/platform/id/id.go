@@ -35,6 +35,8 @@ const (
 	Invitation  Prefix = "inv"
 	AccessToken Prefix = "tok"
 	History     Prefix = "hist"
+	Collection  Prefix = "col"
+	Item        Prefix = "item"
 )
 
 // ErrInvalid means a string isn't an ID of the expected type.

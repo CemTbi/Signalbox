@@ -5,7 +5,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { type Draft, emptyDraft, formatMs, formatSize, fromEntry, prettyBody, row, toSend } from "./model";
+import { type Draft, emptyDraft, folders, formatMs, formatSize, fromEntry, fromSaved, prettyBody, row, toSaved, toSend, tree } from "./model";
 import { RequestEditor } from "./RequestEditor";
 import { ResponseView } from "./ResponseView";
 
@@ -113,5 +113,30 @@ describe("RequestEditor", () => {
     render(<Editor onSend={onSend} canSend={false} />);
     await userEvent.type(screen.getByLabelText("URL"), "https://api.example.com/");
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  });
+});
+
+describe("saved requests", () => {
+  it("keep unticked headers, and come back as drafts", () => {
+    const d: Draft = { method: "POST", url: "{{baseUrl}}/orders", body: "{}", headers: [row("Accept", "*/*"), row("X-Off", "1", false), row("", "")] };
+    const saved = toSaved(d);
+    expect(saved.headers).toEqual([
+      { key: "Accept", value: "*/*", enabled: true },
+      { key: "X-Off", value: "1", enabled: false },
+    ]);
+    const back = fromSaved(saved);
+    expect(back.headers.map((h) => [h.key, h.enabled])).toEqual([
+      ["Accept", true],
+      ["X-Off", false],
+      ["", true],
+    ]);
+  });
+
+  it("make a tree, and list folders in order with their depth", () => {
+    const item = (id: string, kind: "folder" | "request", parentId?: string) =>
+      ({ id, kind, name: id, collectionId: "col_1", createdAt: "", updatedAt: "", ...(parentId ? { parentId } : {}) }) as const;
+    const items = [item("a", "folder"), item("r", "request"), item("b", "folder", "a"), item("c", "folder", "b"), item("d", "folder")];
+    expect(tree(items).get("a")?.map((i) => i.id)).toEqual(["b"]);
+    expect(folders(items).map(({ item, depth }) => `${item.id}:${depth}`)).toEqual(["a:0", "b:1", "c:2", "d:0"]);
   });
 });

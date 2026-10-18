@@ -43,7 +43,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	want := "access_tokens environments projects request_history services sessions spec_revisions spec_versions specs sso_attempts user_identities users workspace_invitations workspace_members workspaces"
+	want := "access_tokens collection_items collections environments projects request_history services sessions spec_revisions spec_versions specs sso_attempts user_identities users workspace_invitations workspace_members workspaces"
 	if got := strings.Join(tables, " "); got != want {
 		t.Errorf("tables = %s, want %s", got, want)
 	}

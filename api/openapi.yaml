@@ -1513,6 +1513,246 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         default: {$ref: '#/components/responses/Error'}
+  /api/v1/projects/{projectId}/collections:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      operationId: listCollections
+      summary: List a project's collections
+      description: Lists the project's collections of saved requests, by name.
+      tags: [Client]
+      responses:
+        '200':
+          description: The collections.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CollectionList'}
+              example:
+                data:
+                  - {id: col_01j9z3w5y7a9c1e3g5j7m9p1r3, projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0, name: Orders API, createdAt: '2026-10-18T12:00:00Z', updatedAt: '2026-10-18T12:00:00Z'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createCollection
+      summary: Add a collection
+      description: Adds a collection of saved requests to the project. Owners, admins and editors may.
+      tags: [Client]
+      requestBody:
+        required: true
+        description: The new collection.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CollectionCreate'}
+            example: {name: Orders API, description: Everything about orders.}
+      responses:
+        '201':
+          description: The collection that was added.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            Location: {$ref: '#/components/headers/Location'}
+            ETag: {$ref: '#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Collection'}
+              example: {id: col_01j9z3w5y7a9c1e3g5j7m9p1r3, projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0, name: Orders API, description: Everything about orders., createdAt: '2026-10-18T12:00:00Z', updatedAt: '2026-10-18T12:00:00Z'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/collections/{collectionId}:
+    parameters:
+      - $ref: '#/components/parameters/CollectionId'
+    get:
+      operationId: getCollection
+      summary: Get a collection
+      description: Returns a collection. Its items are at `/items`.
+      tags: [Client]
+      responses:
+        '200':
+          description: The collection.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            ETag: {$ref: '#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Collection'}
+              example: {id: col_01j9z3w5y7a9c1e3g5j7m9p1r3, projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0, name: Orders API, createdAt: '2026-10-18T12:00:00Z', updatedAt: '2026-10-18T12:00:00Z'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: updateCollection
+      summary: Rename a collection
+      description: Changes a collection's name or description. Owners, admins and editors may.
+      tags: [Client]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        description: The fields to change, as a JSON Merge Patch (RFC 7396).
+        content:
+          application/merge-patch+json:
+            schema: {$ref: '#/components/schemas/CollectionUpdate'}
+            example: {name: Orders API v2}
+      responses:
+        '200':
+          description: The renamed collection.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            ETag: {$ref: '#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Collection'}
+              example: {id: col_01j9z3w5y7a9c1e3g5j7m9p1r3, projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0, name: Orders API v2, createdAt: '2026-10-18T12:00:00Z', updatedAt: '2026-10-18T12:30:00Z'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: deleteCollection
+      summary: Delete a collection
+      description: Deletes a collection with everything in it. Owners and admins may.
+      tags: [Client]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The collection is deleted.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/collections/{collectionId}/items:
+    parameters:
+      - $ref: '#/components/parameters/CollectionId'
+    get:
+      operationId: listItems
+      summary: List a collection's folders and requests
+      description: Lists every folder and request in the collection, each folder's items in order, top-level items first. Requests carry only their method and URL; get an item for the rest.
+      tags: [Client]
+      responses:
+        '200':
+          description: The items.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ItemList'}
+              example:
+                data:
+                  - {id: item_01j9z3w5y7a9c1e3g5j7m9p1r3, collectionId: col_01j9z3w5y7a9c1e3g5j7m9p1r3, kind: folder, name: Orders, createdAt: '2026-10-18T12:00:00Z', updatedAt: '2026-10-18T12:00:00Z'}
+                  - {id: item_01j9z3w6a8c0e2g4j6m8p0r2t4, collectionId: col_01j9z3w5y7a9c1e3g5j7m9p1r3, parentId: item_01j9z3w5y7a9c1e3g5j7m9p1r3, kind: request, name: Get an order, request: {method: GET, url: '{{baseUrl}}/orders/1'}, createdAt: '2026-10-18T12:00:00Z', updatedAt: '2026-10-18T12:00:00Z'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createItem
+      summary: Add a folder or request
+      description: Adds a folder or a saved request to the collection, in `parentId` (the top when absent), before `before` or at the end. Owners, admins and editors may. A collection holds at most 10,000 items, and folders nest at most 20 deep.
+      tags: [Client]
+      requestBody:
+        required: true
+        description: The new item.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ItemCreate'}
+            example: {kind: request, name: Get an order, request: {method: GET, url: '{{baseUrl}}/orders/1', headers: [{key: Accept, value: application/json, enabled: true}], body: ''}}
+      responses:
+        '201':
+          description: The item that was added.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            Location: {$ref: '#/components/headers/Location'}
+            ETag: {$ref: '#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Item'}
+              example: {id: item_01j9z3w6a8c0e2g4j6m8p0r2t4, collectionId: col_01j9z3w5y7a9c1e3g5j7m9p1r3, kind: request, name: Get an order, request: {method: GET, url: '{{baseUrl}}/orders/1', headers: [{key: Accept, value: application/json, enabled: true}]}, createdAt: '2026-10-18T12:00:00Z', updatedAt: '2026-10-18T12:00:00Z'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/items/{itemId}:
+    parameters:
+      - $ref: '#/components/parameters/ItemId'
+    get:
+      operationId: getItem
+      summary: Get a folder or request
+      description: Returns a folder, or a saved request with its headers and body.
+      tags: [Client]
+      responses:
+        '200':
+          description: The item.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            ETag: {$ref: '#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Item'}
+              example: {id: item_01j9z3w6a8c0e2g4j6m8p0r2t4, collectionId: col_01j9z3w5y7a9c1e3g5j7m9p1r3, kind: request, name: Get an order, request: {method: GET, url: '{{baseUrl}}/orders/1', headers: [{key: Accept, value: application/json, enabled: true}]}, createdAt: '2026-10-18T12:00:00Z', updatedAt: '2026-10-18T12:00:00Z'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: updateItem
+      summary: Change or move a folder or request
+      description: |
+        Renames, describes or replaces the request of an item, or moves it. Sending `parentId` or `before` moves it: into `parentId` (null for the top of the collection), before `before` (null for the end). A folder can't move inside itself. Owners, admins and editors may.
+
+        `If-Match` is optional: without it, the last change wins.
+      tags: [Client]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        description: The item's fields to change, as a JSON Merge Patch (RFC 7396).
+        content:
+          application/merge-patch+json:
+            schema: {$ref: '#/components/schemas/ItemUpdate'}
+            example: {name: Get one order, parentId: null}
+      responses:
+        '200':
+          description: The changed item.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            ETag: {$ref: '#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Item'}
+              example: {id: item_01j9z3w6a8c0e2g4j6m8p0r2t4, collectionId: col_01j9z3w5y7a9c1e3g5j7m9p1r3, kind: request, name: Get one order, request: {method: GET, url: '{{baseUrl}}/orders/1'}, createdAt: '2026-10-18T12:00:00Z', updatedAt: '2026-10-18T12:30:00Z'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: deleteItem
+      summary: Delete a folder or request
+      description: Deletes an item, and a folder's contents with it. Owners, admins and editors may.
+      tags: [Client]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The item is deleted.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        default: {$ref: '#/components/responses/Error'}
   /api/v1/projects/{projectId}/services:
     parameters:
       - $ref: '#/components/parameters/ProjectId'
@@ -2283,6 +2523,18 @@ components:
       description: A personal access token (`sbx_pat_…`) or service-account token (`sbx_sat_…`).
 
   parameters:
+    CollectionId:
+      name: collectionId
+      in: path
+      required: true
+      description: The collection's ID.
+      schema: {$ref: '#/components/schemas/CollectionId'}
+    ItemId:
+      name: itemId
+      in: path
+      required: true
+      description: The item's ID.
+      schema: {$ref: '#/components/schemas/ItemId'}
     WorkspaceId:
       name: workspaceId
       in: path
@@ -2788,6 +3040,135 @@ components:
           items: {$ref: '#/components/schemas/HistorySummary'}
           examples: [[{id: hist_01j9z3w5y7a9c1e3g5j7m9p1r3, method: GET, url: 'https://api.example.com/orders/42', status: 200, durationMs: 83.5, sentAt: '2026-10-18T12:00:00Z'}]]
         nextCursor: {$ref: '#/components/schemas/NextCursor'}
+    CollectionId:
+      type: string
+      description: A collection's ID.
+      pattern: '^col_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [col_01j9z3w5y7a9c1e3g5j7m9p1r3]
+    ItemId:
+      type: string
+      description: A collection item's ID.
+      pattern: '^item_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [item_01j9z3w5y7a9c1e3g5j7m9p1r3]
+    Collection:
+      type: object
+      description: A project's set of saved requests, in folders.
+      required: [id, projectId, name, createdAt, updatedAt]
+      properties:
+        id: {$ref: '#/components/schemas/CollectionId'}
+        projectId: {$ref: '#/components/schemas/ProjectId'}
+        name: {type: string, maxLength: 100, description: The collection's name., examples: [Orders API]}
+        description: {type: string, maxLength: 2000, description: What the collection is for., examples: [Everything about orders.]}
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+        updatedAt: {$ref: '#/components/schemas/Timestamp'}
+    CollectionCreate:
+      type: object
+      description: A new collection.
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100, description: The new collection's name., examples: [Orders API]}
+        description: {type: string, maxLength: 2000, description: What the new collection is for., examples: [Everything about orders.]}
+    CollectionUpdate:
+      type: object
+      description: Changes to a collection.
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100, description: A new name., examples: [Orders API v2]}
+        description: {type: [string, 'null'], maxLength: 2000, description: A new description; null clears it., examples: [Everything about orders.]}
+    CollectionList:
+      type: object
+      description: A project's collections.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The collections, by name.
+          items: {$ref: '#/components/schemas/Collection'}
+          examples: [[{id: col_01j9z3w5y7a9c1e3g5j7m9p1r3, projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0, name: Orders API, createdAt: '2026-10-18T12:00:00Z', updatedAt: '2026-10-18T12:00:00Z'}]]
+    SavedHeader:
+      type: object
+      description: A header of a saved request. Unticked headers are kept but not sent.
+      required: [key, value, enabled]
+      properties:
+        key: {type: string, maxLength: 1000, description: The saved header's name., examples: [Accept]}
+        value: {type: string, maxLength: 65536, description: 'The header''s value, which may hold {{variables}}.', examples: [application/json]}
+        enabled: {type: boolean, description: Whether the header is sent., examples: [true]}
+    SavedRequest:
+      type: object
+      description: A request as a collection keeps it. The URL, headers and body may hold `{{variables}}`. In lists it has only the method and URL.
+      required: [method, url]
+      properties:
+        method: {type: string, minLength: 1, maxLength: 32, description: 'The method, such as GET.', examples: [GET]}
+        url: {type: string, maxLength: 8192, description: The URL., examples: ['{{baseUrl}}/orders/1']}
+        headers:
+          type: array
+          description: The headers, in order.
+          maxItems: 200
+          items: {$ref: '#/components/schemas/SavedHeader'}
+          examples: [[{key: Accept, value: application/json, enabled: true}]]
+        body: {type: string, maxLength: 10485760, description: The saved body, as text., examples: ['{"sku":"A-1"}']}
+    Item:
+      type: object
+      description: A folder or a saved request in a collection.
+      required: [id, collectionId, kind, name, createdAt, updatedAt]
+      properties:
+        id: {$ref: '#/components/schemas/ItemId'}
+        collectionId: {$ref: '#/components/schemas/CollectionId'}
+        parentId:
+          $ref: '#/components/schemas/ItemId'
+          type: string
+          description: The folder the item is in; absent at the top of the collection.
+          examples: [item_01j9z3w5y7a9c1e3g5j7m9p1r3]
+        kind: {type: string, enum: [folder, request], description: What the item is., examples: [request]}
+        name: {type: string, maxLength: 200, description: The item's name., examples: [Get an order]}
+        description: {type: string, maxLength: 10000, description: 'What the item does, in CommonMark.', examples: [Returns one order.]}
+        request: {$ref: '#/components/schemas/SavedRequest'}
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+        updatedAt: {$ref: '#/components/schemas/Timestamp'}
+    ItemCreate:
+      type: object
+      description: A new folder or request.
+      required: [kind, name]
+      additionalProperties: false
+      properties:
+        kind: {type: string, enum: [folder, request], description: What to add., examples: [request]}
+        name: {type: string, minLength: 1, maxLength: 200, description: The new item's name., examples: [Get an order]}
+        description: {type: string, maxLength: 10000, description: 'What the new item does, in CommonMark.', examples: [Returns one order.]}
+        request: {$ref: '#/components/schemas/SavedRequest'}
+        parentId:
+          $ref: '#/components/schemas/ItemId'
+          type: string
+          description: The folder to add it to; absent for the top.
+          examples: [item_01j9z3w5y7a9c1e3g5j7m9p1r3]
+        before:
+          $ref: '#/components/schemas/ItemId'
+          type: string
+          description: The item to put it before; absent for the end.
+          examples: [item_01j9z3w6a8c0e2g4j6m8p0r2t4]
+    ItemUpdate:
+      type: object
+      description: Changes to an item. `parentId` or `before` moves it.
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200, description: The item's new name., examples: [Get one order]}
+        description: {type: [string, 'null'], maxLength: 10000, description: The item's new description; null clears it., examples: [Returns one order.]}
+        request: {$ref: '#/components/schemas/SavedRequest'}
+        parentId: {type: [string, 'null'], pattern: '^item_[0-9a-hjkmnp-tv-z]{26}$', description: The folder to move it to; null for the top., examples: [item_01j9z3w5y7a9c1e3g5j7m9p1r3]}
+        before: {type: [string, 'null'], pattern: '^item_[0-9a-hjkmnp-tv-z]{26}$', description: The item to move it before; null for the end., examples: [item_01j9z3w6a8c0e2g4j6m8p0r2t4]}
+    ItemList:
+      type: object
+      description: A collection's folders and requests.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The items, top-level first, each folder's in order.
+          maxItems: 10000
+          items: {$ref: '#/components/schemas/Item'}
+          examples: [[{id: item_01j9z3w5y7a9c1e3g5j7m9p1r3, collectionId: col_01j9z3w5y7a9c1e3g5j7m9p1r3, kind: folder, name: Orders, createdAt: '2026-10-18T12:00:00Z', updatedAt: '2026-10-18T12:00:00Z'}]]
     Timestamp:
       type: string
       format: date-time

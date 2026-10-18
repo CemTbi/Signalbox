@@ -33,3 +33,4 @@ Write a new ADR by copying [template.md](template.md) to the next number. Propos
 | [0025](0025-canvas-placement.md) | Placing services on the canvas | Accepted |
 | [0026](0026-personal-access-tokens.md) | Personal access tokens | Accepted |
 | [0027](0027-runner-and-history.md) | The runner role and request history | Accepted |
+| [0028](0028-collections.md) | Collections of saved requests | Accepted |

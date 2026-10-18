@@ -87,6 +87,8 @@ type Deps struct {
 	Mocks MockSources
 	// Client sends requests and keeps their history.
 	Client Client
+	// Collections keeps saved requests.
+	Collections Collections
 	// PublicURL is the address people open Signalbox at. It decides the
 	// session cookie's name and flags, and the origin that unsafe requests
 	// must come from. Default http://localhost:8080.
@@ -205,6 +207,24 @@ func NewHandler(d Deps) http.Handler {
 	mux.Handle("/api/v1/projects/{projectId}/send", methods{http.MethodPost: a.authenticated(a.sendRequest)})
 	mux.Handle("/api/v1/projects/{projectId}/history", methods{http.MethodGet: a.authenticated(a.listHistory)})
 	mux.Handle("/api/v1/history/{entryId}", methods{http.MethodGet: a.authenticated(a.getHistoryEntry)})
+	mux.Handle("/api/v1/projects/{projectId}/collections", methods{
+		http.MethodGet:  a.authenticated(a.listCollections),
+		http.MethodPost: a.authenticated(a.createCollection),
+	})
+	mux.Handle("/api/v1/collections/{collectionId}", methods{
+		http.MethodGet:    a.authenticated(a.getCollection),
+		http.MethodPatch:  a.authenticated(a.updateCollection),
+		http.MethodDelete: a.authenticated(a.deleteCollection),
+	})
+	mux.Handle("/api/v1/collections/{collectionId}/items", methods{
+		http.MethodGet:  a.authenticated(a.listItems),
+		http.MethodPost: a.authenticated(a.createItem),
+	})
+	mux.Handle("/api/v1/items/{itemId}", methods{
+		http.MethodGet:    a.authenticated(a.getItem),
+		http.MethodPatch:  a.authenticated(a.updateItem),
+		http.MethodDelete: a.authenticated(a.deleteItem),
+	})
 	mux.Handle("/api/v1/projects/{projectId}/services", methods{
 		http.MethodGet:  a.authenticated(a.listServices),
 		http.MethodPost: a.authenticated(a.createService),
