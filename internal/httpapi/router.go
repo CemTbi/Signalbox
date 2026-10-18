@@ -188,6 +188,7 @@ func NewHandler(d Deps) http.Handler {
 		http.MethodDelete: a.authenticated(a.deleteProject),
 	})
 
+	mux.Handle("/api/v1/projects/{projectId}/canvas", methods{http.MethodPut: a.authenticated(a.placeServices)})
 	mux.Handle("/api/v1/projects/{projectId}/services", methods{
 		http.MethodGet:  a.authenticated(a.listServices),
 		http.MethodPost: a.authenticated(a.createService),

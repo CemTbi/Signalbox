@@ -30,3 +30,4 @@ Write a new ADR by copying [template.md](template.md) to the next number. Propos
 | [0022](0022-reference-docs.md) | Reference docs of published versions | Accepted |
 | [0023](0023-breaking-changes.md) | Breaking-change reports with oasdiff | Accepted |
 | [0024](0024-code-generation.md) | Code generation, starting with Go | Accepted |
+| [0025](0025-canvas-placement.md) | Placing services on the canvas | Accepted |

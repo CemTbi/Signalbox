@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -116,7 +117,7 @@ func pre(v int64) workspaces.Precondition { return workspaces.Precondition{Versi
 func TestServices(t *testing.T) {
 	f := setup(t)
 	s, err := f.mod.CreateService(f.ctx, f.owner, f.project, apis.ServiceInput{
-		Name: " Orders API ", Slug: "orders-api", TelemetryServiceName: "orders", Position: apis.Position{X: 320, Y: 120},
+		Name: " Orders API ", Slug: "orders-api", TelemetryServiceName: "orders", Position: &apis.Position{X: 320, Y: 120},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -449,3 +450,54 @@ paths:
         '200':
           description: The orders.
 `
+
+func TestPlacingServices(t *testing.T) {
+	f := setup(t)
+	viewer := f.member(t, "linus", workspaces.Viewer)
+	// Without positions, services fill a grid four wide.
+	var services []apis.Service
+	for i := range 5 {
+		s, err := f.mod.CreateService(f.ctx, f.owner, f.project, apis.ServiceInput{Name: fmt.Sprintf("S%d", i), Slug: fmt.Sprintf("s%d", i)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		services = append(services, s)
+	}
+	if p := services[1].Position; p != (apis.Position{X: 288, Y: 0}) {
+		t.Errorf("second service at %+v", p)
+	}
+	if p := services[4].Position; p != (apis.Position{X: 0, Y: 152}) {
+		t.Errorf("fifth service at %+v", p)
+	}
+
+	moves := []apis.Placement{{ServiceID: services[0].ID, Position: apis.Position{X: 10, Y: 20}}, {ServiceID: services[1].ID, Position: apis.Position{X: -5, Y: 7.5}}}
+	if err := f.mod.PlaceServices(f.ctx, f.owner, f.project, moves); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.mod.GetService(f.ctx, f.owner, services[1].ID)
+	// Moving isn't an edit: the version stays, so a rename in flight still applies.
+	if err != nil || got.Position != (apis.Position{X: -5, Y: 7.5}) || got.Version != services[1].Version {
+		t.Errorf("moved = %+v, %v", got, err)
+	}
+
+	if err := f.mod.PlaceServices(f.ctx, viewer, f.project, moves); !errors.Is(err, apis.ErrForbidden) {
+		t.Errorf("a viewer moves services: %v", err)
+	}
+	// A service from another project undoes the whole move.
+	other := append(moves[:1:1], apis.Placement{ServiceID: uuid.New(), Position: apis.Position{X: 1, Y: 1}})
+	other[0].Position = apis.Position{X: 999, Y: 999}
+	if err := f.mod.PlaceServices(f.ctx, f.owner, f.project, other); !errors.Is(err, apis.ErrNotFound) {
+		t.Errorf("unknown service: %v", err)
+	}
+	if got, _ := f.mod.GetService(f.ctx, f.owner, services[0].ID); got.Position != (apis.Position{X: 10, Y: 20}) {
+		t.Errorf("a failed move changed a position: %+v", got.Position)
+	}
+	var verrs validate.Errors
+	twice := []apis.Placement{moves[0], moves[0]}
+	if err := f.mod.PlaceServices(f.ctx, f.owner, f.project, twice); !errors.As(err, &verrs) || verrs[0].Pointer != "/positions/1/serviceId" {
+		t.Errorf("a service twice: %v", err)
+	}
+	if err := f.mod.PlaceServices(f.ctx, f.owner, f.project, nil); !errors.As(err, &verrs) {
+		t.Errorf("nothing to place: %v", err)
+	}
+}

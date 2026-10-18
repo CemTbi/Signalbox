@@ -2,7 +2,7 @@
 
 Signalbox is an open-source platform for the whole life of an HTTP API. You design an API, prototype it with a mock, publish its docs, generate code from it, send it requests, test it, watch its health and trace its requests in production. Every module works from the same OpenAPI document, and everything runs on your own infrastructure.
 
-> **Status: pre-alpha.** The project is building the walking skeleton from the [roadmap](docs/product/requirements-1.0.md#roadmap). Sign-in, workspaces, projects, an empty canvas and the spec engine work today; everything else is planned.
+> **Status: pre-alpha, finishing v0.1.** The [roadmap](docs/product/requirements-1.0.md#roadmap)'s first alpha is in place: specs are checked, saved in revisions, published as versions, mocked, documented, compared for breaking changes and turned into code, and services are placed on the project canvas. The API client, tests, monitoring and tracing come next.
 
 ## What works today
 
