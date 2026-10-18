@@ -36,6 +36,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/platform/egress"
 	"github.com/CemTbi/Signalbox/internal/platform/oidctest"
 	"github.com/CemTbi/Signalbox/internal/platform/postgres/postgrestest"
+	"github.com/CemTbi/Signalbox/internal/platform/secretbox"
 	"github.com/CemTbi/Signalbox/internal/roles"
 )
 
@@ -152,6 +153,15 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *har
 	}
 	ws := workspaces.New(pool, logger)
 	mods := apis.New(pool, logger, ws)
+	// The runner may reach loopback, where tests run their servers.
+	sender := client.New(pool, logger, ws, runner.New(&egress.Dialer{Policy: egress.Policy{
+		Allow: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128")},
+	}}, runner.Limits{}, "Signalbox/test"))
+	key, err := secretbox.New(secretbox.NewKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sender.UseSecretKey(key)
 	srv.Config.Handler = httpapi.NewHandler(httpapi.Deps{
 		Logger:      logger,
 		Health:      health.New("signalbox-server", "test"),
@@ -162,11 +172,9 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *har
 		APIs:        mods,
 		Mocks:       mods,
 		Collections: client.New(pool, logger, ws, nil),
-		// The runner may reach loopback, where tests run their servers.
-		Client: client.New(pool, logger, ws, runner.New(&egress.Dialer{Policy: egress.Policy{
-			Allow: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128")},
-		}}, runner.Limits{}, "Signalbox/test")),
-		PublicURL: public,
+		Client:      sender,
+		Variables:   sender,
+		PublicURL:   public,
 	})
 	srv.StartTLS()
 	t.Cleanup(srv.Close)

@@ -123,6 +123,31 @@ test("services are placed on the canvas by hand and stay where they are put", as
   await page.getByLabel("URL").fill("http://169.254.169.254/latest/meta-data/");
   await page.getByRole("button", { name: "Send" }).click();
   await expect(response.getByRole("alert")).toContainText("Signalbox doesn't send requests to 169.254.169.254");
+
+  // An environment's variables fill in {{name}}; its secrets stay hidden.
+  await page.getByLabel("Environment").selectOption({ label: "Staging" });
+  await page.getByRole("button", { name: "Variables" }).click();
+  const variables = page.getByRole("form", { name: "Staging variables" });
+  await variables.getByLabel("Variable 1 name").fill("baseUrl");
+  await variables.getByLabel("Variable 1 value").fill("http://signalbox:8080");
+  await variables.getByLabel("Variable 2 name").fill("token");
+  await variables.getByLabel("Variable 2 value").fill("e2e-secret-token");
+  await variables.getByLabel("Variable 2 is a secret").check();
+  await variables.getByRole("button", { name: "Save variables" }).click();
+  await expect(page.getByRole("region", { name: "Staging variables" }).getByRole("status")).toHaveText("Saved.");
+  await expect(variables.getByLabel("Variable 2 value")).toHaveAttribute("placeholder", "Stored. Type to replace it.");
+  await expectAccessible(page);
+  await page.getByLabel("URL", { exact: true }).fill("{{baseUrl}}/api/v1/meta?{{missing}}");
+  await page.getByLabel("Header 1 name").fill("X-Token");
+  await page.getByLabel("Header 1 value").fill("{{token}}");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(response.getByText("200", { exact: true })).toBeVisible();
+  await expect(page.getByText("sent as typed: {{missing}}")).toBeVisible();
+  // The choice is remembered, and history shows what was sent.
+  await page.reload();
+  await expect(page.getByLabel("Environment")).toHaveValue(/^env_/);
+  await page.getByRole("tab", { name: "History" }).click();
+  await expect(page.getByRole("tabpanel", { name: "Your history" }).getByText("http://signalbox:8080/api/v1/meta?{{missing}}")).toBeVisible();
   await page.goto(projectURL);
 
   // Double-clicking opens the service.

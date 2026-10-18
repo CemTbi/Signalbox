@@ -60,8 +60,9 @@ export function RequestEditor({
         <input
           id={ids.url}
           className="mono"
-          type="url"
-          placeholder="https://api.example.com/orders"
+          type="text"
+          inputMode="url"
+          placeholder="https://api.example.com/orders or {{baseUrl}}/orders"
           value={draft.url}
           onChange={(e) => onChange({ ...draft, url: e.target.value })}
           spellCheck={false}

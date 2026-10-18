@@ -31,6 +31,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/egress"
 	"github.com/CemTbi/Signalbox/internal/platform/postgres"
+	"github.com/CemTbi/Signalbox/internal/platform/secretbox"
 	"github.com/CemTbi/Signalbox/internal/roles"
 	"github.com/CemTbi/Signalbox/internal/webui"
 )
@@ -79,6 +80,11 @@ type Config struct {
 	// 10.0.0.0/8 or *.internal.example.com. See docs/adr/0016-runner-egress.md.
 	EgressAllow string
 	EgressDeny  string
+	// SecretKey is the key-encryption key for secrets, such as secret
+	// environment variables: 32 random bytes in base64. Without it, secrets
+	// can't be stored. Losing or changing it makes stored secrets
+	// unreadable. See docs/adr/0029-environment-variables.md.
+	SecretKey string
 }
 
 // DefaultConfig returns the configuration for a local single-node install.
@@ -144,6 +150,13 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 	if err != nil {
 		return nil, err
 	}
+	var kek *secretbox.Box
+	if cfg.SecretKey != "" {
+		if kek, err = secretbox.ParseKey(cfg.SecretKey); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("SIGNALBOX_SECRET_KEY: %w", err)
+		}
+	}
 	cfg.Identity.SetupCode = cfg.SetupCode
 	if cfg.OIDC.Issuer != "" {
 		cfg.OIDC.RedirectURL = publicURL.JoinPath("api/v1/sso/callback").String()
@@ -198,6 +211,11 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 		}
 		mods := apis.New(db, logger, s.workspaces)
 		s.client = client.New(db, logger, s.workspaces, run)
+		if kek != nil {
+			s.client.UseSecretKey(kek)
+		} else {
+			logger.InfoContext(ctx, "no secret key is configured, so environments can't keep secret variables; set SIGNALBOX_SECRET_KEY to turn them on")
+		}
 		handler := httpapi.NewHandler(httpapi.Deps{
 			Logger:         logger,
 			Health:         checker,
@@ -211,6 +229,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 			Mocks:          mods,
 			Client:         s.client,
 			Collections:    s.client,
+			Variables:      s.client,
 			PublicURL:      publicURL,
 			TrustedProxies: trusted,
 		})

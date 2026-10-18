@@ -580,7 +580,7 @@ export interface paths {
         };
         /**
          * List a project's environments
-         * @description Lists environments in the order the environment switcher shows them.
+         * @description Lists all of the project's environments, in the order the environment switcher shows them. Every member of the workspace may.
          */
         get: operations["listEnvironments"];
         put?: never;
@@ -626,6 +626,37 @@ export interface paths {
         patch: operations["updateEnvironment"];
         trace?: never;
     };
+    "/api/v1/environments/{environmentId}/variables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The environment's ID. */
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get an environment's variables
+         * @description Returns the environment's variables, in order. Every member of the workspace may. Secrets are write-only: they come back without their values.
+         *
+         *     The `ETag` names this version of the whole set; send it as `If-Match` when you replace them.
+         */
+        get: operations["getVariables"];
+        /**
+         * Replace an environment's variables
+         * @description Replaces the environment's variables with the ones sent, in their order. Owners, admins and editors may.
+         *
+         *     Secret values are encrypted with the workspace's key and never returned. Send a secret without `value` to keep the value it has. Storing a new secret needs the server's secret key (`SIGNALBOX_SECRET_KEY`); without it the request fails with `secrets-unavailable`.
+         */
+        put: operations["putVariables"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/canvas": {
         parameters: {
             query?: never;
@@ -669,7 +700,9 @@ export interface paths {
          *
          *     The runner never reaches Signalbox's own database, cloud metadata endpoints or loopback; an admin can deny or allow more. A request that gets no response, because it was refused, the host doesn't exist, the connection failed or it timed out, still answers `200`, with `failure` saying why.
          *
-         *     History keeps credential headers (`Authorization`, `Proxy-Authorization`, `Cookie`) as `•••`, and the first megabyte of the response body.
+         *     With `environmentId`, the environment's variables fill in `{{name}}` in the URL, headers and body first, as do the built-ins `{{$guid}}`, `{{$timestamp}}`, `{{$isoTimestamp}}` and `{{$randomInt}}`. A variable's value may name other variables; a secret's is used as it is. Names with no value are sent as they are and listed in `unresolved`.
+         *
+         *     History keeps credential headers (`Authorization`, `Proxy-Authorization`, `Cookie`) as `•••`, and the first megabyte of the response body. The environment's secret values are `•••` wherever they appear in what history keeps.
          */
         post: operations["sendRequest"];
         delete?: never;
@@ -1305,14 +1338,15 @@ export interface components {
         };
         /** @description A request to send. */
         SendRequest: {
+            environmentId?: components["schemas"]["EnvironmentId"];
             /**
              * @description The HTTP method, such as GET.
              * @example GET
              */
             method: string;
             /**
-             * @description The absolute http or https URL.
-             * @example https://api.example.com/orders/42
+             * @description The absolute http or https URL, once its variables are filled in.
+             * @example {{baseUrl}}/orders/42
              */
             url: string;
             /**
@@ -1473,13 +1507,21 @@ export interface components {
         /** @description A sent request and what came of it. It has `response` or `failure`. */
         HistoryEntry: {
             id: components["schemas"]["HistoryEntryId"];
+            environmentId?: components["schemas"]["EnvironmentId"];
+            /**
+             * @description The `{{names}}` that had no value, and were sent as they are.
+             * @example [
+             *       "orderId"
+             *     ]
+             */
+            unresolved?: string[];
             /**
              * @description The method sent.
              * @example GET
              */
             method: string;
             /**
-             * @description The URL sent.
+             * @description The URL sent, variables filled in. In history, secret values are •••.
              * @example https://api.example.com/orders/42
              */
             url: string;
@@ -2430,6 +2472,76 @@ export interface components {
              * @example 0
              */
             position?: number;
+        };
+        /** @description One of an environment's variables. A secret has no `value` when it is read. */
+        EnvironmentVariable: {
+            key: components["schemas"]["VariableKey"];
+            /**
+             * @description The value.
+             * @example https://api.example.com
+             */
+            value?: string;
+            /**
+             * @description Whether the value is a secret: encrypted at rest, never returned, and masked in history.
+             * @example false
+             */
+            secret: boolean;
+        };
+        /**
+         * @description A variable's name, as `{{name}}` uses it: no spaces or braces, and not starting with `$`.
+         * @example baseUrl
+         */
+        VariableKey: string;
+        /** @description An environment's variables, in order. */
+        EnvironmentVariables: {
+            environmentId: components["schemas"]["EnvironmentId"];
+            /**
+             * @description The variables, in order.
+             * @example [
+             *       {
+             *         "key": "baseUrl",
+             *         "value": "https://api.example.com",
+             *         "secret": false
+             *       },
+             *       {
+             *         "key": "apiKey",
+             *         "secret": true
+             *       }
+             *     ]
+             */
+            variables: components["schemas"]["EnvironmentVariable"][];
+            updatedAt?: components["schemas"]["Timestamp"];
+        };
+        /** @description Every variable an environment keeps. */
+        EnvironmentVariablesPut: {
+            /**
+             * @description The variables, in order, each name once. A secret without `value` keeps the value it has.
+             * @example [
+             *       {
+             *         "key": "baseUrl",
+             *         "value": "https://api.example.com"
+             *       },
+             *       {
+             *         "key": "apiKey",
+             *         "value": "sk_live_123",
+             *         "secret": true
+             *       }
+             *     ]
+             */
+            variables: {
+                key: components["schemas"]["VariableKey"];
+                /**
+                 * @description The value; for a secret
+                 * @example https://api.example.com
+                 */
+                value?: string;
+                /**
+                 * @description Whether the value is a secret.
+                 * @default false
+                 * @example false
+                 */
+                secret: boolean;
+            }[];
         };
         /** @description One page of the environment list, with a cursor for the next page. */
         EnvironmentPage: {
@@ -3403,6 +3515,25 @@ export interface components {
                  *       "detail": "This invitation link is wrong, expired or already used. Ask for a new one.",
                  *       "code": "invitation-not-found",
                  *       "requestId": "9f8e7d6c5b4a39281706f5e4"
+                 *     }
+                 */
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description The server can't keep or read secrets. It has no secret key (`secrets-unavailable`), or the secrets were stored with another key (`secret-key-changed`). */
+        SecretsUnavailable: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "type": "about:blank",
+                 *       "title": "Service Unavailable",
+                 *       "status": 503,
+                 *       "code": "secrets-unavailable",
+                 *       "detail": "This server has no secret key, so it can't keep secrets. An administrator can set SIGNALBOX_SECRET_KEY to 32 random bytes in base64, such as the output of openssl rand -base64 32."
                  *     }
                  */
                 "application/problem+json": components["schemas"]["Problem"];
@@ -5224,18 +5355,7 @@ export interface operations {
     };
     listEnvironments: {
         parameters: {
-            query?: {
-                /**
-                 * @description Maximum number of items to return.
-                 * @example 50
-                 */
-                limit?: components["parameters"]["Limit"];
-                /**
-                 * @description The `nextCursor` value from the previous page.
-                 * @example eyJpZCI6IndzXzAxajl6M2txNG04cjJ0NnYweDV3N3k5YTFiIn0
-                 */
-                cursor?: components["parameters"]["Cursor"];
-            };
+            query?: never;
             header?: never;
             path: {
                 /** @description The project's ID. */
@@ -5472,6 +5592,126 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    getVariables: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The environment's ID. */
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The variables. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "environmentId": "env_01j9z3n5q7s9v1w3y5a7c9e1g3",
+                     *       "variables": [
+                     *         {
+                     *           "key": "baseUrl",
+                     *           "value": "https://api.example.com",
+                     *           "secret": false
+                     *         },
+                     *         {
+                     *           "key": "apiKey",
+                     *           "secret": true
+                     *         }
+                     *       ],
+                     *       "updatedAt": "2026-10-18T12:00:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EnvironmentVariables"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    putVariables: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description The `ETag` of the version you edited. The request fails with 412 if the resource changed since.
+                 * @example "3"
+                 */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The environment's ID. */
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        /** @description Every variable the environment keeps. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "variables": [
+                 *         {
+                 *           "key": "baseUrl",
+                 *           "value": "https://api.example.com"
+                 *         },
+                 *         {
+                 *           "key": "apiKey",
+                 *           "value": "sk_live_123",
+                 *           "secret": true
+                 *         }
+                 *       ]
+                 *     }
+                 */
+                "application/json": components["schemas"]["EnvironmentVariablesPut"];
+            };
+        };
+        responses: {
+            /** @description The variables as stored. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "environmentId": "env_01j9z3n5q7s9v1w3y5a7c9e1g3",
+                     *       "variables": [
+                     *         {
+                     *           "key": "baseUrl",
+                     *           "value": "https://api.example.com",
+                     *           "secret": false
+                     *         },
+                     *         {
+                     *           "key": "apiKey",
+                     *           "secret": true
+                     *         }
+                     *       ],
+                     *       "updatedAt": "2026-10-18T12:00:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["EnvironmentVariables"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            503: components["responses"]["SecretsUnavailable"];
+            default: components["responses"]["Error"];
+        };
+    };
     placeServices: {
         parameters: {
             query?: never;
@@ -5530,8 +5770,9 @@ export interface operations {
             content: {
                 /**
                  * @example {
+                 *       "environmentId": "env_01j9z3n5q7s9v1w3y5a7c9e1g3",
                  *       "method": "GET",
-                 *       "url": "https://api.example.com/orders/42",
+                 *       "url": "{{baseUrl}}/orders/42",
                  *       "headers": [
                  *         {
                  *           "key": "Accept",
@@ -5555,6 +5796,7 @@ export interface operations {
                     /**
                      * @example {
                      *       "id": "hist_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "environmentId": "env_01j9z3n5q7s9v1w3y5a7c9e1g3",
                      *       "method": "GET",
                      *       "url": "https://api.example.com/orders/42",
                      *       "sentAt": "2026-10-18T12:00:00Z",
@@ -5601,8 +5843,27 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            /** @description Once its variables are filled in, the request is larger than the runner sends (`request-too-large`). */
+            422: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Unprocessable Content",
+                     *       "status": 422,
+                     *       "code": "request-too-large",
+                     *       "detail": "Once its variables are filled in, the request is larger than the runner sends. Check for variables that name each other."
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             429: components["responses"]["TooManyRequests"];
-            /** @description This server doesn't run the runner role (`runner-unavailable`). */
+            /** @description This server doesn't run the runner role (`runner-unavailable`), or can't read the environment's secrets (`secrets-unavailable`, `secret-key-changed`). */
             503: {
                 headers: {
                     "X-Request-Id": components["headers"]["RequestId"];

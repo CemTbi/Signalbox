@@ -29,6 +29,11 @@ services:
       # Empty means the server logs a random setup code at startup.
       SIGNALBOX_SETUP_CODE: ${SIGNALBOX_SETUP_CODE:-}
       SIGNALBOX_TRUSTED_PROXIES: ${SIGNALBOX_TRUSTED_PROXIES:-}
+      # Encrypts secrets, such as secret environment variables: 32 random
+      # bytes in base64, from `openssl rand -base64 32`. Empty means
+      # environments can't keep secrets. Back it up: losing or changing it
+      # makes stored secrets unreadable.
+      SIGNALBOX_SECRET_KEY: ${SIGNALBOX_SECRET_KEY:-}
       # Single sign-on through an OpenID Connect provider, off while the
       # issuer is empty. Register <public URL>/api/v1/sso/callback as the
       # redirect URL at the provider. `signalbox-server serve --help` lists

@@ -23,7 +23,7 @@ import (
 
 // Client is what the API needs from the client module.
 type Client interface {
-	Send(ctx context.Context, userID, projectID uuid.UUID, req runner.Request) (client.Entry, error)
+	Send(ctx context.Context, userID, projectID, environmentID uuid.UUID, req runner.Request) (client.Entry, error)
 	History(ctx context.Context, userID, projectID uuid.UUID, p workspaces.PageRequest) (client.HistoryPage, error)
 	HistoryEntry(ctx context.Context, userID, entryID uuid.UUID) (client.Entry, error)
 }
@@ -78,14 +78,17 @@ type FailureJSON struct {
 
 // HistoryEntryJSON is a sent request and what came of it.
 type HistoryEntryJSON struct {
-	ID       string          `json:"id"`
-	Method   string          `json:"method"`
-	URL      string          `json:"url"`
-	SentAt   string          `json:"sentAt"`
-	Request  SentRequestJSON `json:"request"`
-	Response *ResponseJSON   `json:"response,omitempty"`
-	Failure  *FailureJSON    `json:"failure,omitempty"`
-	Timings  TimingsJSON     `json:"timings"`
+	ID            string `json:"id"`
+	EnvironmentID string `json:"environmentId,omitempty"`
+	// Unresolved lists the {{names}} that had no value.
+	Unresolved []string        `json:"unresolved,omitempty"`
+	Method     string          `json:"method"`
+	URL        string          `json:"url"`
+	SentAt     string          `json:"sentAt"`
+	Request    SentRequestJSON `json:"request"`
+	Response   *ResponseJSON   `json:"response,omitempty"`
+	Failure    *FailureJSON    `json:"failure,omitempty"`
+	Timings    TimingsJSON     `json:"timings"`
 }
 
 // HistorySummaryJSON is an entry in a history list.
@@ -113,8 +116,12 @@ func historyEntryJSON(e client.Entry) HistoryEntryJSON {
 	t := e.Result.Timings
 	out := HistoryEntryJSON{
 		ID: id.Format(id.History, e.ID), Method: e.Method, URL: e.URL, SentAt: timestamp(e.SentAt),
-		Request: SentRequestJSON{Headers: headersJSON(e.Headers), Body: string(e.Body), BodyTruncated: e.BodyTruncated},
-		Timings: TimingsJSON{ms(t.DNS), ms(t.Connect), ms(t.TLS), ms(t.FirstByte), ms(t.Download), ms(t.Total)},
+		Request:    SentRequestJSON{Headers: headersJSON(e.Headers), Body: string(e.Body), BodyTruncated: e.BodyTruncated},
+		Timings:    TimingsJSON{ms(t.DNS), ms(t.Connect), ms(t.TLS), ms(t.FirstByte), ms(t.Download), ms(t.Total)},
+		Unresolved: e.Unresolved,
+	}
+	if e.EnvironmentID != uuid.Nil {
+		out.EnvironmentID = id.Format(id.Environment, e.EnvironmentID)
 	}
 	if f := e.Result.Failure; f != nil {
 		out.Failure = &FailureJSON{Code: f.Code, Message: f.Message}
@@ -159,11 +166,12 @@ func (a *api) sendRequest(w http.ResponseWriter, r *http.Request, s *identity.Se
 		return
 	}
 	var body struct {
-		Method    *string      `json:"method"`
-		URL       *string      `json:"url"`
-		Headers   []HeaderJSON `json:"headers"`
-		Body      string       `json:"body"`
-		TimeoutMs int          `json:"timeoutMs"`
+		EnvironmentID string       `json:"environmentId"`
+		Method        *string      `json:"method"`
+		URL           *string      `json:"url"`
+		Headers       []HeaderJSON `json:"headers"`
+		Body          string       `json:"body"`
+		TimeoutMs     int          `json:"timeoutMs"`
 	}
 	if !decodeJSONUpTo(w, r, &body, sendBodyLimit) {
 		return
@@ -175,6 +183,13 @@ func (a *api) sendRequest(w http.ResponseWriter, r *http.Request, s *identity.Se
 	}
 	if len(req.Body) > 10<<20 {
 		fields.Add("/body", "maxLength", "Send at most 10 MiB.")
+	}
+	var environmentID uuid.UUID
+	if body.EnvironmentID != "" {
+		var err error
+		if environmentID, err = id.Parse(id.Environment, body.EnvironmentID); err != nil {
+			fields.Add("/environmentId", "pattern", "Use an environment ID, such as env_01j9z3n5q7s9v1w3y5a7c9e1g3.")
+		}
 	}
 	if body.TimeoutMs < 0 || body.TimeoutMs > 300_000 {
 		fields.Add("/timeoutMs", "maximum", "Use a timeout from 0 to 300,000 ms.")
@@ -204,9 +219,9 @@ func (a *api) sendRequest(w http.ResponseWriter, r *http.Request, s *identity.Se
 	for _, h := range body.Headers {
 		req.Headers = append(req.Headers, runner.Header(h))
 	}
-	e, err := a.Client.Send(r.Context(), s.User.ID, projectID, req)
+	e, err := a.Client.Send(r.Context(), s.User.ID, projectID, environmentID, req)
 	if err != nil {
-		a.clientError(w, r, "project", err)
+		a.secretsError(w, r, "project or environment", err)
 		return
 	}
 	w.Header().Set("Location", "/api/v1/history/"+id.Format(id.History, e.ID))

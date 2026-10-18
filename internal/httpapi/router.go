@@ -57,6 +57,8 @@ type Workspaces interface {
 	GetProject(ctx context.Context, userID, projectID uuid.UUID) (workspaces.Project, error)
 	UpdateProject(ctx context.Context, userID, projectID uuid.UUID, pre workspaces.Precondition, patch workspaces.ProjectPatch) (workspaces.Project, error)
 	DeleteProject(ctx context.Context, userID, projectID uuid.UUID, pre workspaces.Precondition) error
+	ListEnvironments(ctx context.Context, userID, projectID uuid.UUID) ([]workspaces.Environment, error)
+	GetEnvironment(ctx context.Context, userID, environmentID uuid.UUID) (workspaces.Environment, workspaces.Role, error)
 
 	ListMembers(ctx context.Context, userID, workspaceID uuid.UUID, p workspaces.PageRequest) (workspaces.Page[workspaces.Member], error)
 	MemberRole(ctx context.Context, workspaceID, userID uuid.UUID) (workspaces.Role, bool, error)
@@ -89,6 +91,8 @@ type Deps struct {
 	Client Client
 	// Collections keeps saved requests.
 	Collections Collections
+	// Variables keeps environments' variables and secrets.
+	Variables Variables
 	// PublicURL is the address people open Signalbox at. It decides the
 	// session cookie's name and flags, and the origin that unsafe requests
 	// must come from. Default http://localhost:8080.
@@ -203,6 +207,12 @@ func NewHandler(d Deps) http.Handler {
 		http.MethodDelete: a.authenticated(a.deleteProject),
 	})
 
+	mux.Handle("/api/v1/projects/{projectId}/environments", methods{http.MethodGet: a.authenticated(a.listEnvironments)})
+	mux.Handle("/api/v1/environments/{environmentId}", methods{http.MethodGet: a.authenticated(a.getEnvironment)})
+	mux.Handle("/api/v1/environments/{environmentId}/variables", methods{
+		http.MethodGet: a.authenticated(a.getVariables),
+		http.MethodPut: a.authenticated(a.putVariables),
+	})
 	mux.Handle("/api/v1/projects/{projectId}/canvas", methods{http.MethodPut: a.authenticated(a.placeServices)})
 	mux.Handle("/api/v1/projects/{projectId}/send", methods{http.MethodPost: a.authenticated(a.sendRequest)})
 	mux.Handle("/api/v1/projects/{projectId}/history", methods{http.MethodGet: a.authenticated(a.listHistory)})

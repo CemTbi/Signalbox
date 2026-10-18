@@ -3,15 +3,16 @@
 import type { HistoryEntry, Item } from "@signalbox/api-client";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { api, ApiError, describeError, unwrap, unwrapTagged } from "../../api";
 import { LoadError, Loading, PageHeader } from "../../components/Page";
-import { historyKey, historyQuery, itemsKey, projectQuery, workspaceQuery } from "../../queries";
+import { environmentsQuery, historyKey, historyQuery, itemsKey, projectQuery, workspaceQuery } from "../../queries";
 import { CollectionsPanel } from "./CollectionsPanel";
 import { type Draft, emptyDraft, formatMs, fromEntry, fromSaved, hadCredentials, toSaved, toSend } from "./model";
 import { RequestEditor } from "./RequestEditor";
 import { ResponseView } from "./ResponseView";
 import { type SaveTarget, SaveForm } from "./SaveForm";
+import { VariablesEditor } from "./VariablesEditor";
 
 const requestsRoute = getRouteApi("/_app/projects/$projectId/requests");
 
@@ -25,6 +26,23 @@ interface OpenItem {
   etag: string;
 }
 
+/** The environment someone last sent with in a project, kept in their browser. */
+function rememberedEnvironment(projectId: string): string {
+  try {
+    return localStorage.getItem(`signalbox.environment.${projectId}`) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function rememberEnvironment(projectId: string, environmentId: string) {
+  try {
+    localStorage.setItem(`signalbox.environment.${projectId}`, environmentId);
+  } catch {
+    // Remembering is a convenience; without storage the choice lasts the visit.
+  }
+}
+
 /** A project's API client: saved requests, sending, and history. */
 export function RequestsPage() {
   const { projectId } = requestsRoute.useParams();
@@ -32,6 +50,15 @@ export function RequestsPage() {
   const project = useQuery(projectQuery(api, projectId));
   const workspace = useQuery({ ...workspaceQuery(api, project.data?.workspaceId ?? ""), enabled: project.isSuccess });
   const history = useInfiniteQuery(historyQuery(api, projectId));
+  const environments = useQuery(environmentsQuery(api, projectId));
+  const [environmentId, setEnvironmentId] = useState(() => rememberedEnvironment(projectId));
+  const [editingVariables, setEditingVariables] = useState(false);
+  const environmentField = useId();
+  const environment = environments.data?.data.find((e) => e.id === environmentId);
+  useEffect(() => {
+    // An environment that's gone, or another project's, isn't chosen.
+    if (environments.isSuccess && environmentId !== "" && !environment) setEnvironmentId("");
+  }, [environments.isSuccess, environmentId, environment]);
   const [panel, setPanel] = useState<"collections" | "history">("collections");
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [shown, setShown] = useState<HistoryEntry | null>(null);
@@ -40,7 +67,13 @@ export function RequestsPage() {
   const [saving, setSaving] = useState(false);
 
   const send = useMutation({
-    mutationFn: (d: Draft) => unwrap(api.POST("/api/v1/projects/{projectId}/send", { params: { path: { projectId } }, body: toSend(d) })),
+    mutationFn: (d: Draft) =>
+      unwrap(
+        api.POST("/api/v1/projects/{projectId}/send", {
+          params: { path: { projectId } },
+          body: { ...toSend(d), ...(environment ? { environmentId: environment.id } : {}) },
+        }),
+      ),
     onSuccess: async (entry) => {
       setShown(entry);
       setNotice(null);
@@ -141,6 +174,37 @@ export function RequestsPage() {
           ) : null
         }
       />
+      <div className="environment-bar">
+        <label htmlFor={environmentField}>Environment</label>
+        <select
+          id={environmentField}
+          value={environment?.id ?? ""}
+          onChange={(e) => {
+            setEnvironmentId(e.target.value);
+            rememberEnvironment(projectId, e.target.value);
+            if (e.target.value === "") setEditingVariables(false);
+          }}
+        >
+          <option value="">No environment</option>
+          {environments.data?.data.map((env) => (
+            <option key={env.id} value={env.id}>
+              {env.name}
+            </option>
+          ))}
+        </select>
+        {environment ? (
+          <button type="button" className="button ghost small" aria-expanded={editingVariables} onClick={() => setEditingVariables(!editingVariables)}>
+            {editingVariables ? "Hide variables" : "Variables"}
+          </button>
+        ) : (
+          <span className="field-hint">Choose an environment to fill in {"{{variables}}"}.</span>
+        )}
+        {environment?.kind === "production" ? <span className="environment-kind">Production</span> : null}
+      </div>
+      {environments.isError ? <LoadError message={describeError(environments.error)} onRetry={() => void environments.refetch()} /> : null}
+      {environment && editingVariables ? (
+        <VariablesEditor key={environment.id} environment={environment} canEdit={canSend} onClose={() => setEditingVariables(false)} />
+      ) : null}
       <div className="requests">
         <aside className="requests-side">
           <div className="tabs" role="tablist" aria-label="Saved and sent requests">
@@ -186,6 +250,13 @@ export function RequestsPage() {
             <p className="notice">Viewers can open saved requests and their history, but can't send or save. Ask a workspace owner or admin to make you an editor.</p>
           ) : null}
           {notice ? <p className="notice">{notice}</p> : null}
+          {shown?.unresolved?.length ? (
+            <p className="notice">
+              {shown.unresolved.length === 1 ? "This name had" : "These names had"} no value, so {shown.unresolved.length === 1 ? "it was" : "they were"} sent as
+              typed: {shown.unresolved.map((n) => `{{${n}}}`).join(", ")}.
+              {environment ? ` Add ${shown.unresolved.length === 1 ? "it" : "them"} under ${environment.name} variables.` : " Choose an environment that has them."}
+            </p>
+          ) : null}
           {saving ? (
             <SaveForm
               projectId={projectId}

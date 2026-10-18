@@ -47,9 +47,9 @@ export function fromEntry(e: HistoryEntry): Draft {
   return { method: e.method, url: e.url, headers: [...headers, row()], body: e.request.body ?? "" };
 }
 
-/** Whether a history entry had credentials history didn't keep. */
+/** Whether a history entry had credentials or secrets history didn't keep. */
 export function hadCredentials(e: HistoryEntry): boolean {
-  return e.request.headers.some((h) => h.value === "•••");
+  return e.request.headers.some((h) => h.value.includes("•••")) || e.url.includes("•••") || (e.request.body ?? "").includes("•••");
 }
 
 /** The response's content type, without parameters. */
