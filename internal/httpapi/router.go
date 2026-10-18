@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"runtime"
 	"time"
 
 	"github.com/google/uuid"
@@ -104,6 +105,8 @@ type api struct {
 	mocksByIP       *ratelimit.Limiter
 	mockCache       *revisionCache[*mockengine.Mock]
 	referenceCache  *revisionCache[*refdocs.Reference]
+	// codegenSlots bounds how many code generations run at once.
+	codegenSlots chan struct{}
 }
 
 // NewHandler returns the api role's HTTP handler.
@@ -128,6 +131,7 @@ func NewHandler(d Deps) http.Handler {
 		mocksByIP:       ratelimit.New(300, 10*time.Millisecond), // 300 at once, then 100 a second
 		mockCache:       newRevisionCache(64, func(c string) (*mockengine.Mock, error) { return mockengine.New([]byte(c)) }),
 		referenceCache:  newRevisionCache(64, func(c string) (*refdocs.Reference, error) { return refdocs.Build([]byte(c)) }),
+		codegenSlots:    make(chan struct{}, max(2, runtime.GOMAXPROCS(0)/2)),
 	}
 
 	mux := http.NewServeMux()
@@ -212,6 +216,7 @@ func NewHandler(d Deps) http.Handler {
 	})
 	mux.Handle("/api/v1/versions/{versionId}", methods{http.MethodGet: a.authenticated(a.getVersion)})
 	mux.Handle("/api/v1/versions/{versionId}/reference", methods{http.MethodGet: a.authenticated(a.getReference)})
+	mux.Handle("/api/v1/versions/{versionId}/code", methods{http.MethodGet: a.authenticated(a.getCode)})
 	mux.Handle("/api/v1/revisions/{revisionId}", methods{http.MethodGet: a.authenticated(a.getRevision)})
 	mux.Handle("/api/v1/revisions/{revisionId}/content", methods{http.MethodGet: a.authenticated(a.getRevisionContent)})
 	mux.Handle("/api/v1/revisions/{revisionId}/report", methods{http.MethodGet: a.authenticated(a.getRevisionReport)})
