@@ -58,6 +58,8 @@ tags:
     description: Services are the nodes on a project's canvas.
   - name: Specs
     description: OpenAPI documents of a service and their revisions.
+  - name: Client
+    description: Sending requests from a project, and each person's history of them.
 
 paths:
   /livez:
@@ -1404,6 +1406,113 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         default: {$ref: '#/components/responses/Error'}
+  /api/v1/projects/{projectId}/send:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      operationId: sendRequest
+      summary: Send a request
+      description: |
+        Sends an HTTP request from the server on your behalf, and keeps it in your history. Owners, admins and editors may.
+
+        The runner never reaches Signalbox's own database, cloud metadata endpoints or loopback; an admin can deny or allow more. A request that gets no response, because it was refused, the host doesn't exist, the connection failed or it timed out, still answers `200`, with `failure` saying why.
+
+        History keeps credential headers (`Authorization`, `Proxy-Authorization`, `Cookie`) as `•••`, and the first megabyte of the response body.
+      tags: [Client]
+      requestBody:
+        required: true
+        description: The request to send.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SendRequest'}
+            example: {method: GET, url: 'https://api.example.com/orders/42', headers: [{key: Accept, value: application/json}]}
+      responses:
+        '200':
+          description: What came of the request.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            Location: {$ref: '#/components/headers/Location'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HistoryEntry'}
+              example:
+                id: hist_01j9z3w5y7a9c1e3g5j7m9p1r3
+                method: GET
+                url: 'https://api.example.com/orders/42'
+                sentAt: '2026-10-18T12:00:00Z'
+                request: {headers: [{key: Accept, value: application/json}]}
+                response: {status: 200, statusText: OK, proto: HTTP/2.0, headers: [{key: Content-Type, value: application/json}], body: '{"id":42}', bodyEncoding: text, size: 9, truncated: false, url: 'https://api.example.com/orders/42', redirects: 0, remoteAddress: '203.0.113.7:443'}
+                timings: {dnsMs: 4.1, connectMs: 12.3, tlsMs: 25.8, firstByteMs: 40.2, downloadMs: 0.3, totalMs: 83.5}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503':
+          description: This server doesn't run the runner role (`runner-unavailable`).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example: {type: about:blank, title: Service Unavailable, status: 503, code: runner-unavailable, detail: "This server doesn't run the runner role, which sends requests. Run signalbox-server with --roles=all."}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/projects/{projectId}/history:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      operationId: listHistory
+      summary: List your sent requests
+      description: Lists the requests you sent from the project in the last 30 days, newest first. People see only their own history, which keeps at most 1,000 entries per project.
+      tags: [Client]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of history.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HistoryPage'}
+              example:
+                data:
+                  - {id: hist_01j9z3w5y7a9c1e3g5j7m9p1r3, method: GET, url: 'https://api.example.com/orders/42', status: 200, durationMs: 83.5, sentAt: '2026-10-18T12:00:00Z'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/history/{entryId}:
+    parameters:
+      - name: entryId
+        in: path
+        required: true
+        description: The history entry's ID.
+        schema: {$ref: '#/components/schemas/HistoryEntryId'}
+    get:
+      operationId: getHistoryEntry
+      summary: Get a sent request
+      description: Returns one of your sent requests, with its response as history keeps it.
+      tags: [Client]
+      responses:
+        '200':
+          description: The entry.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HistoryEntry'}
+              example:
+                id: hist_01j9z3w5y7a9c1e3g5j7m9p1r3
+                method: GET
+                url: 'https://api.example.com/orders/42'
+                sentAt: '2026-10-18T12:00:00Z'
+                request: {headers: [{key: Authorization, value: •••}]}
+                failure: {code: timeout, message: "The server didn't answer in time."}
+                timings: {dnsMs: 4.1, connectMs: 12.3, tlsMs: 0, firstByteMs: 0, downloadMs: 0, totalMs: 30000}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
   /api/v1/projects/{projectId}/services:
     parameters:
       - $ref: '#/components/parameters/ProjectId'
@@ -2564,6 +2673,121 @@ components:
           maxItems: 50
           items: {$ref: '#/components/schemas/AccessToken'}
           examples: [[{id: tok_01j9z3w5y7a9c1e3g5j7m9p1r3, name: GitHub Actions, hint: x9Qa, createdAt: '2026-10-18T12:00:00Z', expiresAt: '2027-01-16T12:00:00Z', expired: false}]]
+    HistoryEntryId:
+      type: string
+      description: A history entry's ID.
+      pattern: '^hist_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [hist_01j9z3w5y7a9c1e3g5j7m9p1r3]
+    HttpHeader:
+      type: object
+      description: One HTTP header.
+      required: [key, value]
+      properties:
+        key: {type: string, maxLength: 1000, description: The header's name., examples: [Accept]}
+        value: {type: string, maxLength: 65536, description: The header's value., examples: [application/json]}
+    SendRequest:
+      type: object
+      description: A request to send.
+      required: [method, url]
+      additionalProperties: false
+      properties:
+        method: {type: string, maxLength: 32, description: 'The HTTP method, such as GET.', examples: [GET]}
+        url: {type: string, maxLength: 8192, description: 'The absolute http or https URL.', examples: ['https://api.example.com/orders/42']}
+        headers:
+          type: array
+          description: Headers, in order. Empty names are skipped. The runner adds `User-Agent` if there's none.
+          maxItems: 200
+          items: {$ref: '#/components/schemas/HttpHeader'}
+          examples: [[{key: Accept, value: application/json}]]
+        body: {type: string, maxLength: 10485760, description: The body, as text., examples: ['{"sku":"A-1"}']}
+        timeoutMs: {type: integer, minimum: 0, maximum: 300000, description: 'How long to wait, up to the runner''s limit (30 s by default). 0 means the limit.', examples: [10000]}
+    SentRequest:
+      type: object
+      description: A request as history keeps it.
+      required: [headers]
+      properties:
+        headers:
+          type: array
+          description: The headers sent, with credential values as •••.
+          items: {$ref: '#/components/schemas/HttpHeader'}
+          examples: [[{key: Authorization, value: •••}]]
+        body: {type: string, description: 'The body sent, its first 64 KiB.', examples: ['{"sku":"A-1"}']}
+        bodyTruncated: {type: boolean, description: Whether the body was longer than history keeps., examples: [false]}
+    RunnerResponse:
+      type: object
+      description: A response the runner received.
+      required: [status, proto, headers, body, bodyEncoding, size, truncated, url, redirects]
+      properties:
+        status: {type: integer, minimum: 100, maximum: 999, description: The status code., examples: [200]}
+        statusText: {type: string, description: The status code's reason phrase., examples: [OK]}
+        proto: {type: string, description: 'The protocol, such as HTTP/2.0.', examples: [HTTP/2.0]}
+        headers:
+          type: array
+          description: 'The response headers, by name, each name''s values in order.'
+          items: {$ref: '#/components/schemas/HttpHeader'}
+          examples: [[{key: Content-Type, value: application/json}]]
+        body: {type: string, description: 'The body: text, or base64 when it isn''t UTF-8.', examples: ['{"id":42}']}
+        bodyEncoding: {type: string, enum: [text, base64], description: How `body` is encoded., examples: [text]}
+        size: {type: integer, minimum: 0, description: The body's size in bytes, as kept., examples: [9]}
+        truncated: {type: boolean, description: 'Whether the body was cut: at 10 MiB when sent, at 1 MiB in history.', examples: [false]}
+        url: {type: string, description: Where the response came from, after redirects., examples: ['https://api.example.com/orders/42']}
+        redirects: {type: integer, minimum: 0, description: How many redirects were followed., examples: [0]}
+        remoteAddress: {type: string, description: 'The address and port the runner connected to.', examples: ['203.0.113.7:443']}
+    RunnerFailure:
+      type: object
+      description: Why a request got no response.
+      required: [code, message]
+      properties:
+        code: {type: string, enum: [invalid-request, blocked, dns, connect, tls, timeout, network], description: The kind of failure., examples: [timeout]}
+        message: {type: string, description: What went wrong, in words a person can act on., examples: ["The server didn't answer in time."]}
+    RunnerTimings:
+      type: object
+      description: 'How long each phase took, in milliseconds. Phases that didn''t happen, such as TLS on a reused connection, are 0.'
+      required: [dnsMs, connectMs, tlsMs, firstByteMs, downloadMs, totalMs]
+      properties:
+        dnsMs: {type: number, minimum: 0, description: Looking up the host., examples: [4.1]}
+        connectMs: {type: number, minimum: 0, description: Opening the TCP connection., examples: [12.3]}
+        tlsMs: {type: number, minimum: 0, description: The TLS handshake., examples: [25.8]}
+        firstByteMs: {type: number, minimum: 0, description: From sending the request to the response's first byte., examples: [40.2]}
+        downloadMs: {type: number, minimum: 0, description: Reading the body., examples: [0.3]}
+        totalMs: {type: number, minimum: 0, description: The whole request., examples: [83.5]}
+    HistoryEntry:
+      type: object
+      description: A sent request and what came of it. It has `response` or `failure`.
+      required: [id, method, url, sentAt, request, timings]
+      properties:
+        id: {$ref: '#/components/schemas/HistoryEntryId'}
+        method: {type: string, description: The method sent., examples: [GET]}
+        url: {type: string, description: The URL sent., examples: ['https://api.example.com/orders/42']}
+        sentAt: {$ref: '#/components/schemas/Timestamp'}
+        request: {$ref: '#/components/schemas/SentRequest'}
+        response: {$ref: '#/components/schemas/RunnerResponse'}
+        failure: {$ref: '#/components/schemas/RunnerFailure'}
+        timings: {$ref: '#/components/schemas/RunnerTimings'}
+    HistorySummary:
+      type: object
+      description: An entry in a history list.
+      required: [id, method, url, durationMs, sentAt]
+      properties:
+        id: {$ref: '#/components/schemas/HistoryEntryId'}
+        method: {type: string, description: The request's method., examples: [GET]}
+        url: {type: string, description: The request's URL., examples: ['https://api.example.com/orders/42']}
+        status: {type: integer, description: The response's status; absent when the request failed., examples: [200]}
+        failure: {type: string, description: Why the request failed, if it did., examples: ["The server didn't answer in time."]}
+        durationMs: {type: number, minimum: 0, description: How long the request took., examples: [83.5]}
+        sentAt: {$ref: '#/components/schemas/Timestamp'}
+    HistoryPage:
+      type: object
+      description: One page of your history, newest first, with a cursor for the next page.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The entries on this page.
+          maxItems: 200
+          items: {$ref: '#/components/schemas/HistorySummary'}
+          examples: [[{id: hist_01j9z3w5y7a9c1e3g5j7m9p1r3, method: GET, url: 'https://api.example.com/orders/42', status: 200, durationMs: 83.5, sentAt: '2026-10-18T12:00:00Z'}]]
+        nextCursor: {$ref: '#/components/schemas/NextCursor'}
     Timestamp:
       type: string
       format: date-time

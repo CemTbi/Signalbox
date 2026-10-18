@@ -89,6 +89,10 @@ Flags win over environment variables.`,
 		"address for health endpoints; keep it off the public network [SIGNALBOX_OPS_ADDR]")
 	f.StringVar(&cfg.PublicURL, "public-url", env("SIGNALBOX_PUBLIC_URL", cfg.PublicURL),
 		"the address people open Signalbox at, such as https://signalbox.example.com [SIGNALBOX_PUBLIC_URL]")
+	f.StringVar(&cfg.EgressAllow, "egress-allow", env("SIGNALBOX_EGRESS_ALLOW", cfg.EgressAllow),
+		"address ranges and hostnames the runner may reach despite the built-in blocks, comma-separated [SIGNALBOX_EGRESS_ALLOW]")
+	f.StringVar(&cfg.EgressDeny, "egress-deny", env("SIGNALBOX_EGRESS_DENY", cfg.EgressDeny),
+		"address ranges and hostnames the runner must never reach, comma-separated [SIGNALBOX_EGRESS_DENY]")
 	f.StringVar(&cfg.TrustedProxies, "trusted-proxies", env("SIGNALBOX_TRUSTED_PROXIES", cfg.TrustedProxies),
 		"reverse proxies whose X-Forwarded-For header is believed, as addresses or CIDR ranges [SIGNALBOX_TRUSTED_PROXIES]")
 	f.StringVar(&cfg.SetupCode, "setup-code", env("SIGNALBOX_SETUP_CODE", cfg.SetupCode),

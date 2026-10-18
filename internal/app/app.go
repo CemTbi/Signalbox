@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,8 +25,11 @@ import (
 	"github.com/CemTbi/Signalbox/internal/health"
 	"github.com/CemTbi/Signalbox/internal/httpapi"
 	"github.com/CemTbi/Signalbox/internal/modules/apis"
+	"github.com/CemTbi/Signalbox/internal/modules/client"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
+	"github.com/CemTbi/Signalbox/internal/modules/runner"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
+	"github.com/CemTbi/Signalbox/internal/platform/egress"
 	"github.com/CemTbi/Signalbox/internal/platform/postgres"
 	"github.com/CemTbi/Signalbox/internal/roles"
 	"github.com/CemTbi/Signalbox/internal/webui"
@@ -70,6 +74,11 @@ type Config struct {
 	OIDC identity.SSOConfig
 	// Identity tunes accounts and sessions. Tests lower its hashing cost.
 	Identity identity.Config
+	// EgressAllow and EgressDeny adjust where the runner may send requests:
+	// comma-separated address ranges, addresses and hostnames such as
+	// 10.0.0.0/8 or *.internal.example.com. See docs/adr/0016-runner-egress.md.
+	EgressAllow string
+	EgressDeny  string
 }
 
 // DefaultConfig returns the configuration for a local single-node install.
@@ -96,6 +105,7 @@ type Server struct {
 	db         *pgxpool.Pool
 	identity   *identity.Service
 	workspaces *workspaces.Service
+	client     *client.Module // nil when the api role isn't running
 
 	ops *endpoint
 	api *endpoint // nil when the api role isn't running
@@ -164,11 +174,30 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 		return nil, err
 	}
 
+	// The api role hands requests to a runner in the same process. Runners
+	// in their own processes need NATS, which comes with high availability.
+	var run client.Runner
+	if slices.Contains(names, roles.Runner) {
+		if !slices.Contains(names, roles.API) {
+			db.Close()
+			_ = s.ops.ln.Close()
+			return nil, errors.New("the runner role runs with the api role for now: use --roles=all, or api,runner")
+		}
+		policy, err := egressPolicy(ctx, cfg.DatabaseURL, cfg.EgressAllow, cfg.EgressDeny, net.DefaultResolver)
+		if err != nil {
+			db.Close()
+			_ = s.ops.ln.Close()
+			return nil, err
+		}
+		run = runner.New(&egress.Dialer{Policy: policy}, runner.Limits{}, "Signalbox/"+build.Version)
+	}
+
 	for _, n := range names {
 		if n != roles.API {
 			continue
 		}
 		mods := apis.New(db, logger, s.workspaces)
+		s.client = client.New(db, logger, s.workspaces, run)
 		handler := httpapi.NewHandler(httpapi.Deps{
 			Logger:         logger,
 			Health:         checker,
@@ -180,6 +209,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 			Workspaces:     s.workspaces,
 			APIs:           mods,
 			Mocks:          mods,
+			Client:         s.client,
 			PublicURL:      publicURL,
 			TrustedProxies: trusted,
 		})
@@ -269,6 +299,12 @@ func (s *Server) Run(ctx context.Context) error {
 		s.workspaces.Run(gctx)
 		return nil
 	})
+	if s.client != nil {
+		g.Go(func() error {
+			s.client.Run(gctx)
+			return nil
+		})
+	}
 	s.health.SetStarted()
 	build := buildinfo.Get()
 	s.logger.Info("signalbox-server started",

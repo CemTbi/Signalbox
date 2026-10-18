@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useQuery } from "@tanstack/react-query";
-import { getRouteApi } from "@tanstack/react-router";
+import { getRouteApi, Link } from "@tanstack/react-router";
 import { lazy, Suspense } from "react";
 import { api, describeError } from "../../api";
 import { LoadError, Loading, PageHeader } from "../../components/Page";
@@ -40,6 +40,11 @@ export function ProjectPage() {
           { label: p.name },
         ]}
         meta={p.description ? <p className="lede">{p.description}</p> : null}
+        actions={
+          <Link to="/projects/$projectId/requests" params={{ projectId: p.id }} className="button secondary">
+            Requests
+          </Link>
+        }
       />
       <section className="canvas-frame" aria-label={`Canvas of ${p.name}`}>
         <Suspense fallback={<Loading label="Loading canvas…" />}>

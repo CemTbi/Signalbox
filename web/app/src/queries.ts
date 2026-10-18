@@ -208,3 +208,29 @@ export function referenceQuery(client: ApiClient, versionId: string) {
     staleTime: Number.POSITIVE_INFINITY,
   });
 }
+
+export const historyKey = (projectId: string) => ["projects", projectId, "history"] as const;
+
+/** The requests the person sent from a project, newest first. */
+export function historyQuery(client: ApiClient, projectId: string) {
+  return infiniteQueryOptions({
+    queryKey: historyKey(projectId),
+    queryFn: ({ pageParam }) =>
+      unwrap(
+        client.GET("/api/v1/projects/{projectId}/history", {
+          params: { path: { projectId }, query: { limit: PAGE_SIZE, cursor: pageParam } },
+        }),
+      ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor,
+  });
+}
+
+/** One sent request, as history keeps it. Entries never change. */
+export function historyEntryQuery(client: ApiClient, entryId: string) {
+  return queryOptions({
+    queryKey: ["history", entryId],
+    queryFn: () => unwrap(client.GET("/api/v1/history/{entryId}", { params: { path: { entryId } } })),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}

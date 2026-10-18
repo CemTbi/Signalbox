@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -28,8 +29,11 @@ import (
 	"github.com/CemTbi/Signalbox/internal/health"
 	"github.com/CemTbi/Signalbox/internal/httpapi"
 	"github.com/CemTbi/Signalbox/internal/modules/apis"
+	"github.com/CemTbi/Signalbox/internal/modules/client"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
+	"github.com/CemTbi/Signalbox/internal/modules/runner"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
+	"github.com/CemTbi/Signalbox/internal/platform/egress"
 	"github.com/CemTbi/Signalbox/internal/platform/oidctest"
 	"github.com/CemTbi/Signalbox/internal/platform/postgres/postgrestest"
 	"github.com/CemTbi/Signalbox/internal/roles"
@@ -157,7 +161,11 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *har
 		Workspaces: ws,
 		APIs:       mods,
 		Mocks:      mods,
-		PublicURL:  public,
+		// The runner may reach loopback, where tests run their servers.
+		Client: client.New(pool, logger, ws, runner.New(&egress.Dialer{Policy: egress.Policy{
+			Allow: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128")},
+		}}, runner.Limits{}, "Signalbox/test")),
+		PublicURL: public,
 	})
 	srv.StartTLS()
 	t.Cleanup(srv.Close)

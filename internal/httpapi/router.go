@@ -85,6 +85,8 @@ type Deps struct {
 	APIs       APIs
 	// Mocks finds the documents hosted mocks serve.
 	Mocks MockSources
+	// Client sends requests and keeps their history.
+	Client Client
 	// PublicURL is the address people open Signalbox at. It decides the
 	// session cookie's name and flags, and the origin that unsafe requests
 	// must come from. Default http://localhost:8080.
@@ -107,6 +109,7 @@ type api struct {
 	invitationsByIP *ratelimit.Limiter
 	ssoByIP         *ratelimit.Limiter
 	mocksByIP       *ratelimit.Limiter
+	sendsByUser     *ratelimit.Limiter
 	mockCache       *revisionCache[*mockengine.Mock]
 	referenceCache  *revisionCache[*refdocs.Reference]
 	// codegenSlots bounds how many code generations run at once.
@@ -133,6 +136,7 @@ func NewHandler(d Deps) http.Handler {
 		invitationsByIP: ratelimit.New(20, 3*time.Second),        // 20 at once, then 20 a minute
 		ssoByIP:         ratelimit.New(20, 3*time.Second),        // 20 at once, then 20 a minute
 		mocksByIP:       ratelimit.New(300, 10*time.Millisecond), // 300 at once, then 100 a second
+		sendsByUser:     ratelimit.New(30, 100*time.Millisecond), // 30 at once, then 10 a second
 		mockCache:       newRevisionCache(64, func(c string) (*mockengine.Mock, error) { return mockengine.New([]byte(c)) }),
 		referenceCache:  newRevisionCache(64, func(c string) (*refdocs.Reference, error) { return refdocs.Build([]byte(c)) }),
 		codegenSlots:    make(chan struct{}, max(2, runtime.GOMAXPROCS(0)/2)),
@@ -198,6 +202,9 @@ func NewHandler(d Deps) http.Handler {
 	})
 
 	mux.Handle("/api/v1/projects/{projectId}/canvas", methods{http.MethodPut: a.authenticated(a.placeServices)})
+	mux.Handle("/api/v1/projects/{projectId}/send", methods{http.MethodPost: a.authenticated(a.sendRequest)})
+	mux.Handle("/api/v1/projects/{projectId}/history", methods{http.MethodGet: a.authenticated(a.listHistory)})
+	mux.Handle("/api/v1/history/{entryId}", methods{http.MethodGet: a.authenticated(a.getHistoryEntry)})
 	mux.Handle("/api/v1/projects/{projectId}/services", methods{
 		http.MethodGet:  a.authenticated(a.listServices),
 		http.MethodPost: a.authenticated(a.createService),
