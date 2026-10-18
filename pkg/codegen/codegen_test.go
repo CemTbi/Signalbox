@@ -220,6 +220,21 @@ func TestGeneratedCodeBuilds(t *testing.T) {
 			write(f.Path, string(f.Content))
 		}
 	}
+	// Signalbox's own API is a large, real document.
+	own, err := os.ReadFile(filepath.Join("..", "..", "api", "openapi.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []codegen.Target{codegen.TargetGoClient, codegen.TargetGoServer} {
+		r, err := codegen.Generate(specload.Document{Data: own, Name: "openapi.yaml"},
+			codegen.Options{Target: target, Package: "signalbox" + strings.ReplaceAll(string(target), "-", "")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range r.Files {
+			write(f.Path, string(f.Content))
+		}
+	}
 	for _, args := range [][]string{{"mod", "tidy"}, {"vet", "./..."}} {
 		cmd := exec.Command("go", args...)
 		cmd.Dir = dir

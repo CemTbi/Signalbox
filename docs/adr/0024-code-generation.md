@@ -36,11 +36,18 @@ Each target writes `<package>/<package>.gen.go` and a README. The package name c
 
 **`signalbox codegen --target <target> <file>`** writes the package under `--out`. Generated `.gen.go` files are replaced on every run; a README someone has changed is kept.
 
-**The other languages come next, starting with a TypeScript client generated in process.** It's what frontend developers building against a mock need first, and it shouldn't need a JVM. Python, Java and C# come through openapi-generator, in a container an installation opts into, as the plan says.
+**The TypeScript client (`typescript-client`) is Signalbox's own generator, in Go.** It's what frontend developers building against a mock need first, and it shouldn't need a JVM or Node.js where it runs.
+- **Output:** one `index.ts` with no dependencies, on `fetch`. It has a type per component schema, and a client whose methods each take one object of parameters and `body`. A method resolves to its success response's body; other statuses throw `ApiError` with the parsed body, such as an RFC 9457 problem.
+- **Types:** 3.1's type lists, `const` and nullable types map to TypeScript unions and literal types directly.
+- **Parameters:** cookie parameters are left out, because browsers don't let scripts set cookies.
+- **Stability:** output is sorted, so the same document always gives the same file.
+- **Testing:** the tests type-check clients with `tsc --strict`, including one for Signalbox's own API, and run one against a fake `fetch`.
+
+Python, Java and C# come through openapi-generator, in a container an installation opts into, as the plan says.
 
 ## Consequences
 
-- Teams can generate Go clients and servers from the CLI today, and in CI.
+- Teams can generate Go clients and servers and TypeScript clients from the CLI today, and in CI.
 - Generated Go code needs `github.com/oapi-codegen/runtime`, which the README says how to add. Signalbox's tests compile the generated code against it.
 - The CLI binary grows by about 5 MB, from 61 to 66 MB.
 - The preparation step rewrites only the document given to it. A schema with several types in a file it references still fails to generate, with oapi-codegen's error.
