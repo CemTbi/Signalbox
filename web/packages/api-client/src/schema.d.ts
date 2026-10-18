@@ -577,6 +577,31 @@ export interface paths {
         patch: operations["updateEnvironment"];
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/canvas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Move services on the canvas
+         * @description Sets where services' nodes are on the project's canvas, such as after someone drags one or arranges the canvas automatically. Owners, admins and editors may.
+         *
+         *     Layout isn't an edit of the services: their ETags stay the same, so it needs no `If-Match`, and the last move wins. The move is all or nothing; if a service isn't in the project, nothing moves.
+         */
+        put: operations["placeServices"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/services": {
         parameters: {
             query?: never;
@@ -1669,6 +1694,34 @@ export interface components {
              */
             y: number;
         };
+        /** @description Services to move on a canvas. */
+        CanvasPlacements: {
+            /**
+             * @description Where each service's node goes. Each service may appear once.
+             * @example [
+             *       {
+             *         "serviceId": "svc_01j9z3q1s3v5w7y9a1c3e5g7j9",
+             *         "x": 320,
+             *         "y": 120
+             *       }
+             *     ]
+             */
+            positions: components["schemas"]["CanvasPlacement"][];
+        };
+        /** @description Where one service's node goes, in canvas units. */
+        CanvasPlacement: {
+            serviceId: components["schemas"]["ServiceId"];
+            /**
+             * @description The node's horizontal position.
+             * @example 320
+             */
+            x: number;
+            /**
+             * @description The node's vertical position.
+             * @example 120
+             */
+            y: number;
+        };
         /**
          * @description The `service.name` a service reports in its traces. It links the service's spans to its node on the canvas.
          * @example orders-api
@@ -1680,6 +1733,13 @@ export interface components {
             slug: components["schemas"]["Slug"];
             description?: components["schemas"]["Description"];
             telemetryServiceName?: components["schemas"]["TelemetryServiceName"];
+            /**
+             * @description Where the node goes. Without it, the service takes the next free spot of a grid four nodes wide, after the project's other services.
+             * @example {
+             *       "x": 320,
+             *       "y": 120
+             *     }
+             */
             position?: components["schemas"]["CanvasPosition"];
         };
         /** @description Changes to a service. Fields that aren't sent keep their value. */
@@ -4490,6 +4550,49 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             412: components["responses"]["PreconditionFailed"];
+            default: components["responses"]["Error"];
+        };
+    };
+    placeServices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /** @description The services to move, and where to. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "positions": [
+                 *         {
+                 *           "serviceId": "svc_01j9z3q1s3v5w7y9a1c3e5g7j9",
+                 *           "x": 320,
+                 *           "y": 120
+                 *         }
+                 *       ]
+                 *     }
+                 */
+                "application/json": components["schemas"]["CanvasPlacements"];
+            };
+        };
+        responses: {
+            /** @description The services moved. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             default: components["responses"]["Error"];
         };
     };

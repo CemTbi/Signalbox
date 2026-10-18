@@ -213,7 +213,7 @@ func (a *api) createService(w http.ResponseWriter, r *http.Request, s *identity.
 		in.TelemetryServiceName = *body.TelemetryServiceName
 	}
 	if body.Position != nil {
-		in.Position = apis.Position{X: body.Position.X, Y: body.Position.Y}
+		in.Position = &apis.Position{X: body.Position.X, Y: body.Position.Y}
 	}
 	if len(fields) > 0 {
 		writeInvalid(w, r, fields)
@@ -615,6 +615,7 @@ type APIs interface {
 	ListServices(ctx context.Context, userID, projectID uuid.UUID, p workspaces.PageRequest) (workspaces.Page[apis.Service], error)
 	CreateService(ctx context.Context, userID, projectID uuid.UUID, in apis.ServiceInput) (apis.Service, error)
 	GetService(ctx context.Context, userID, serviceID uuid.UUID) (apis.Service, error)
+	PlaceServices(ctx context.Context, userID, projectID uuid.UUID, placements []apis.Placement) error
 	UpdateService(ctx context.Context, userID, serviceID uuid.UUID, pre workspaces.Precondition, patch apis.ServicePatch) (apis.Service, error)
 	DeleteService(ctx context.Context, userID, serviceID uuid.UUID, pre workspaces.Precondition) error
 	ListSpecs(ctx context.Context, userID, serviceID uuid.UUID, p workspaces.PageRequest) (workspaces.Page[apis.Spec], error)

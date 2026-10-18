@@ -1288,6 +1288,34 @@ paths:
         '412': {$ref: '#/components/responses/PreconditionFailed'}
         default: {$ref: '#/components/responses/Error'}
 
+  /api/v1/projects/{projectId}/canvas:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    put:
+      operationId: placeServices
+      summary: Move services on the canvas
+      description: |
+        Sets where services' nodes are on the project's canvas, such as after someone drags one or arranges the canvas automatically. Owners, admins and editors may.
+
+        Layout isn't an edit of the services: their ETags stay the same, so it needs no `If-Match`, and the last move wins. The move is all or nothing; if a service isn't in the project, nothing moves.
+      tags: [Services]
+      requestBody:
+        required: true
+        description: The services to move, and where to.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CanvasPlacements'}
+            example: {positions: [{serviceId: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, x: 320, y: 120}]}
+      responses:
+        '204':
+          description: The services moved.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
   /api/v1/projects/{projectId}/services:
     parameters:
       - $ref: '#/components/parameters/ProjectId'
@@ -3099,6 +3127,28 @@ components:
       properties:
         x: {type: number, description: Horizontal position., examples: [320]}
         y: {type: number, description: Vertical position., examples: [120]}
+    CanvasPlacements:
+      type: object
+      description: Services to move on a canvas.
+      required: [positions]
+      additionalProperties: false
+      properties:
+        positions:
+          type: array
+          description: Where each service's node goes. Each service may appear once.
+          minItems: 1
+          maxItems: 500
+          items: {$ref: '#/components/schemas/CanvasPlacement'}
+          examples: [[{serviceId: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, x: 320, y: 120}]]
+    CanvasPlacement:
+      type: object
+      description: Where one service's node goes, in canvas units.
+      required: [serviceId, x, y]
+      additionalProperties: false
+      properties:
+        serviceId: {$ref: '#/components/schemas/ServiceId'}
+        x: {type: number, minimum: -1000000000, maximum: 1000000000, description: The node's horizontal position., examples: [320]}
+        y: {type: number, minimum: -1000000000, maximum: 1000000000, description: The node's vertical position., examples: [120]}
     TelemetryServiceName:
       type: string
       maxLength: 255
@@ -3114,7 +3164,11 @@ components:
         slug: {$ref: '#/components/schemas/Slug'}
         description: {$ref: '#/components/schemas/Description'}
         telemetryServiceName: {$ref: '#/components/schemas/TelemetryServiceName'}
-        position: {$ref: '#/components/schemas/CanvasPosition'}
+        position:
+          $ref: '#/components/schemas/CanvasPosition'
+          type: object
+          description: Where the node goes. Without it, the service takes the next free spot of a grid four nodes wide, after the project's other services.
+          examples: [{x: 320, y: 120}]
     ServiceUpdate:
       type: object
       description: Changes to a service. Fields that aren't sent keep their value.

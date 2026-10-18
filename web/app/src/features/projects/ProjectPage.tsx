@@ -28,6 +28,7 @@ export function ProjectPage() {
 
   const p = project.data;
   const wsName = workspace.data?.name ?? "Workspace";
+  const canEdit = workspace.data !== undefined && workspace.data.role !== "viewer";
 
   return (
     <div className="stack project">
@@ -42,10 +43,10 @@ export function ProjectPage() {
       />
       <section className="canvas-frame" aria-label={`Canvas of ${p.name}`}>
         <Suspense fallback={<Loading label="Loading canvas…" />}>
-          <Canvas />
+          <Canvas projectId={p.id} canEdit={canEdit} />
         </Suspense>
       </section>
-      <ServicesSection projectId={p.id} canEdit={workspace.data !== undefined && workspace.data.role !== "viewer"} />
+      <ServicesSection projectId={p.id} canEdit={canEdit} />
     </div>
   );
 }

@@ -792,6 +792,50 @@ button {
   margin: 0;
 }
 
+/* What the canvas says and offers, over its top edge. */
+.canvas-bar {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  pointer-events: none;
+}
+
+.canvas-bar > * {
+  pointer-events: auto;
+}
+
+.canvas-hint,
+.canvas-status {
+  margin: 0;
+  padding: 3px 8px;
+  font-size: 13px;
+  color: var(--ink-2);
+  background: var(--surface);
+  border-radius: 4px;
+}
+
+.canvas-status:empty {
+  display: none;
+}
+
+.canvas-bar .button {
+  margin-left: auto;
+}
+
+.canvas-alert {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  z-index: 5;
+}
+
 .canvas-empty .empty-title {
   margin-bottom: 6px;
 }

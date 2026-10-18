@@ -47,8 +47,26 @@ type ServiceInput struct {
 	Slug                 string
 	Description          string
 	TelemetryServiceName string
-	Position             Position
+	// Position is where the node goes; nil puts it in the next free spot of
+	// a grid, after the project's other services.
+	Position *Position
 }
+
+// Placement is where a service's node goes on the canvas.
+type Placement struct {
+	ServiceID uuid.UUID
+	Position  Position
+}
+
+// The grid new services are placed on, in canvas units: a node is 224 by
+// 92, with room for lines between.
+const (
+	gridColumns = 4
+	gridX       = 288
+	gridY       = 152
+	// maxPlacements bounds one PlaceServices call, as pages bound lists.
+	maxPlacements = 500
+)
 
 // ServicePatch changes the fields that aren't nil.
 type ServicePatch struct {
@@ -126,7 +144,9 @@ func (m *Module) CreateService(ctx context.Context, userID, projectID uuid.UUID,
 		Slug:                 validate.Slug(&errs, "/slug", in.Slug),
 		Description:          validate.Description(&errs, "/description", in.Description),
 		TelemetryServiceName: telemetryName(&errs, in.TelemetryServiceName),
-		Position:             position(&errs, in.Position),
+	}
+	if in.Position != nil {
+		s.Position = position(&errs, *in.Position)
 	}
 	if err := errs.Err(); err != nil {
 		return Service{}, err
@@ -134,12 +154,34 @@ func (m *Module) CreateService(ctx context.Context, userID, projectID uuid.UUID,
 	if err := m.authorize(ctx, userID, projectID, edit); err != nil {
 		return Service{}, err
 	}
-	err := m.db.QueryRow(ctx, `
-		INSERT INTO services (id, project_id, name, slug, description, telemetry_service_name, position_x, position_y)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING version, created_at, updated_at`,
-		s.ID, s.ProjectID, s.Name, s.Slug, s.Description, nullable(s.TelemetryServiceName), s.Position.X, s.Position.Y,
-	).Scan(&s.Version, &s.CreatedAt, &s.UpdatedAt)
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if in.Position == nil {
+			// Services added at the same moment would otherwise see the
+			// same free spot.
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))`, "services-of:"+projectID.String()); err != nil {
+				return err
+			}
+			rows, err := tx.Query(ctx, `SELECT position_x, position_y FROM services WHERE project_id = $1`, projectID)
+			if err != nil {
+				return err
+			}
+			taken, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Position, error) {
+				var p Position
+				err := row.Scan(&p.X, &p.Y)
+				return p, err
+			})
+			if err != nil {
+				return err
+			}
+			s.Position = freeSpot(taken)
+		}
+		return tx.QueryRow(ctx, `
+			INSERT INTO services (id, project_id, name, slug, description, telemetry_service_name, position_x, position_y)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			RETURNING version, created_at, updated_at`,
+			s.ID, s.ProjectID, s.Name, s.Slug, s.Description, nullable(s.TelemetryServiceName), s.Position.X, s.Position.Y,
+		).Scan(&s.Version, &s.CreatedAt, &s.UpdatedAt)
+	})
 	switch {
 	case postgres.IsUniqueViolation(err, "services_project_slug_key"):
 		return Service{}, ErrSlugTaken
@@ -151,6 +193,31 @@ func (m *Module) CreateService(ctx context.Context, userID, projectID uuid.UUID,
 	m.logger.InfoContext(ctx, "created service", id.LogAttr("service_id", id.Service, s.ID),
 		id.LogAttr("project_id", id.Project, projectID), id.LogAttr("user_id", id.User, userID))
 	return s, nil
+}
+
+// Node size on the canvas, for finding free spots.
+const (
+	nodeWidth  = 224
+	nodeHeight = 92
+)
+
+// freeSpot is the first spot of the grid, in reading order, that no node
+// overlaps. n nodes overlap at most 4n spots, so one of the first 4n+1 is
+// free.
+func freeSpot(taken []Position) Position {
+	for i := 0; ; i++ {
+		spot := Position{X: float64(i%gridColumns) * gridX, Y: float64(i/gridColumns) * gridY}
+		free := true
+		for _, t := range taken {
+			if math.Abs(t.X-spot.X) < nodeWidth && math.Abs(t.Y-spot.Y) < nodeHeight {
+				free = false
+				break
+			}
+		}
+		if free {
+			return spot
+		}
+	}
 }
 
 // GetService returns a service.
@@ -270,5 +337,64 @@ func (m *Module) DeleteService(ctx context.Context, userID, serviceID uuid.UUID,
 		return fmt.Errorf("delete service: %w", err)
 	}
 	m.logger.InfoContext(ctx, "deleted service", id.LogAttr("service_id", id.Service, serviceID), id.LogAttr("user_id", id.User, userID))
+	return nil
+}
+
+// PlaceServices moves services' nodes on their project's canvas. Owners,
+// admins and editors may. Layout isn't an edit of the services: their
+// versions stay, so moving a node never conflicts with someone renaming
+// it, and the last move wins. ErrNotFound means a service isn't in the
+// project.
+func (m *Module) PlaceServices(ctx context.Context, userID, projectID uuid.UUID, placements []Placement) error {
+	var errs validate.Errors
+	switch {
+	case len(placements) == 0:
+		errs.Add("/positions", "minItems", "Send at least one position.")
+	case len(placements) > maxPlacements:
+		errs.Add("/positions", "maxItems", fmt.Sprintf("Send at most %d positions at once.", maxPlacements))
+	}
+	ids := make([]uuid.UUID, len(placements))
+	xs := make([]float64, len(placements))
+	ys := make([]float64, len(placements))
+	seen := map[uuid.UUID]bool{}
+	for i, p := range placements {
+		pointer := fmt.Sprintf("/positions/%d", i)
+		if seen[p.ServiceID] {
+			errs.Add(pointer+"/serviceId", "uniqueItems", "Send each service once.")
+		}
+		seen[p.ServiceID] = true
+		var perrs validate.Errors
+		position(&perrs, p.Position)
+		for _, e := range perrs {
+			errs.Add(pointer, e.Code, e.Detail)
+		}
+		ids[i], xs[i], ys[i] = p.ServiceID, p.Position.X, p.Position.Y
+	}
+	if err := errs.Err(); err != nil {
+		return err
+	}
+	if err := m.authorize(ctx, userID, projectID, edit); err != nil {
+		return err
+	}
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `
+			UPDATE services s SET position_x = p.x, position_y = p.y
+			FROM unnest($2::uuid[], $3::float8[], $4::float8[]) AS p(id, x, y)
+			WHERE s.id = p.id AND s.project_id = $1`, projectID, ids, xs, ys)
+		if err != nil {
+			return err
+		}
+		// All or nothing: a service from elsewhere undoes the rest.
+		if tag.RowsAffected() != int64(len(placements)) {
+			return ErrNotFound
+		}
+		return nil
+	})
+	if errors.Is(err, ErrNotFound) {
+		return err
+	}
+	if err != nil {
+		return fmt.Errorf("place services: %w", err)
+	}
 	return nil
 }
