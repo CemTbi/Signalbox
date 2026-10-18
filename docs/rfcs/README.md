@@ -20,3 +20,9 @@ Bug fixes, small features inside an existing module and refactors don't need an 
 5. Implementation happens in separate pull requests that link to the RFC.
 
 Decisions about architecture that come out of an RFC are also recorded as [ADRs](../adr/README.md).
+
+## Index
+
+| RFC | Title | Status |
+|---|---|---|
+| [0001](0001-api-client-and-tests.md) | The API client, tests and the local agent (v0.2) | In discussion |
