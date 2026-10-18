@@ -88,3 +88,90 @@ func keys(m map[string]string) []string {
 	}
 	return out
 }
+
+// What the code can't express is listed in the archive, and a document the
+// generator can't read is refused with its reason.
+func TestGeneratedCodeWarningsAndFailures(t *testing.T) {
+	h := newHarness(t)
+	h.setUp()
+	p := h.newProject("shop")
+	var svc httpapi.ServiceJSON
+	h.do(call{method: http.MethodPost, path: "/api/v1/projects/" + p.ID + "/services", body: map[string]string{"name": "Pairs", "slug": "pairs"}}).decode(t, &svc)
+	publish := func(name, content string) string {
+		t.Helper()
+		var spec httpapi.SpecJSON
+		h.do(call{method: http.MethodPost, path: "/api/v1/services/" + svc.ID + "/specs", body: map[string]string{"name": name, "content": content}}).decode(t, &spec)
+		var v httpapi.VersionJSON
+		r := h.do(call{method: http.MethodPost, path: "/api/v1/specs/" + spec.ID + "/versions", body: map[string]string{}})
+		r.expect(t, http.StatusCreated, "")
+		r.decode(t, &v)
+		return "/api/v1/versions/" + v.ID + "/code"
+	}
+
+	r := h.do(call{method: http.MethodGet, path: publish("Pairs", pairsSpec) + "?target=go-client"})
+	r.expect(t, http.StatusOK, "")
+	if r.header.Get("X-Codegen-Warnings") != "1" {
+		t.Errorf("X-Codegen-Warnings = %q", r.header.Get("X-Codegen-Warnings"))
+	}
+	if w := unzip(t, r.body)["pairs/WARNINGS.md"]; !strings.Contains(w, "Line 22, column 17: prefixItems isn't expressed") {
+		t.Errorf("WARNINGS.md = %q", w)
+	}
+
+	// A reference into another schema's properties is valid OpenAPI, but
+	// oapi-codegen can't make a Go type of it.
+	h.do(call{method: http.MethodGet, path: publish("Nested", nestedRefSpec) + "?target=go-client"}).
+		expect(t, http.StatusUnprocessableEntity, "codegen-failed")
+}
+
+const pairsSpec = `openapi: 3.1.1
+info:
+  title: Pairs API
+  version: 1.0.0
+  description: Pairs.
+servers: [{url: 'https://pairs.example.com'}]
+tags: [{name: pairs, description: Pairs.}]
+paths:
+  /pairs:
+    get:
+      operationId: listPairs
+      summary: List pairs.
+      description: Lists pairs.
+      tags: [pairs]
+      responses:
+        '200':
+          description: The pairs.
+          content:
+            application/json:
+              schema:
+                type: array
+                prefixItems: [{type: string}, {type: integer}]
+`
+
+const nestedRefSpec = `openapi: 3.1.1
+info:
+  title: Nested API
+  version: 1.0.0
+  description: Nested.
+servers: [{url: 'https://nested.example.com'}]
+tags: [{name: things, description: Things.}]
+paths:
+  /things:
+    get:
+      operationId: getThing
+      summary: Get a thing.
+      description: Gets a thing.
+      tags: [things]
+      responses:
+        '200':
+          description: The thing.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Thing'}
+components:
+  schemas:
+    Thing:
+      type: object
+      properties:
+        copy: {$ref: '#/components/schemas/Thing/properties/name'}
+        name: {type: string}
+`
