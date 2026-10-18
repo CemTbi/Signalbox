@@ -46,6 +46,8 @@ function ProjectCanvas({ projectId, canEdit }: { projectId: string; canEdit: boo
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
+  const listRef = useRef(list);
+  listRef.current = list;
 
   // Services added, renamed or removed elsewhere show up; local moves stay.
   useEffect(() => {
@@ -68,11 +70,12 @@ function ProjectCanvas({ projectId, canEdit }: { projectId: string; canEdit: boo
       if (pending.current.size === 0) setSave({ state: "saved" });
     } catch (err) {
       setSave({ state: "failed", message: describeError(err) });
-      // Show where the services really are.
-      setNodes([]);
+      // Put the services back where they were saved. The refetch below may
+      // return the same data, which wouldn't rebuild the nodes by itself.
+      setNodes(servicesToNodes(listRef.current ?? [], [], canEdit));
     }
     await queryClient.invalidateQueries({ queryKey: servicesKey(projectId) });
-  }, [projectId, queryClient]);
+  }, [projectId, queryClient, canEdit]);
 
   const schedule = useCallback(
     (ids: string[]) => {

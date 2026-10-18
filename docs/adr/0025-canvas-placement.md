@@ -18,7 +18,7 @@ A team arranges a canvas together. Moving a node is frequent and cheap to redo. 
 - **Moving a node doesn't change the service's version.** A rename begun before a drag still applies, instead of failing with `412` over a move nobody meant to conflict with.
 - **Moves are all or nothing.** If a service isn't in the project, nothing moves and the answer is `404`.
 
-**New services take the next free spot**, on a grid four nodes wide with room for lines between them (288 by 152 canvas units). A position sent when creating a service still wins.
+**New services take the next free spot**, on a grid four nodes wide with room for lines between them (288 by 152 canvas units): the first spot, in reading order, that no node overlaps, wherever people have moved or removed services. Creating a service locks its project's placement for the moment of the insert, so services added at the same time don't share a spot. A position sent when creating a service still wins.
 
 **The web app saves moves as they finish.** A drag saves when it's dropped. Moving a selected node with the arrow keys saves 400 ms after the last key, so a run of key presses is one request. Positions snap to an 8-unit grid, so saved positions are whole numbers and keyboard moves take even steps. **Arrange automatically** lays the canvas out with ELK, as in the spike, and saves every position in one request. Double-clicking a node opens its service.
 

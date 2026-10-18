@@ -154,19 +154,34 @@ func (m *Module) CreateService(ctx context.Context, userID, projectID uuid.UUID,
 	if err := m.authorize(ctx, userID, projectID, edit); err != nil {
 		return Service{}, err
 	}
-	if in.Position == nil {
-		var n int
-		if err := m.db.QueryRow(ctx, `SELECT count(*) FROM services WHERE project_id = $1`, projectID).Scan(&n); err != nil {
-			return Service{}, fmt.Errorf("create service: %w", err)
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		if in.Position == nil {
+			// Services added at the same moment would otherwise see the
+			// same free spot.
+			if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))`, "services-of:"+projectID.String()); err != nil {
+				return err
+			}
+			rows, err := tx.Query(ctx, `SELECT position_x, position_y FROM services WHERE project_id = $1`, projectID)
+			if err != nil {
+				return err
+			}
+			taken, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (Position, error) {
+				var p Position
+				err := row.Scan(&p.X, &p.Y)
+				return p, err
+			})
+			if err != nil {
+				return err
+			}
+			s.Position = freeSpot(taken)
 		}
-		s.Position = Position{X: float64(n%gridColumns) * gridX, Y: float64(n/gridColumns) * gridY}
-	}
-	err := m.db.QueryRow(ctx, `
-		INSERT INTO services (id, project_id, name, slug, description, telemetry_service_name, position_x, position_y)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-		RETURNING version, created_at, updated_at`,
-		s.ID, s.ProjectID, s.Name, s.Slug, s.Description, nullable(s.TelemetryServiceName), s.Position.X, s.Position.Y,
-	).Scan(&s.Version, &s.CreatedAt, &s.UpdatedAt)
+		return tx.QueryRow(ctx, `
+			INSERT INTO services (id, project_id, name, slug, description, telemetry_service_name, position_x, position_y)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			RETURNING version, created_at, updated_at`,
+			s.ID, s.ProjectID, s.Name, s.Slug, s.Description, nullable(s.TelemetryServiceName), s.Position.X, s.Position.Y,
+		).Scan(&s.Version, &s.CreatedAt, &s.UpdatedAt)
+	})
 	switch {
 	case postgres.IsUniqueViolation(err, "services_project_slug_key"):
 		return Service{}, ErrSlugTaken
@@ -178,6 +193,31 @@ func (m *Module) CreateService(ctx context.Context, userID, projectID uuid.UUID,
 	m.logger.InfoContext(ctx, "created service", id.LogAttr("service_id", id.Service, s.ID),
 		id.LogAttr("project_id", id.Project, projectID), id.LogAttr("user_id", id.User, userID))
 	return s, nil
+}
+
+// Node size on the canvas, for finding free spots.
+const (
+	nodeWidth  = 224
+	nodeHeight = 92
+)
+
+// freeSpot is the first spot of the grid, in reading order, that no node
+// overlaps. n nodes overlap at most 4n spots, so one of the first 4n+1 is
+// free.
+func freeSpot(taken []Position) Position {
+	for i := 0; ; i++ {
+		spot := Position{X: float64(i%gridColumns) * gridX, Y: float64(i/gridColumns) * gridY}
+		free := true
+		for _, t := range taken {
+			if math.Abs(t.X-spot.X) < nodeWidth && math.Abs(t.Y-spot.Y) < nodeHeight {
+				free = false
+				break
+			}
+		}
+		if free {
+			return spot
+		}
+	}
 }
 
 // GetService returns a service.

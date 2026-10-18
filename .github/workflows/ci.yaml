@@ -198,7 +198,9 @@ jobs:
 
       - name: Check Signalbox's own API spec as the admin the tests created
         run: |
-          session=$(curl -fsS -c cookies.txt -H "Origin: $BASE" -H 'Content-Type: application/json' \
+          # The tests sign in as the admin many times. Past the sign-in rate
+          # limit, curl waits as Retry-After says and tries again.
+          session=$(curl -fsS --retry 3 --retry-max-time 120 -c cookies.txt -H "Origin: $BASE" -H 'Content-Type: application/json' \
             -d '{"email":"ada@example.com","password":"correct horse battery staple"}' "$BASE/api/v1/sessions")
           csrf=$(jq -r .csrfToken <<<"$session")
           curl -fsS -b cookies.txt -H "Origin: $BASE" -H "X-CSRF-Token: $csrf" -H 'Content-Type: application/yaml' \

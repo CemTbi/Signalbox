@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -469,6 +470,20 @@ func TestPlacingServices(t *testing.T) {
 	if p := services[4].Position; p != (apis.Position{X: 0, Y: 152}) {
 		t.Errorf("fifth service at %+v", p)
 	}
+	// A deleted service's spot is free again, and the next one is the
+	// first spot no node covers.
+	if err := f.mod.DeleteService(f.ctx, f.owner, services[2].ID, workspaces.Precondition{}); err != nil {
+		t.Fatal(err)
+	}
+	refill, err := f.mod.CreateService(f.ctx, f.owner, f.project, apis.ServiceInput{Name: "Refill", Slug: "refill"})
+	if err != nil || refill.Position != (apis.Position{X: 576, Y: 0}) {
+		t.Errorf("after a deletion: %+v, %v", refill.Position, err)
+	}
+	next, err := f.mod.CreateService(f.ctx, f.owner, f.project, apis.ServiceInput{Name: "Next", Slug: "next"})
+	if err != nil || next.Position != (apis.Position{X: 288, Y: 152}) {
+		t.Errorf("next: %+v, %v", next.Position, err)
+	}
+	services = services[:2]
 
 	moves := []apis.Placement{{ServiceID: services[0].ID, Position: apis.Position{X: 10, Y: 20}}, {ServiceID: services[1].ID, Position: apis.Position{X: -5, Y: 7.5}}}
 	if err := f.mod.PlaceServices(f.ctx, f.owner, f.project, moves); err != nil {
@@ -499,5 +514,32 @@ func TestPlacingServices(t *testing.T) {
 	}
 	if err := f.mod.PlaceServices(f.ctx, f.owner, f.project, nil); !errors.As(err, &verrs) {
 		t.Errorf("nothing to place: %v", err)
+	}
+}
+
+// Services added at the same moment still get spots of their own.
+func TestConcurrentServicesGetTheirOwnSpots(t *testing.T) {
+	f := setup(t)
+	const n = 6
+	positions := make(chan apis.Position, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Go(func() {
+			s, err := f.mod.CreateService(f.ctx, f.owner, f.project, apis.ServiceInput{Name: fmt.Sprintf("C%d", i), Slug: fmt.Sprintf("c%d", i)})
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			positions <- s.Position
+		})
+	}
+	wg.Wait()
+	close(positions)
+	seen := map[apis.Position]bool{}
+	for p := range positions {
+		if seen[p] {
+			t.Errorf("two services at %+v", p)
+		}
+		seen[p] = true
 	}
 }
