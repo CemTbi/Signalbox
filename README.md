@@ -7,6 +7,7 @@ Signalbox is an open-source platform for the whole life of an HTTP API. You desi
 ## What works today
 
 - **`signalbox lint`** validates Swagger 2.0 and OpenAPI 3.0, 3.1 and 3.2 documents against the official JSON Schemas, resolves every `$ref`, and checks the recommended and OWASP API Security rules. Each finding has an exact line and column, and the exit code tells CI whether to fail.
+- **`signalbox diff`** compares two versions of an API and reports which changes break clients, such as a removed operation or a parameter that became required, with the operation and line of each.
 - **`signalbox-server`** stores its data in PostgreSQL and migrates the schema at startup. A new installation asks for a setup code from the server log and creates the first admin account. People sign in with a password or through their organization's OpenID Connect provider; workspaces have owners, admins, editors and viewers, who bring others in with invitation links; each project gets development, staging and production environments, a canvas, and services whose OpenAPI specs are checked, kept in revisions, published as versions and served as hosted mocks. Spec checks run in the browser and over the API.
 - **The REST API** in [`api/openapi.yaml`](api/openapi.yaml) covers everything the web app does. Errors are RFC 9457 problem documents, edits use ETags, and lists page with cursors.
 
@@ -28,6 +29,9 @@ go run ./cmd/signalbox lint path/to/openapi.yaml
 
 # Gate CI on warnings too, with annotations on the pull request
 go run ./cmd/signalbox lint --fail-on warning --format github path/to/openapi.yaml
+
+# Fail on breaking changes against the main branch
+git show origin/main:path/to/openapi.yaml | go run ./cmd/signalbox diff --format github - path/to/openapi.yaml
 ```
 
 To work on Signalbox itself, see [CONTRIBUTING.md](CONTRIBUTING.md). With `make` installed, `make help` lists the common tasks.

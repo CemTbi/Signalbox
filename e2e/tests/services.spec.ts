@@ -27,6 +27,8 @@ test("a service's spec is checked, edited, kept in revisions and published", asy
   await openAsAdmin(page, request);
   await page.getByLabel("Name", { exact: true }).fill(`Orders ${run}`);
   await page.getByRole("button", { name: "Create workspace" }).click();
+  // The workspace's page replaces the form; filling in earlier types into the old one.
+  await expect(page.getByRole("heading", { level: 1, name: `Orders ${run}` })).toBeVisible();
   await page.getByLabel("Name", { exact: true }).fill("Shop");
   await page.getByRole("button", { name: "Create project" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Shop" })).toBeVisible();

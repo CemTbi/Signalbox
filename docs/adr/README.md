@@ -28,3 +28,4 @@ Write a new ADR by copying [template.md](template.md) to the next number. Propos
 | [0020](0020-published-versions.md) | Published versions and the publish gate | Accepted |
 | [0021](0021-hosted-mocks.md) | Hosted mocks of published versions | Accepted |
 | [0022](0022-reference-docs.md) | Reference docs of published versions | Accepted |
+| [0023](0023-breaking-changes.md) | Breaking-change reports with oasdiff | Accepted |

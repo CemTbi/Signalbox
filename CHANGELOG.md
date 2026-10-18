@@ -7,6 +7,7 @@ All notable changes to Signalbox are recorded here. The format follows [Keep a C
 ### Added
 
 - Spec engine (`pkg/specengine`): parses Swagger 2.0 and OpenAPI 3.0, 3.1 and 3.2; validates against the official JSON Schema for each version; resolves `$ref`s and detects circular references that can never end; lints with the recommended and OWASP API Security rule sets. Every diagnostic carries a line and column.
+- `signalbox diff <base> <head>` reports what changed between two versions of an API: breaking changes as errors, changes that may break some clients as warnings, and the rest as information, each with its operation and line. Output is text, JSON, GitHub Actions annotations or a Markdown table, and the exit code fails CI on breaking changes. Signalbox's own CI reports changes to its API on every pull request.
 - `signalbox lint` with text, JSON and GitHub Actions annotation output, `--fail-on` and `--min-severity` thresholds, and standard input support.
 - `signalbox-server` with the `api` role: `/livez` and `/readyz` in `application/health+json`, `GET /api/v1/meta`, `POST /api/v1/spec-checks`, RFC 9457 error responses, request IDs, security headers, a separate ops listener and graceful shutdown with a drain delay.
 - The platform's own API contract in `api/openapi.yaml`.
