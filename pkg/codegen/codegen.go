@@ -12,6 +12,7 @@ package codegen
 import (
 	"errors"
 	"fmt"
+	"go/token"
 	"regexp"
 	"strings"
 	"unicode"
@@ -84,13 +85,13 @@ type Result struct {
 }
 
 // ErrInvalidPackage means Options.Package isn't a valid package name.
-var ErrInvalidPackage = errors.New("codegen: a package name is lowercase letters and digits, starting with a letter")
+var ErrInvalidPackage = errors.New("codegen: a package name is lowercase letters and digits, starting with a letter, and not a Go keyword such as map")
 
 var packageName = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
 
 // Generate generates code from a document.
 func Generate(doc specload.Document, opts Options) (*Result, error) {
-	if opts.Package != "" && !packageName.MatchString(opts.Package) {
+	if opts.Package != "" && (!packageName.MatchString(opts.Package) || token.IsKeyword(opts.Package)) {
 		return nil, ErrInvalidPackage
 	}
 	data, warnings, err := prepare(doc.Data)
@@ -165,8 +166,12 @@ func packageFrom(title string) string {
 		}
 	}
 	name := strings.TrimLeftFunc(b.String(), unicode.IsDigit)
-	if name == "" {
+	switch {
+	case name == "":
 		return "api"
+	case token.IsKeyword(name):
+		// "Map Service" can't be package map.
+		return name + "api"
 	}
 	return name
 }

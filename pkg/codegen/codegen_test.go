@@ -160,7 +160,7 @@ paths:
 }
 
 func TestPackageNames(t *testing.T) {
-	for title, want := range map[string]string{"Orders API": "orders", "Payments v2": "paymentsv2", "3D Printing Service": "dprinting", "API": "api", "Café Menu": "cafmenu"} {
+	for title, want := range map[string]string{"Orders API": "orders", "Payments v2": "paymentsv2", "3D Printing Service": "dprinting", "API": "api", "Café Menu": "cafmenu", "Go API": "goapi", "Map Service": "mapapi"} {
 		doc := strings.Replace(orders, "Orders API", title, 1)
 		if r := generate(t, doc, codegen.TargetGoClient); r.Package != want {
 			t.Errorf("%q: package %q, want %q", title, r.Package, want)
@@ -169,6 +169,10 @@ func TestPackageNames(t *testing.T) {
 	_, err := codegen.Generate(specload.Document{Data: []byte(orders), Name: "o.yaml"}, codegen.Options{Target: codegen.TargetGoClient, Package: "Orders"})
 	if !errors.Is(err, codegen.ErrInvalidPackage) {
 		t.Errorf("package Orders: %v", err)
+	}
+	_, err = codegen.Generate(specload.Document{Data: []byte(orders), Name: "o.yaml"}, codegen.Options{Target: codegen.TargetGoClient, Package: "func"})
+	if !errors.Is(err, codegen.ErrInvalidPackage) {
+		t.Errorf("package func: %v", err)
 	}
 	if _, err := codegen.ParseTarget("rust-client"); err == nil {
 		t.Error("parsed rust-client")
@@ -222,5 +226,23 @@ func TestGeneratedCodeBuilds(t *testing.T) {
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("go %s: %v\n%s", strings.Join(args, " "), err, out)
 		}
+	}
+}
+
+// Warnings come in line order, also when nothing was rewritten.
+func TestWarningsAreInLineOrder(t *testing.T) {
+	doc := `openapi: 3.2.0
+info: {title: Things, version: 1.0.0}
+components:
+  schemas:
+    Pair: {type: array, prefixItems: [{type: string}]}
+paths:
+  /things:
+    query:
+      responses: {'200': {description: OK}}
+`
+	r := generate(t, doc, codegen.TargetGoClient)
+	if len(r.Warnings) != 2 || r.Warnings[0].Line != 5 || r.Warnings[1].Line != 8 {
+		t.Errorf("warnings = %+v", r.Warnings)
 	}
 }

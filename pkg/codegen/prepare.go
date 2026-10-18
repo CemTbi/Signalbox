@@ -42,6 +42,10 @@ func prepare(data []byte) ([]byte, []Warning, error) {
 		return data, nil, nil
 	}
 	p.document(doc)
+	sort.SliceStable(p.warnings, func(i, j int) bool {
+		a, b := p.warnings[i], p.warnings[j]
+		return a.Line < b.Line || a.Line == b.Line && a.Column < b.Column
+	})
 	if !p.changed {
 		return data, p.warnings, nil
 	}
@@ -49,7 +53,6 @@ func prepare(data []byte) ([]byte, []Warning, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	sort.SliceStable(p.warnings, func(i, j int) bool { return p.warnings[i].Line < p.warnings[j].Line })
 	return out, p.warnings, nil
 }
 
