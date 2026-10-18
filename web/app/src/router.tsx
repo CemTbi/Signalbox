@@ -23,6 +23,7 @@ import { ssoFailureMessages } from "./features/auth/sso";
 import { InvitePage } from "./features/invitations/InvitePage";
 import { WorkspaceMembers } from "./features/members/MembersPage";
 import { ProjectPage } from "./features/projects/ProjectPage";
+import { RequestsPage } from "./features/requests/RequestsPage";
 import { ServicePage } from "./features/services/ServicePage";
 import { SpecPage } from "./features/services/SpecPage";
 import { SpecCheck } from "./features/spec-check/SpecCheck";
@@ -136,6 +137,12 @@ const projectRoute = createRoute({
   component: ProjectPage,
 });
 
+const requestsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/projects/$projectId/requests",
+  component: RequestsPage,
+});
+
 const serviceRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/services/$serviceId",
@@ -185,6 +192,7 @@ const routeTree = rootRoute.addChildren([
     workspacesRoute,
     workspaceRoute.addChildren([workspaceProjectsRoute, workspaceMembersRoute]),
     projectRoute,
+    requestsRoute,
     serviceRoute,
     specRoute,
     docsRoute,

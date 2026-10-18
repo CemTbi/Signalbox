@@ -34,6 +34,7 @@ const (
 	Version     Prefix = "ver"
 	Invitation  Prefix = "inv"
 	AccessToken Prefix = "tok"
+	History     Prefix = "hist"
 )
 
 // ErrInvalid means a string isn't an ID of the expected type.

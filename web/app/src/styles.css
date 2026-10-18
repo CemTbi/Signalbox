@@ -1650,3 +1650,227 @@ pre.code {
 .code-form {
   max-width: 520px;
 }
+
+/* Hidden from sight, read by screen readers. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Tabs that switch a panel in place, as buttons. */
+.tabs button[role="tab"] {
+  margin-bottom: -1px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-2);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+
+.tabs button[role="tab"]:hover {
+  color: var(--ink);
+}
+
+.tabs button[role="tab"][aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+/* The API client */
+
+.requests {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+@media (min-width: 1000px) {
+  .requests {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+}
+
+.requests-main,
+.request-editor,
+.response {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.request-line {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.request-line select,
+.request-line input {
+  padding: 8px 10px;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+}
+
+.header-rows {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.header-rows th {
+  padding: 4px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--ink-2);
+}
+
+.header-rows td {
+  padding: 3px 6px 3px 0;
+}
+
+.header-rows td:first-child,
+.header-rows td:last-child {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.header-rows input:not([type="checkbox"]) {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+}
+
+.response {
+  padding-top: 4px;
+  border-top: 1px solid var(--rule);
+}
+
+.response-line {
+  margin: 0;
+  font-size: 14px;
+}
+
+.response-failure {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--bad);
+  border-radius: var(--radius);
+  background: var(--bad-soft);
+}
+
+.kv {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.kv th,
+.kv td {
+  padding: 4px 12px 4px 0;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.kv th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.timings ol {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.timings li {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) 80px;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.timing-track {
+  position: relative;
+  height: 10px;
+  background: var(--surface-2);
+  border-radius: 3px;
+}
+
+.timing-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--accent);
+  border-radius: 3px;
+}
+
+.timing-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.history-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 8px;
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.history-item:hover,
+.history-item[aria-current="true"] {
+  background: var(--surface-2);
+  border-color: var(--rule);
+}
+
+.history-url {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.history-meta {
+  grid-column: 2;
+  font-size: 12px;
+  color: var(--ink-2);
+}

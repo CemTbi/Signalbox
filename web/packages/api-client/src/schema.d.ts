@@ -651,6 +651,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a request
+         * @description Sends an HTTP request from the server on your behalf, and keeps it in your history. Owners, admins and editors may.
+         *
+         *     The runner never reaches Signalbox's own database, cloud metadata endpoints or loopback; an admin can deny or allow more. A request that gets no response, because it was refused, the host doesn't exist, the connection failed or it timed out, still answers `200`, with `failure` saying why.
+         *
+         *     History keeps credential headers (`Authorization`, `Proxy-Authorization`, `Cookie`) as `•••`, and the first megabyte of the response body.
+         */
+        post: operations["sendRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List your sent requests
+         * @description Lists the requests you sent from the project in the last 30 days, newest first. People see only their own history, which keeps at most 1,000 entries per project.
+         */
+        get: operations["listHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/{entryId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The history entry's ID. */
+                entryId: components["schemas"]["HistoryEntryId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a sent request
+         * @description Returns one of your sent requests, with its response as history keeps it.
+         */
+        get: operations["getHistoryEntry"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/services": {
         parameters: {
             query?: never;
@@ -1093,6 +1166,258 @@ export interface components {
              *     ]
              */
             data: components["schemas"]["AccessToken"][];
+        };
+        /**
+         * @description A history entry's ID.
+         * @example hist_01j9z3w5y7a9c1e3g5j7m9p1r3
+         */
+        HistoryEntryId: string;
+        /** @description One HTTP header. */
+        HttpHeader: {
+            /**
+             * @description The header's name.
+             * @example Accept
+             */
+            key: string;
+            /**
+             * @description The header's value.
+             * @example application/json
+             */
+            value: string;
+        };
+        /** @description A request to send. */
+        SendRequest: {
+            /**
+             * @description The HTTP method, such as GET.
+             * @example GET
+             */
+            method: string;
+            /**
+             * @description The absolute http or https URL.
+             * @example https://api.example.com/orders/42
+             */
+            url: string;
+            /**
+             * @description Headers, in order. Empty names are skipped. The runner adds `User-Agent` if there's none.
+             * @example [
+             *       {
+             *         "key": "Accept",
+             *         "value": "application/json"
+             *       }
+             *     ]
+             */
+            headers?: components["schemas"]["HttpHeader"][];
+            /**
+             * @description The body
+             * @example {"sku":"A-1"}
+             */
+            body?: string;
+            /**
+             * @description How long to wait, up to the runner's limit (30 s by default). 0 means the limit.
+             * @example 10000
+             */
+            timeoutMs?: number;
+        };
+        /** @description A request as history keeps it. */
+        SentRequest: {
+            /**
+             * @description The headers sent, with credential values as •••.
+             * @example [
+             *       {
+             *         "key": "Authorization",
+             *         "value": "•••"
+             *       }
+             *     ]
+             */
+            headers: components["schemas"]["HttpHeader"][];
+            /**
+             * @description The body sent, its first 64 KiB.
+             * @example {"sku":"A-1"}
+             */
+            body?: string;
+            /**
+             * @description Whether the body was longer than history keeps.
+             * @example false
+             */
+            bodyTruncated?: boolean;
+        };
+        /** @description A response the runner received. */
+        RunnerResponse: {
+            /**
+             * @description The status code.
+             * @example 200
+             */
+            status: number;
+            /**
+             * @description The status code's reason phrase.
+             * @example OK
+             */
+            statusText?: string;
+            /**
+             * @description The protocol, such as HTTP/2.0.
+             * @example HTTP/2.0
+             */
+            proto: string;
+            /**
+             * @description The response headers, by name, each name's values in order.
+             * @example [
+             *       {
+             *         "key": "Content-Type",
+             *         "value": "application/json"
+             *       }
+             *     ]
+             */
+            headers: components["schemas"]["HttpHeader"][];
+            /**
+             * @description The body: text, or base64 when it isn't UTF-8.
+             * @example {"id":42}
+             */
+            body: string;
+            /**
+             * @description How `body` is encoded.
+             * @example text
+             * @enum {string}
+             */
+            bodyEncoding: "text" | "base64";
+            /**
+             * @description The body's size in bytes
+             * @example 9
+             */
+            size: number;
+            /**
+             * @description Whether the body was cut: at 10 MiB when sent, at 1 MiB in history.
+             * @example false
+             */
+            truncated: boolean;
+            /**
+             * @description Where the response came from
+             * @example https://api.example.com/orders/42
+             */
+            url: string;
+            /**
+             * @description How many redirects were followed.
+             * @example 0
+             */
+            redirects: number;
+            /**
+             * @description The address and port the runner connected to.
+             * @example 203.0.113.7:443
+             */
+            remoteAddress?: string;
+        };
+        /** @description Why a request got no response. */
+        RunnerFailure: {
+            /**
+             * @description The kind of failure.
+             * @example timeout
+             * @enum {string}
+             */
+            code: "invalid-request" | "blocked" | "dns" | "connect" | "tls" | "timeout" | "network";
+            /**
+             * @description What went wrong
+             * @example The server didn't answer in time.
+             */
+            message: string;
+        };
+        /** @description How long each phase took, in milliseconds. Phases that didn't happen, such as TLS on a reused connection, are 0. */
+        RunnerTimings: {
+            /**
+             * @description Looking up the host.
+             * @example 4.1
+             */
+            dnsMs: number;
+            /**
+             * @description Opening the TCP connection.
+             * @example 12.3
+             */
+            connectMs: number;
+            /**
+             * @description The TLS handshake.
+             * @example 25.8
+             */
+            tlsMs: number;
+            /**
+             * @description From sending the request to the response's first byte.
+             * @example 40.2
+             */
+            firstByteMs: number;
+            /**
+             * @description Reading the body.
+             * @example 0.3
+             */
+            downloadMs: number;
+            /**
+             * @description The whole request.
+             * @example 83.5
+             */
+            totalMs: number;
+        };
+        /** @description A sent request and what came of it. It has `response` or `failure`. */
+        HistoryEntry: {
+            id: components["schemas"]["HistoryEntryId"];
+            /**
+             * @description The method sent.
+             * @example GET
+             */
+            method: string;
+            /**
+             * @description The URL sent.
+             * @example https://api.example.com/orders/42
+             */
+            url: string;
+            sentAt: components["schemas"]["Timestamp"];
+            request: components["schemas"]["SentRequest"];
+            response?: components["schemas"]["RunnerResponse"];
+            failure?: components["schemas"]["RunnerFailure"];
+            timings: components["schemas"]["RunnerTimings"];
+        };
+        /** @description An entry in a history list. */
+        HistorySummary: {
+            id: components["schemas"]["HistoryEntryId"];
+            /**
+             * @description The request's method.
+             * @example GET
+             */
+            method: string;
+            /**
+             * @description The request's URL.
+             * @example https://api.example.com/orders/42
+             */
+            url: string;
+            /**
+             * @description The response's status; absent when the request failed.
+             * @example 200
+             */
+            status?: number;
+            /**
+             * @description Why the request failed
+             * @example The server didn't answer in time.
+             */
+            failure?: string;
+            /**
+             * @description How long the request took.
+             * @example 83.5
+             */
+            durationMs: number;
+            sentAt: components["schemas"]["Timestamp"];
+        };
+        /** @description One page of your history, newest first, with a cursor for the next page. */
+        HistoryPage: {
+            /**
+             * @description The entries on this page.
+             * @example [
+             *       {
+             *         "id": "hist_01j9z3w5y7a9c1e3g5j7m9p1r3",
+             *         "method": "GET",
+             *         "url": "https://api.example.com/orders/42",
+             *         "status": 200,
+             *         "durationMs": 83.5,
+             *         "sentAt": "2026-10-18T12:00:00Z"
+             *       }
+             *     ]
+             */
+            data: components["schemas"]["HistorySummary"][];
+            nextCursor?: components["schemas"]["NextCursor"];
         };
         /**
          * Format: date-time
@@ -4848,6 +5173,222 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    sendRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /** @description The request to send. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "method": "GET",
+                 *       "url": "https://api.example.com/orders/42",
+                 *       "headers": [
+                 *         {
+                 *           "key": "Accept",
+                 *           "value": "application/json"
+                 *         }
+                 *       ]
+                 *     }
+                 */
+                "application/json": components["schemas"]["SendRequest"];
+            };
+        };
+        responses: {
+            /** @description What came of the request. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    Location: components["headers"]["Location"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "hist_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "method": "GET",
+                     *       "url": "https://api.example.com/orders/42",
+                     *       "sentAt": "2026-10-18T12:00:00Z",
+                     *       "request": {
+                     *         "headers": [
+                     *           {
+                     *             "key": "Accept",
+                     *             "value": "application/json"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "response": {
+                     *         "status": 200,
+                     *         "statusText": "OK",
+                     *         "proto": "HTTP/2.0",
+                     *         "headers": [
+                     *           {
+                     *             "key": "Content-Type",
+                     *             "value": "application/json"
+                     *           }
+                     *         ],
+                     *         "body": "{\"id\":42}",
+                     *         "bodyEncoding": "text",
+                     *         "size": 9,
+                     *         "truncated": false,
+                     *         "url": "https://api.example.com/orders/42",
+                     *         "redirects": 0,
+                     *         "remoteAddress": "203.0.113.7:443"
+                     *       },
+                     *       "timings": {
+                     *         "dnsMs": 4.1,
+                     *         "connectMs": 12.3,
+                     *         "tlsMs": 25.8,
+                     *         "firstByteMs": 40.2,
+                     *         "downloadMs": 0.3,
+                     *         "totalMs": 83.5
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["HistoryEntry"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description This server doesn't run the runner role (`runner-unavailable`). */
+            503: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Service Unavailable",
+                     *       "status": 503,
+                     *       "code": "runner-unavailable",
+                     *       "detail": "This server doesn't run the runner role, which sends requests. Run signalbox-server with --roles=all."
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    listHistory: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Maximum number of items to return.
+                 * @example 50
+                 */
+                limit?: components["parameters"]["Limit"];
+                /**
+                 * @description The `nextCursor` value from the previous page.
+                 * @example eyJpZCI6IndzXzAxajl6M2txNG04cjJ0NnYweDV3N3k5YTFiIn0
+                 */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of history. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "id": "hist_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *           "method": "GET",
+                     *           "url": "https://api.example.com/orders/42",
+                     *           "status": 200,
+                     *           "durationMs": 83.5,
+                     *           "sentAt": "2026-10-18T12:00:00Z"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["HistoryPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getHistoryEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The history entry's ID. */
+                entryId: components["schemas"]["HistoryEntryId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The entry. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "hist_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "method": "GET",
+                     *       "url": "https://api.example.com/orders/42",
+                     *       "sentAt": "2026-10-18T12:00:00Z",
+                     *       "request": {
+                     *         "headers": [
+                     *           {
+                     *             "key": "Authorization",
+                     *             "value": "•••"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "failure": {
+                     *         "code": "timeout",
+                     *         "message": "The server didn't answer in time."
+                     *       },
+                     *       "timings": {
+                     *         "dnsMs": 4.1,
+                     *         "connectMs": 12.3,
+                     *         "tlsMs": 0,
+                     *         "firstByteMs": 0,
+                     *         "downloadMs": 0,
+                     *         "totalMs": 30000
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["HistoryEntry"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             default: components["responses"]["Error"];
         };

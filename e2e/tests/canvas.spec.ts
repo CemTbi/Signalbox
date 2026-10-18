@@ -84,6 +84,23 @@ test("services are placed on the canvas by hand and stay where they are put", as
   await expect(payments).toBeVisible();
   expect(await place(payments)).toEqual(arranged);
 
+  // The project's API client sends a request from the server and keeps it
+  // in history. Inside the Compose network, the server is signalbox:8080.
+  await page.goto(`${projectURL}/requests`);
+  await expect(page.getByRole("heading", { level: 1, name: "Requests" })).toBeVisible();
+  await page.getByLabel("URL").fill("http://signalbox:8080/api/v1/meta");
+  await page.getByRole("button", { name: "Send" }).click();
+  const response = page.getByRole("region", { name: "Response" });
+  await expect(response.getByText("200", { exact: true })).toBeVisible();
+  await expect(response.getByText(/"version"/)).toBeVisible();
+  await expect(page.getByRole("region", { name: "Your history" }).getByText("http://signalbox:8080/api/v1/meta")).toBeVisible();
+  await expectAccessible(page);
+  // Cloud metadata endpoints are never reached.
+  await page.getByLabel("URL").fill("http://169.254.169.254/latest/meta-data/");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(response.getByRole("alert")).toContainText("Signalbox doesn't send requests to 169.254.169.254");
+  await page.goto(projectURL);
+
   // Double-clicking opens the service.
   await orders.dblclick();
   await expect(page.getByRole("heading", { level: 1, name: "Orders" })).toBeVisible();
