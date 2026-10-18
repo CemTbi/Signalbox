@@ -153,14 +153,15 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *har
 	ws := workspaces.New(pool, logger)
 	mods := apis.New(pool, logger, ws)
 	srv.Config.Handler = httpapi.NewHandler(httpapi.Deps{
-		Logger:     logger,
-		Health:     health.New("signalbox-server", "test"),
-		Build:      buildinfo.Info{Version: "1.2.3"},
-		Roles:      []roles.Name{roles.API},
-		Identity:   ids,
-		Workspaces: ws,
-		APIs:       mods,
-		Mocks:      mods,
+		Logger:      logger,
+		Health:      health.New("signalbox-server", "test"),
+		Build:       buildinfo.Info{Version: "1.2.3"},
+		Roles:       []roles.Name{roles.API},
+		Identity:    ids,
+		Workspaces:  ws,
+		APIs:        mods,
+		Mocks:       mods,
+		Collections: client.New(pool, logger, ws, nil),
 		// The runner may reach loopback, where tests run their servers.
 		Client: client.New(pool, logger, ws, runner.New(&egress.Dialer{Policy: egress.Policy{
 			Allow: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128")},

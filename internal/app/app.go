@@ -210,6 +210,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 			APIs:           mods,
 			Mocks:          mods,
 			Client:         s.client,
+			Collections:    s.client,
 			PublicURL:      publicURL,
 			TrustedProxies: trusted,
 		})

@@ -1874,3 +1874,100 @@ pre.code {
   font-size: 12px;
   color: var(--ink-2);
 }
+
+.requests-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tree {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tree .tree {
+  padding-left: 14px;
+}
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tree-toggle {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  overflow: hidden;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.tree-toggle:hover,
+.tree-request[aria-current="true"] {
+  background: var(--surface-2);
+  border-color: var(--rule);
+}
+
+.tree-actions {
+  display: none;
+  flex: none;
+  gap: 2px;
+}
+
+.tree-row:hover .tree-actions,
+.tree-row:focus-within .tree-actions {
+  display: flex;
+}
+
+/* Touch screens can't hover, so the actions stay. */
+@media (hover: none) {
+  .tree-actions {
+    display: flex;
+  }
+}
+
+.name-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.name-form input {
+  flex: 1;
+  min-width: 120px;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+}
+
+.save-form {
+  padding: 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

@@ -724,6 +724,124 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/collections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List a project's collections
+         * @description Lists the project's collections of saved requests, by name.
+         */
+        get: operations["listCollections"];
+        put?: never;
+        /**
+         * Add a collection
+         * @description Adds a collection of saved requests to the project. Owners, admins and editors may.
+         */
+        post: operations["createCollection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/collections/{collectionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The collection's ID. */
+                collectionId: components["parameters"]["CollectionId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a collection
+         * @description Returns a collection. Its items are at `/items`.
+         */
+        get: operations["getCollection"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a collection
+         * @description Deletes a collection with everything in it. Owners and admins may.
+         */
+        delete: operations["deleteCollection"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename a collection
+         * @description Changes a collection's name or description. Owners, admins and editors may.
+         */
+        patch: operations["updateCollection"];
+        trace?: never;
+    };
+    "/api/v1/collections/{collectionId}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The collection's ID. */
+                collectionId: components["parameters"]["CollectionId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List a collection's folders and requests
+         * @description Lists every folder and request in the collection, each folder's items in order, top-level items first. Requests carry only their method and URL; get an item for the rest.
+         */
+        get: operations["listItems"];
+        put?: never;
+        /**
+         * Add a folder or request
+         * @description Adds a folder or a saved request to the collection, in `parentId` (the top when absent), before `before` or at the end. Owners, admins and editors may. A collection holds at most 10,000 items, and folders nest at most 20 deep.
+         */
+        post: operations["createItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/items/{itemId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The item's ID. */
+                itemId: components["parameters"]["ItemId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a folder or request
+         * @description Returns a folder, or a saved request with its headers and body.
+         */
+        get: operations["getItem"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a folder or request
+         * @description Deletes an item, and a folder's contents with it. Owners, admins and editors may.
+         */
+        delete: operations["deleteItem"];
+        options?: never;
+        head?: never;
+        /**
+         * Change or move a folder or request
+         * @description Renames, describes or replaces the request of an item, or moves it. Sending `parentId` or `before` moves it: into `parentId` (null for the top of the collection), before `before` (null for the end). A folder can't move inside itself. Owners, admins and editors may.
+         *
+         *     `If-Match` is optional: without it, the last change wins.
+         */
+        patch: operations["updateItem"];
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/services": {
         parameters: {
             query?: never;
@@ -1418,6 +1536,222 @@ export interface components {
              */
             data: components["schemas"]["HistorySummary"][];
             nextCursor?: components["schemas"]["NextCursor"];
+        };
+        /**
+         * @description A collection's ID.
+         * @example col_01j9z3w5y7a9c1e3g5j7m9p1r3
+         */
+        CollectionId: string;
+        /**
+         * @description A collection item's ID.
+         * @example item_01j9z3w5y7a9c1e3g5j7m9p1r3
+         */
+        ItemId: string;
+        /** @description A project's set of saved requests, in folders. */
+        Collection: {
+            id: components["schemas"]["CollectionId"];
+            projectId: components["schemas"]["ProjectId"];
+            /**
+             * @description The collection's name.
+             * @example Orders API
+             */
+            name: string;
+            /**
+             * @description What the collection is for.
+             * @example Everything about orders.
+             */
+            description?: string;
+            createdAt: components["schemas"]["Timestamp"];
+            updatedAt: components["schemas"]["Timestamp"];
+        };
+        /** @description A new collection. */
+        CollectionCreate: {
+            /**
+             * @description The new collection's name.
+             * @example Orders API
+             */
+            name: string;
+            /**
+             * @description What the new collection is for.
+             * @example Everything about orders.
+             */
+            description?: string;
+        };
+        /** @description Changes to a collection. */
+        CollectionUpdate: {
+            /**
+             * @description A new name.
+             * @example Orders API v2
+             */
+            name?: string;
+            /**
+             * @description A new description; null clears it.
+             * @example Everything about orders.
+             */
+            description?: string | null;
+        };
+        /** @description A project's collections. */
+        CollectionList: {
+            /**
+             * @description The collections, by name.
+             * @example [
+             *       {
+             *         "id": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+             *         "projectId": "prj_01j9z3m2p4r6t8v0x2z4b6d8f0",
+             *         "name": "Orders API",
+             *         "createdAt": "2026-10-18T12:00:00Z",
+             *         "updatedAt": "2026-10-18T12:00:00Z"
+             *       }
+             *     ]
+             */
+            data: components["schemas"]["Collection"][];
+        };
+        /** @description A header of a saved request. Unticked headers are kept but not sent. */
+        SavedHeader: {
+            /**
+             * @description The saved header's name.
+             * @example Accept
+             */
+            key: string;
+            /**
+             * @description The header's value, which may hold {{variables}}.
+             * @example application/json
+             */
+            value: string;
+            /**
+             * @description Whether the header is sent.
+             * @example true
+             */
+            enabled: boolean;
+        };
+        /** @description A request as a collection keeps it. The URL, headers and body may hold `{{variables}}`. In lists it has only the method and URL. */
+        SavedRequest: {
+            /**
+             * @description The method, such as GET.
+             * @example GET
+             */
+            method: string;
+            /**
+             * @description The URL.
+             * @example {{baseUrl}}/orders/1
+             */
+            url: string;
+            /**
+             * @description The headers, in order.
+             * @example [
+             *       {
+             *         "key": "Accept",
+             *         "value": "application/json",
+             *         "enabled": true
+             *       }
+             *     ]
+             */
+            headers?: components["schemas"]["SavedHeader"][];
+            /**
+             * @description The saved body
+             * @example {"sku":"A-1"}
+             */
+            body?: string;
+        };
+        /** @description A folder or a saved request in a collection. */
+        Item: {
+            id: components["schemas"]["ItemId"];
+            collectionId: components["schemas"]["CollectionId"];
+            /**
+             * @description The folder the item is in; absent at the top of the collection.
+             * @example item_01j9z3w5y7a9c1e3g5j7m9p1r3
+             */
+            parentId?: components["schemas"]["ItemId"];
+            /**
+             * @description What the item is.
+             * @example request
+             * @enum {string}
+             */
+            kind: "folder" | "request";
+            /**
+             * @description The item's name.
+             * @example Get an order
+             */
+            name: string;
+            /**
+             * @description What the item does, in CommonMark.
+             * @example Returns one order.
+             */
+            description?: string;
+            request?: components["schemas"]["SavedRequest"];
+            createdAt: components["schemas"]["Timestamp"];
+            updatedAt: components["schemas"]["Timestamp"];
+        };
+        /** @description A new folder or request. */
+        ItemCreate: {
+            /**
+             * @description What to add.
+             * @example request
+             * @enum {string}
+             */
+            kind: "folder" | "request";
+            /**
+             * @description The new item's name.
+             * @example Get an order
+             */
+            name: string;
+            /**
+             * @description What the new item does, in CommonMark.
+             * @example Returns one order.
+             */
+            description?: string;
+            request?: components["schemas"]["SavedRequest"];
+            /**
+             * @description The folder to add it to; absent for the top.
+             * @example item_01j9z3w5y7a9c1e3g5j7m9p1r3
+             */
+            parentId?: components["schemas"]["ItemId"];
+            /**
+             * @description The item to put it before; absent for the end.
+             * @example item_01j9z3w6a8c0e2g4j6m8p0r2t4
+             */
+            before?: components["schemas"]["ItemId"];
+        };
+        /** @description Changes to an item. `parentId` or `before` moves it. */
+        ItemUpdate: {
+            /**
+             * @description The item's new name.
+             * @example Get one order
+             */
+            name?: string;
+            /**
+             * @description The item's new description; null clears it.
+             * @example Returns one order.
+             */
+            description?: string | null;
+            request?: components["schemas"]["SavedRequest"];
+            /**
+             * @description The folder to move it to; null for the top.
+             * @example item_01j9z3w5y7a9c1e3g5j7m9p1r3
+             */
+            parentId?: string | null;
+            /**
+             * @description The item to move it before; null for the end.
+             * @example item_01j9z3w6a8c0e2g4j6m8p0r2t4
+             */
+            before?: string | null;
+        };
+        /** @description A collection's folders and requests. */
+        ItemList: {
+            /**
+             * @description The items, top-level first, each folder's in order.
+             * @example [
+             *       {
+             *         "id": "item_01j9z3w5y7a9c1e3g5j7m9p1r3",
+             *         "collectionId": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+             *         "kind": "folder",
+             *         "name": "Orders",
+             *         "createdAt": "2026-10-18T12:00:00Z",
+             *         "updatedAt": "2026-10-18T12:00:00Z"
+             *       }
+             *     ]
+             */
+            data: components["schemas"]["Item"][];
         };
         /**
          * Format: date-time
@@ -3117,6 +3451,10 @@ export interface components {
         };
     };
     parameters: {
+        /** @description The collection's ID. */
+        CollectionId: components["schemas"]["CollectionId"];
+        /** @description The item's ID. */
+        ItemId: components["schemas"]["ItemId"];
         /** @description The workspace's ID. */
         WorkspaceId: components["schemas"]["WorkspaceId"];
         /** @description The project's ID. */
@@ -5390,6 +5728,497 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listCollections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The collections. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "id": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *           "projectId": "prj_01j9z3m2p4r6t8v0x2z4b6d8f0",
+                     *           "name": "Orders API",
+                     *           "createdAt": "2026-10-18T12:00:00Z",
+                     *           "updatedAt": "2026-10-18T12:00:00Z"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["CollectionList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    createCollection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /** @description The new collection. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "name": "Orders API",
+                 *       "description": "Everything about orders."
+                 *     }
+                 */
+                "application/json": components["schemas"]["CollectionCreate"];
+            };
+        };
+        responses: {
+            /** @description The collection that was added. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    Location: components["headers"]["Location"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "projectId": "prj_01j9z3m2p4r6t8v0x2z4b6d8f0",
+                     *       "name": "Orders API",
+                     *       "description": "Everything about orders.",
+                     *       "createdAt": "2026-10-18T12:00:00Z",
+                     *       "updatedAt": "2026-10-18T12:00:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Collection"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getCollection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The collection's ID. */
+                collectionId: components["parameters"]["CollectionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The collection. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "projectId": "prj_01j9z3m2p4r6t8v0x2z4b6d8f0",
+                     *       "name": "Orders API",
+                     *       "createdAt": "2026-10-18T12:00:00Z",
+                     *       "updatedAt": "2026-10-18T12:00:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Collection"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteCollection: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description The `ETag` of the version you edited. The request fails with 412 if the resource changed since.
+                 * @example "3"
+                 */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The collection's ID. */
+                collectionId: components["parameters"]["CollectionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The collection is deleted. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            default: components["responses"]["Error"];
+        };
+    };
+    updateCollection: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description The `ETag` of the version you edited. The request fails with 412 if the resource changed since.
+                 * @example "3"
+                 */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The collection's ID. */
+                collectionId: components["parameters"]["CollectionId"];
+            };
+            cookie?: never;
+        };
+        /** @description The fields to change, as a JSON Merge Patch (RFC 7396). */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "name": "Orders API v2"
+                 *     }
+                 */
+                "application/merge-patch+json": components["schemas"]["CollectionUpdate"];
+            };
+        };
+        responses: {
+            /** @description The renamed collection. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "projectId": "prj_01j9z3m2p4r6t8v0x2z4b6d8f0",
+                     *       "name": "Orders API v2",
+                     *       "createdAt": "2026-10-18T12:00:00Z",
+                     *       "updatedAt": "2026-10-18T12:30:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Collection"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The collection's ID. */
+                collectionId: components["parameters"]["CollectionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The items. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "id": "item_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *           "collectionId": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *           "kind": "folder",
+                     *           "name": "Orders",
+                     *           "createdAt": "2026-10-18T12:00:00Z",
+                     *           "updatedAt": "2026-10-18T12:00:00Z"
+                     *         },
+                     *         {
+                     *           "id": "item_01j9z3w6a8c0e2g4j6m8p0r2t4",
+                     *           "collectionId": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *           "parentId": "item_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *           "kind": "request",
+                     *           "name": "Get an order",
+                     *           "request": {
+                     *             "method": "GET",
+                     *             "url": "{{baseUrl}}/orders/1"
+                     *           },
+                     *           "createdAt": "2026-10-18T12:00:00Z",
+                     *           "updatedAt": "2026-10-18T12:00:00Z"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ItemList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    createItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The collection's ID. */
+                collectionId: components["parameters"]["CollectionId"];
+            };
+            cookie?: never;
+        };
+        /** @description The new item. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "kind": "request",
+                 *       "name": "Get an order",
+                 *       "request": {
+                 *         "method": "GET",
+                 *         "url": "{{baseUrl}}/orders/1",
+                 *         "headers": [
+                 *           {
+                 *             "key": "Accept",
+                 *             "value": "application/json",
+                 *             "enabled": true
+                 *           }
+                 *         ],
+                 *         "body": ""
+                 *       }
+                 *     }
+                 */
+                "application/json": components["schemas"]["ItemCreate"];
+            };
+        };
+        responses: {
+            /** @description The item that was added. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    Location: components["headers"]["Location"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "item_01j9z3w6a8c0e2g4j6m8p0r2t4",
+                     *       "collectionId": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "kind": "request",
+                     *       "name": "Get an order",
+                     *       "request": {
+                     *         "method": "GET",
+                     *         "url": "{{baseUrl}}/orders/1",
+                     *         "headers": [
+                     *           {
+                     *             "key": "Accept",
+                     *             "value": "application/json",
+                     *             "enabled": true
+                     *           }
+                     *         ]
+                     *       },
+                     *       "createdAt": "2026-10-18T12:00:00Z",
+                     *       "updatedAt": "2026-10-18T12:00:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Item"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The item's ID. */
+                itemId: components["parameters"]["ItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The item. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "item_01j9z3w6a8c0e2g4j6m8p0r2t4",
+                     *       "collectionId": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "kind": "request",
+                     *       "name": "Get an order",
+                     *       "request": {
+                     *         "method": "GET",
+                     *         "url": "{{baseUrl}}/orders/1",
+                     *         "headers": [
+                     *           {
+                     *             "key": "Accept",
+                     *             "value": "application/json",
+                     *             "enabled": true
+                     *           }
+                     *         ]
+                     *       },
+                     *       "createdAt": "2026-10-18T12:00:00Z",
+                     *       "updatedAt": "2026-10-18T12:00:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Item"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteItem: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description The `ETag` of the version you edited. The request fails with 412 if the resource changed since.
+                 * @example "3"
+                 */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The item's ID. */
+                itemId: components["parameters"]["ItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The item is deleted. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            default: components["responses"]["Error"];
+        };
+    };
+    updateItem: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description The `ETag` of the version you edited. The request fails with 412 if the resource changed since.
+                 * @example "3"
+                 */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The item's ID. */
+                itemId: components["parameters"]["ItemId"];
+            };
+            cookie?: never;
+        };
+        /** @description The item's fields to change, as a JSON Merge Patch (RFC 7396). */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "name": "Get one order",
+                 *       "parentId": null
+                 *     }
+                 */
+                "application/merge-patch+json": components["schemas"]["ItemUpdate"];
+            };
+        };
+        responses: {
+            /** @description The changed item. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "item_01j9z3w6a8c0e2g4j6m8p0r2t4",
+                     *       "collectionId": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "kind": "request",
+                     *       "name": "Get one order",
+                     *       "request": {
+                     *         "method": "GET",
+                     *         "url": "{{baseUrl}}/orders/1"
+                     *       },
+                     *       "createdAt": "2026-10-18T12:00:00Z",
+                     *       "updatedAt": "2026-10-18T12:30:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Item"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
             default: components["responses"]["Error"];
         };
     };
