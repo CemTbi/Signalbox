@@ -59,6 +59,9 @@ type Session struct {
 	// ExpiresAt is when the session ends at the latest. It also ends after
 	// Config.IdleTimeout without use.
 	ExpiresAt time.Time
+	// AccessTokenID is the personal access token the request came with,
+	// or uuid.Nil for a browser session.
+	AccessTokenID uuid.UUID
 }
 
 // NewSession is a session that was just created, with the token for the

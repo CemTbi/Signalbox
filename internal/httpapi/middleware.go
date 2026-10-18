@@ -14,6 +14,11 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/CemTbi/Signalbox/internal/modules/identity"
+	"github.com/CemTbi/Signalbox/internal/platform/id"
 )
 
 type contextKey int
@@ -93,12 +98,28 @@ func (s *statusRecorder) Write(b []byte) (int, error) {
 
 func (s *statusRecorder) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
+// actor is who made a request, for the access log. Authentication fills it
+// in once it knows.
+type actor struct {
+	userID, tokenID uuid.UUID
+}
+
+type actorKey struct{}
+
+// noteActor records who made the request, for the access log.
+func noteActor(ctx context.Context, sess *identity.Session) {
+	if a, ok := ctx.Value(actorKey{}).(*actor); ok {
+		a.userID, a.tokenID = sess.User.ID, sess.AccessTokenID
+	}
+}
+
 func logRequests(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			rec := &statusRecorder{ResponseWriter: w}
-			next.ServeHTTP(rec, r)
+			who := &actor{}
+			next.ServeHTTP(rec, r.WithContext(context.WithValue(r.Context(), actorKey{}, who)))
 
 			level := slog.LevelInfo
 			switch {
@@ -107,14 +128,22 @@ func logRequests(logger *slog.Logger) func(http.Handler) http.Handler {
 			case r.URL.Path == "/livez" || r.URL.Path == "/readyz":
 				level = slog.LevelDebug // probes run every few seconds
 			}
-			logger.Log(r.Context(), level, "http request",
+			attrs := []any{
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", rec.status,
 				"bytes", rec.bytes,
-				"duration_ms", float64(time.Since(start).Microseconds())/1000,
+				"duration_ms", float64(time.Since(start).Microseconds()) / 1000,
 				"request_id", RequestID(r.Context()),
-			)
+			}
+			if who.userID != uuid.Nil {
+				attrs = append(attrs, id.LogAttr("user_id", id.User, who.userID))
+			}
+			// A token's ID, never its value.
+			if who.tokenID != uuid.Nil {
+				attrs = append(attrs, id.LogAttr("token_id", id.AccessToken, who.tokenID))
+			}
+			logger.Log(r.Context(), level, "http request", attrs...)
 		})
 	}
 }

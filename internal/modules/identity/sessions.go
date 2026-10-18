@@ -156,7 +156,7 @@ func (s *Service) RemoveExpiredSessions(ctx context.Context) (int64, error) {
 	return tag.RowsAffected(), nil
 }
 
-// Run removes expired sessions every hour until ctx ends. Every api process
+// Run removes expired sessions and access tokens every hour until ctx ends. Every api process
 // can run it; the deletes don't conflict.
 func (s *Service) Run(ctx context.Context) {
 	ticker := time.NewTicker(time.Hour)
@@ -166,6 +166,11 @@ func (s *Service) Run(ctx context.Context) {
 			s.logger.WarnContext(ctx, "couldn't remove expired sessions", "error", err)
 		} else if n > 0 {
 			s.logger.InfoContext(ctx, "removed expired sessions", "count", n)
+		}
+		if n, err := s.RemoveExpiredAccessTokens(ctx); err != nil && ctx.Err() == nil {
+			s.logger.WarnContext(ctx, "couldn't remove expired access tokens", "error", err)
+		} else if n > 0 {
+			s.logger.InfoContext(ctx, "removed expired access tokens", "count", n)
 		}
 		if _, err := s.removeExpiredSSOAttempts(ctx); err != nil && ctx.Err() == nil {
 			s.logger.WarnContext(ctx, "couldn't remove expired single sign-on attempts", "error", err)

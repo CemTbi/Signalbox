@@ -17,6 +17,7 @@ import {
 import { describeError } from "./api";
 import { AppShell } from "./components/AppShell";
 import { LoadError, PageHeader } from "./components/Page";
+import { TokensPage } from "./features/account/TokensPage";
 import { SetupPage, SignInPage } from "./features/auth/pages";
 import { ssoFailureMessages } from "./features/auth/sso";
 import { InvitePage } from "./features/invitations/InvitePage";
@@ -156,6 +157,12 @@ const docsRoute = createRoute({
   component: lazyRouteComponent(() => import("./features/docs/DocsPage"), "DocsPage"),
 });
 
+const tokensRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/account/tokens",
+  component: TokensPage,
+});
+
 const specCheckRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/spec-check",
@@ -182,6 +189,7 @@ const routeTree = rootRoute.addChildren([
     specRoute,
     docsRoute,
     specCheckRoute,
+    tokensRoute,
   ]),
 ]);
 

@@ -518,6 +518,94 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         default: {$ref: '#/components/responses/Error'}
 
+  /api/v1/tokens:
+    get:
+      operationId: listAccessTokens
+      summary: List your access tokens
+      description: Lists the signed-in person's personal access tokens, newest first, including those that expired in the last 30 days. Secrets are never listed. Only a browser session can manage tokens, so a leaked token can't make more.
+      tags: [Sessions]
+      security:
+        - sessionCookie: []
+      responses:
+        '200':
+          description: The access tokens.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AccessTokenList'}
+              example:
+                data:
+                  - {id: tok_01j9z3w5y7a9c1e3g5j7m9p1r3, name: GitHub Actions, hint: x9Qa, createdAt: '2026-10-18T12:00:00Z', expiresAt: '2027-01-16T12:00:00Z', expired: false}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createAccessToken
+      summary: Create an access token
+      description: |
+        Creates a personal access token that acts as you, for the CLI, the agent and scripts. The token is in this response only; Signalbox keeps just its hash. Send it as `Authorization: Bearer sbx_pat_…`.
+
+        A person may have 50 tokens. Tokens last 90 days unless `expiresInDays` says otherwise, at most 366.
+      tags: [Sessions]
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        description: The token's name and lifetime.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AccessTokenCreate'}
+            example: {name: GitHub Actions, expiresInDays: 90}
+      responses:
+        '201':
+          description: The new token, with its secret.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            Location: {$ref: '#/components/headers/Location'}
+            Cache-Control:
+              description: '`no-store`: the response holds a secret.'
+              schema: {type: string, examples: [no-store]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NewAccessToken'}
+              example: {id: tok_01j9z3w5y7a9c1e3g5j7m9p1r3, name: GitHub Actions, hint: x9Qa, createdAt: '2026-10-18T12:00:00Z', expiresAt: '2027-01-16T12:00:00Z', expired: false, token: sbx_pat_3q2-7wEjK9bM4xR1vT6nY8pL0sD5gH2fA7cZ9eUx9Qa}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409':
+          description: You already have 50 access tokens (`too-many-tokens`).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example: {type: about:blank, title: Conflict, status: 409, code: too-many-tokens, detail: "You have 50 access tokens, the most anyone may. Revoke one you don't use."}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/tokens/{tokenId}:
+    parameters:
+      - name: tokenId
+        in: path
+        required: true
+        description: The access token's ID.
+        schema: {$ref: '#/components/schemas/AccessTokenId'}
+    delete:
+      operationId: revokeAccessToken
+      summary: Revoke an access token
+      description: Deletes one of your access tokens. It stops working at once.
+      tags: [Sessions]
+      security:
+        - sessionCookie: []
+      responses:
+        '204':
+          description: The token is revoked.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+
   /api/v1/workspaces:
     get:
       operationId: listWorkspaces
@@ -2419,6 +2507,63 @@ components:
       description: An invitation ID.
       pattern: '^inv_[0-9a-hjkmnp-tv-z]{26}$'
       examples: [inv_01j9z3v2x4z6b8d0f2h4k6m8p0]
+    AccessTokenId:
+      type: string
+      description: An access token's ID.
+      pattern: '^tok_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [tok_01j9z3w5y7a9c1e3g5j7m9p1r3]
+    AccessToken:
+      type: object
+      description: A personal access token, without its secret.
+      required: [id, name, hint, createdAt, expiresAt, expired]
+      properties:
+        id: {$ref: '#/components/schemas/AccessTokenId'}
+        name: {type: string, maxLength: 100, description: Where the token is used., examples: [GitHub Actions]}
+        hint: {type: string, minLength: 4, maxLength: 4, description: The token's last four characters, to tell tokens apart., examples: [x9Qa]}
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+        expiresAt:
+          $ref: '#/components/schemas/Timestamp'
+          type: string
+          description: When the token stops working.
+          examples: ['2027-01-16T12:00:00Z']
+        lastUsedAt:
+          $ref: '#/components/schemas/Timestamp'
+          type: string
+          description: When the token was last used, to the minute. Absent if it never was.
+          examples: ['2026-10-18T12:30:00Z']
+        expired: {type: boolean, description: Whether the token has expired. Expired tokens stay listed for 30 days., examples: [false]}
+    NewAccessToken:
+      description: A token that was just created, with its secret, shown this once.
+      allOf:
+        - $ref: '#/components/schemas/AccessToken'
+        - type: object
+          description: The secret.
+          required: [token]
+          properties:
+            token:
+              type: string
+              pattern: '^sbx_pat_[A-Za-z0-9_-]{43}$'
+              description: The token. Store it now; it can't be shown again.
+              examples: [sbx_pat_3q2-7wEjK9bM4xR1vT6nY8pL0sD5gH2fA7cZ9eUx9Qa]
+    AccessTokenCreate:
+      type: object
+      description: A new access token.
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100, description: 'Where the token will be used, such as GitHub Actions.', examples: [GitHub Actions]}
+        expiresInDays: {type: integer, minimum: 1, maximum: 366, default: 90, description: How many days the token works., examples: [90]}
+    AccessTokenList:
+      type: object
+      description: Your access tokens.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The tokens, newest first.
+          maxItems: 50
+          items: {$ref: '#/components/schemas/AccessToken'}
+          examples: [[{id: tok_01j9z3w5y7a9c1e3g5j7m9p1r3, name: GitHub Actions, hint: x9Qa, createdAt: '2026-10-18T12:00:00Z', expiresAt: '2027-01-16T12:00:00Z', expired: false}]]
     Timestamp:
       type: string
       format: date-time

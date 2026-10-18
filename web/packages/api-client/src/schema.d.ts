@@ -242,6 +242,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List your access tokens
+         * @description Lists the signed-in person's personal access tokens, newest first, including those that expired in the last 30 days. Secrets are never listed. Only a browser session can manage tokens, so a leaked token can't make more.
+         */
+        get: operations["listAccessTokens"];
+        put?: never;
+        /**
+         * Create an access token
+         * @description Creates a personal access token that acts as you, for the CLI, the agent and scripts. The token is in this response only; Signalbox keeps just its hash. Send it as `Authorization: Bearer sbx_pat_…`.
+         *
+         *     A person may have 50 tokens. Tokens last 90 days unless `expiresInDays` says otherwise, at most 366.
+         */
+        post: operations["createAccessToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tokens/{tokenId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The access token's ID. */
+                tokenId: components["schemas"]["AccessTokenId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke an access token
+         * @description Deletes one of your access tokens. It stops working at once.
+         */
+        delete: operations["revokeAccessToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces": {
         parameters: {
             query?: never;
@@ -971,6 +1020,80 @@ export interface components {
          * @example inv_01j9z3v2x4z6b8d0f2h4k6m8p0
          */
         InvitationId: string;
+        /**
+         * @description An access token's ID.
+         * @example tok_01j9z3w5y7a9c1e3g5j7m9p1r3
+         */
+        AccessTokenId: string;
+        /** @description A personal access token, without its secret. */
+        AccessToken: {
+            id: components["schemas"]["AccessTokenId"];
+            /**
+             * @description Where the token is used.
+             * @example GitHub Actions
+             */
+            name: string;
+            /**
+             * @description The token's last four characters
+             * @example x9Qa
+             */
+            hint: string;
+            createdAt: components["schemas"]["Timestamp"];
+            /**
+             * @description When the token stops working.
+             * @example 2027-01-16T12:00:00Z
+             */
+            expiresAt: components["schemas"]["Timestamp"];
+            /**
+             * @description When the token was last used, to the minute. Absent if it never was.
+             * @example 2026-10-18T12:30:00Z
+             */
+            lastUsedAt?: components["schemas"]["Timestamp"];
+            /**
+             * @description Whether the token has expired. Expired tokens stay listed for 30 days.
+             * @example false
+             */
+            expired: boolean;
+        };
+        /** @description A token that was just created, with its secret, shown this once. */
+        NewAccessToken: components["schemas"]["AccessToken"] & {
+            /**
+             * @description The token. Store it now; it can't be shown again.
+             * @example sbx_pat_3q2-7wEjK9bM4xR1vT6nY8pL0sD5gH2fA7cZ9eUx9Qa
+             */
+            token: string;
+        };
+        /** @description A new access token. */
+        AccessTokenCreate: {
+            /**
+             * @description Where the token will be used, such as GitHub Actions.
+             * @example GitHub Actions
+             */
+            name: string;
+            /**
+             * @description How many days the token works.
+             * @default 90
+             * @example 90
+             */
+            expiresInDays: number;
+        };
+        /** @description Your access tokens. */
+        AccessTokenList: {
+            /**
+             * @description The tokens, newest first.
+             * @example [
+             *       {
+             *         "id": "tok_01j9z3w5y7a9c1e3g5j7m9p1r3",
+             *         "name": "GitHub Actions",
+             *         "hint": "x9Qa",
+             *         "createdAt": "2026-10-18T12:00:00Z",
+             *         "expiresAt": "2027-01-16T12:00:00Z",
+             *         "expired": false
+             *       }
+             *     ]
+             */
+            data: components["schemas"]["AccessToken"][];
+        };
         /**
          * Format: date-time
          * @description A point in time in RFC 3339 format, in UTC.
@@ -3354,6 +3477,139 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listAccessTokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The access tokens. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "id": "tok_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *           "name": "GitHub Actions",
+                     *           "hint": "x9Qa",
+                     *           "createdAt": "2026-10-18T12:00:00Z",
+                     *           "expiresAt": "2027-01-16T12:00:00Z",
+                     *           "expired": false
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AccessTokenList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            default: components["responses"]["Error"];
+        };
+    };
+    createAccessToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The token's name and lifetime. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "name": "GitHub Actions",
+                 *       "expiresInDays": 90
+                 *     }
+                 */
+                "application/json": components["schemas"]["AccessTokenCreate"];
+            };
+        };
+        responses: {
+            /** @description The new token, with its secret. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    Location: components["headers"]["Location"];
+                    /** @description `no-store`: the response holds a secret. */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "tok_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "name": "GitHub Actions",
+                     *       "hint": "x9Qa",
+                     *       "createdAt": "2026-10-18T12:00:00Z",
+                     *       "expiresAt": "2027-01-16T12:00:00Z",
+                     *       "expired": false,
+                     *       "token": "sbx_pat_3q2-7wEjK9bM4xR1vT6nY8pL0sD5gH2fA7cZ9eUx9Qa"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["NewAccessToken"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description You already have 50 access tokens (`too-many-tokens`). */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Conflict",
+                     *       "status": 409,
+                     *       "code": "too-many-tokens",
+                     *       "detail": "You have 50 access tokens, the most anyone may. Revoke one you don't use."
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    revokeAccessToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The access token's ID. */
+                tokenId: components["schemas"]["AccessTokenId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The token is revoked. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             default: components["responses"]["Error"];
         };
     };
