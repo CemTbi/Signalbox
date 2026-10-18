@@ -87,6 +87,9 @@ components:
       required: [sku]
       properties:
         sku: {type: string}
+    # Names the runtime declares or uses.
+    Response: {type: object, properties: {ok: {type: boolean}}}
+    Call: {type: string}
 `
 
 func tsSource(t *testing.T, doc string) string {
@@ -111,6 +114,9 @@ func TestTypeScriptTypesAndMethods(t *testing.T) {
 		`  "total-due"?: number;`,
 		"export type Line = OrderDraft & {\n",
 		"export type OrderDraft = {\n",
+		// Schemas don't shadow the runtime's names or the global types it uses.
+		"export type Response2 = {\n",
+		"export type Call2 = string;",
 		"An order. *\\/ is escaped.",
 		"    getOrder(params: {\n",
 		`      expand?: ("lines" | "customer")[];`,

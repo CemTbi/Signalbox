@@ -98,8 +98,15 @@ func (g *tsGen) nameSchemas() {
 	}
 }
 
-// tsReserved are names the runtime and the client use.
-var tsReserved = []string{"ApiError", "ClientOptions", "Client", "RequestOptions", "Fetch", "createClient", "caller"}
+// tsReserved are names a schema's type can't take: those the runtime and
+// the client declare, and the global types they use, which a type of the
+// same name would shadow.
+var tsReserved = []string{
+	"ApiError", "Call", "Client", "ClientOptions", "Fetch", "RequestOptions",
+	"AbortSignal", "Array", "ArrayBuffer", "Blob", "BodyInit", "Boolean", "Date", "Error", "FormData", "Headers",
+	"HeadersInit", "JSON", "Map", "Number", "Object", "Promise", "Record", "RequestInit", "Response",
+	"ReturnType", "Set", "String", "Uint8Array", "URLSearchParams",
+}
 
 // typeOf writes a schema as a TypeScript type. indent is the indentation
 // of the line the type starts on.
