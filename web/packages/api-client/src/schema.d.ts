@@ -872,6 +872,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/versions/{versionId}/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The version's ID. */
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Download code generated from a version
+         * @description Generates a client or a server stub from a published version and returns it as a zip. The archive holds a directory named after the package, with the generated code, a README, and `WARNINGS.md` when the generated code can't express part of the document.
+         *
+         *     A version never changes, so the same version, target and package always give the same archive. The ETag names all three, and `If-None-Match` with it gets `304`.
+         */
+        get: operations["getCode"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -5531,6 +5556,93 @@ export interface operations {
                      *       "status": 501,
                      *       "code": "reference-unsupported",
                      *       "detail": "This version is a Swagger 2.0 document. Reference docs need OpenAPI 3.0 or later."
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getCode: {
+        parameters: {
+            query: {
+                /** @description What to generate. */
+                target: "go-client" | "go-server" | "typescript-client";
+                /** @description The package's name. It defaults to one made from the document's title, such as `orders` for "Orders API". */
+                package?: string;
+            };
+            header?: {
+                /** @description The ETag of an archive already downloaded. */
+                "If-None-Match"?: string;
+            };
+            path: {
+                /** @description The version's ID. */
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The generated code. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    ETag: components["headers"]["ETag"];
+                    /** @description The archive's file name, such as `orders-typescript-client-1.4.0.zip`. */
+                    "Content-Disposition"?: string;
+                    /** @description How many parts of the document the generated code can't express. `WARNINGS.md` in the archive lists them. */
+                    "X-Codegen-Warnings"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            /** @description The archive hasn't changed since the ETag in `If-None-Match`. */
+            304: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The target or package name is invalid (`invalid-target`, `invalid-package`). */
+            400: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Bad Request",
+                     *       "status": 400,
+                     *       "code": "invalid-target",
+                     *       "detail": "Choose what to generate: go-client, go-server, typescript-client."
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            /** @description The generator couldn't read the version's document (`codegen-failed`). */
+            422: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Unprocessable Entity",
+                     *       "status": 422,
+                     *       "code": "codegen-failed",
+                     *       "detail": "The code couldn't be generated from this version: a schema refers to a file that isn't available."
                      *     }
                      */
                     "application/problem+json": components["schemas"]["Problem"];

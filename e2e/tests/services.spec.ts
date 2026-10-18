@@ -3,8 +3,8 @@
 import { expect, expectAccessible, openAsAdmin, runID, test } from "./support";
 
 // A service and its OpenAPI spec: add the service to a project, add the
-// spec, see its problems, fix one, save a new revision, publish it, and
-// read its docs.
+// spec, see its problems, fix one, save a new revision, publish it, read its
+// docs and download a client.
 
 const ordersSpec = [
   "openapi: 3.1.1",
@@ -98,6 +98,14 @@ test("a service's spec is checked, edited, kept in revisions and published", asy
   await expectAccessible(page);
   await page.goBack();
   await expect(page.getByText(/Revision 2 is published as/)).toBeVisible();
+
+  // A TypeScript client for the published version.
+  const code = page.getByRole("region", { name: "Generate code" });
+  await expect(code.getByLabel("Generate")).toHaveValue("typescript-client");
+  const download = page.waitForEvent("download");
+  await code.getByRole("button", { name: "Download zip" }).click();
+  expect((await download).suggestedFilename()).toBe("orders-typescript-client-1.0.1.zip");
+  await expect(code.getByRole("status")).toContainText("Downloaded orders-typescript-client-1.0.1.zip.");
 
   // The service page lists the spec.
   await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Orders API" }).click();

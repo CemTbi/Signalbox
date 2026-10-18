@@ -19,6 +19,7 @@ import {
   workspaceQuery,
 } from "../../queries";
 import { summarize } from "../spec-check/lines";
+import { CodeDownload } from "./CodeDownload";
 import { SpecEditor } from "./SpecEditor";
 import { type PublishValues, Versions } from "./Versions";
 
@@ -77,6 +78,7 @@ export function SpecPage() {
   ];
   const r = revision.data;
   const revisions = history.data?.pages.flatMap((p) => p.data) ?? [];
+  const published = versions.data?.pages.flatMap((p) => p.data) ?? [];
 
   return (
     <div className="stack">
@@ -116,13 +118,14 @@ export function SpecPage() {
         <Loading label="Loading the document…" />
       )}
       <Versions
-        versions={versions.data?.pages.flatMap((p) => p.data) ?? []}
+        versions={published}
         current={revision.data}
         canPublish={canEdit}
         pending={publish.isPending}
         error={publish.error}
         onPublish={(v) => publish.mutate(v)}
       />
+      <CodeDownload client={api} versions={published} />
       <section aria-labelledby="history">
         <h2 id="history" className="section-title">
           History

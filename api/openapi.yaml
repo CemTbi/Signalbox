@@ -1974,6 +1974,74 @@ paths:
               example: {type: about:blank, title: Not Implemented, status: 501, code: reference-unsupported, detail: This version is a Swagger 2.0 document. Reference docs need OpenAPI 3.0 or later.}
         default: {$ref: '#/components/responses/Error'}
 
+  /api/v1/versions/{versionId}/code:
+    parameters:
+      - $ref: '#/components/parameters/VersionId'
+    get:
+      operationId: getCode
+      summary: Download code generated from a version
+      description: |
+        Generates a client or a server stub from a published version and returns it as a zip. The archive holds a directory named after the package, with the generated code, a README, and `WARNINGS.md` when the generated code can't express part of the document.
+
+        A version never changes, so the same version, target and package always give the same archive. The ETag names all three, and `If-None-Match` with it gets `304`.
+      tags: [Specs]
+      parameters:
+        - name: target
+          in: query
+          required: true
+          description: What to generate.
+          schema:
+            type: string
+            enum: [go-client, go-server, typescript-client]
+            examples: [typescript-client]
+        - name: package
+          in: query
+          description: The package's name. It defaults to one made from the document's title, such as `orders` for "Orders API".
+          schema: {type: string, pattern: '^[a-z][a-z0-9]*$', maxLength: 64, examples: [orders]}
+        - name: If-None-Match
+          in: header
+          description: The ETag of an archive already downloaded.
+          schema: {type: string, maxLength: 200, examples: ['"rev_01j9z3s7v9x1z3b5d7f9h1k3m5-typescript-client-"']}
+      responses:
+        '200':
+          description: The generated code.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            ETag: {$ref: '#/components/headers/ETag'}
+            Content-Disposition:
+              description: The archive's file name, such as `orders-typescript-client-1.4.0.zip`.
+              schema: {type: string, examples: ['attachment; filename="orders-typescript-client-1.4.0.zip"']}
+            X-Codegen-Warnings:
+              description: How many parts of the document the generated code can't express. `WARNINGS.md` in the archive lists them.
+              schema: {type: integer, minimum: 0, examples: [0]}
+          content:
+            application/zip:
+              schema: {type: string, contentMediaType: application/zip, description: A zip archive.}
+        '304':
+          description: The archive hasn't changed since the ETag in `If-None-Match`.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            ETag: {$ref: '#/components/headers/ETag'}
+        '400':
+          description: The target or package name is invalid (`invalid-target`, `invalid-package`).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example: {type: about:blank, title: Bad Request, status: 400, code: invalid-target, detail: 'Choose what to generate: go-client, go-server, typescript-client.'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422':
+          description: The generator couldn't read the version's document (`codegen-failed`).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example: {type: about:blank, title: Unprocessable Entity, status: 422, code: codegen-failed, detail: "The code couldn't be generated from this version: a schema refers to a file that isn't available."}
+        default: {$ref: '#/components/responses/Error'}
+
 components:
   securitySchemes:
     sessionCookie:

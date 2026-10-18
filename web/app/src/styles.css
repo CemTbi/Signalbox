@@ -1600,3 +1600,9 @@ pre.code {
   font-size: 14px;
   color: var(--ink-2);
 }
+
+/* Code generation */
+
+.code-form {
+  max-width: 520px;
+}

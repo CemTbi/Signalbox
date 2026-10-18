@@ -43,6 +43,11 @@ Each target writes `<package>/<package>.gen.go` and a README. The package name c
 - **Stability:** output is sorted, so the same document always gives the same file.
 - **Testing:** the tests type-check clients with `tsc --strict`, including one for Signalbox's own API, and run one against a fake `fetch`.
 
+**Published versions offer their code as a zip**, from `GET /api/v1/versions/{versionId}/code?target=…` and the spec page's Generate code panel.
+- **Contents:** the archive holds the package directory with the generated code, the README, and `WARNINGS.md` when there are warnings. `X-Codegen-Warnings` gives their count.
+- **Reproducible:** entries are stamped with the version's publication time, so the same version, target and package always give the same bytes. The ETag names all three, and `If-None-Match` gets `304`.
+- **Load:** generating takes a CPU for a moment, so the server runs at most half its CPUs' worth at once, and at least two.
+
 Python, Java and C# come through openapi-generator, in a container an installation opts into, as the plan says.
 
 ## Consequences
@@ -51,7 +56,7 @@ Python, Java and C# come through openapi-generator, in a container an installati
 - Generated Go code needs `github.com/oapi-codegen/runtime`, which the README says how to add. Signalbox's tests compile the generated code against it.
 - The CLI binary grows by about 5 MB, from 61 to 66 MB.
 - The preparation step rewrites only the document given to it. A schema with several types in a file it references still fails to generate, with oapi-codegen's error.
-- Zip downloads from published versions, and a target list in the web app, come with the server endpoint.
+- Anyone who can read a version can download its code, as with its docs.
 
 ## Alternatives considered
 
