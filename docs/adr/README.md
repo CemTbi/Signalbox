@@ -31,3 +31,4 @@ Write a new ADR by copying [template.md](template.md) to the next number. Propos
 | [0023](0023-breaking-changes.md) | Breaking-change reports with oasdiff | Accepted |
 | [0024](0024-code-generation.md) | Code generation, starting with Go | Accepted |
 | [0025](0025-canvas-placement.md) | Placing services on the canvas | Accepted |
+| [0026](0026-personal-access-tokens.md) | Personal access tokens | Accepted |

@@ -112,14 +112,43 @@ func (a *api) checkOrigin(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-// authenticated wraps a handler that needs a signed-in user. It loads the
-// session from the cookie and, on unsafe methods, requires a same-origin
-// request carrying the session's CSRF token.
+// authenticated wraps a handler that needs a signed-in user: someone with a
+// browser session or a personal access token. A session comes from the
+// cookie and, on unsafe methods, needs a same-origin request carrying its
+// CSRF token. A token comes in an Authorization: Bearer header, which
+// browsers never send on their own, so it needs neither.
 func (a *api) authenticated(h func(http.ResponseWriter, *http.Request, *identity.Session)) http.Handler {
+	return a.authenticate(h, true)
+}
+
+// browserOnly is authenticated without access tokens, for what a token
+// mustn't do, such as making more tokens.
+func (a *api) browserOnly(h func(http.ResponseWriter, *http.Request, *identity.Session)) http.Handler {
+	return a.authenticate(h, false)
+}
+
+func (a *api) authenticate(h func(http.ResponseWriter, *http.Request, *identity.Session), tokens bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
-			writeProblem(w, r, http.StatusUnauthorized, "unauthenticated",
-				"API tokens aren't available yet. Sign in through the web app to use the API.")
+		if bearer, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+			if !tokens {
+				writeProblem(w, r, http.StatusForbidden, "browser-session-required",
+					"Access tokens can't do this. Sign in to the web app to do it.")
+				return
+			}
+			sess, err := a.Identity.AuthenticateAccessToken(r.Context(), strings.TrimSpace(bearer))
+			if errors.Is(err, identity.ErrUnauthenticated) {
+				w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+				writeProblem(w, r, http.StatusUnauthorized, "unauthenticated",
+					"The access token is wrong, expired or revoked. Create a new one under Access tokens in the web app.")
+				return
+			}
+			if err != nil {
+				a.Logger.ErrorContext(r.Context(), "access token lookup failed", "error", err, "request_id", RequestID(r.Context()))
+				writeInternalError(w, r)
+				return
+			}
+			noteActor(r.Context(), sess)
+			h(w, r, sess)
 			return
 		}
 		token := a.cookie.read(r)
@@ -151,6 +180,7 @@ func (a *api) authenticated(h func(http.ResponseWriter, *http.Request, *identity
 				return
 			}
 		}
+		noteActor(r.Context(), sess)
 		h(w, r, sess)
 	})
 }

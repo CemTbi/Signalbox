@@ -44,6 +44,22 @@ test("from a new installation to a project's canvas", async ({ page, request }) 
   await expect(page.getByText(/\d+ errors?, \d+ warnings?/)).toBeVisible();
   await expectAccessible(page);
 
+  // An access token works without the browser's session, until it's revoked.
+  await page.getByRole("link", { name: "Access tokens" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Access tokens" })).toBeVisible();
+  await page.getByLabel("Name", { exact: true }).fill(`CI ${run}`);
+  await page.getByRole("button", { name: "Create token" }).click();
+  const secret = await page.getByLabel("Token", { exact: true }).inputValue();
+  expect(secret).toMatch(/^sbx_pat_/);
+  await expectAccessible(page);
+  await page.getByRole("button", { name: "Done" }).click();
+  const asToken = { headers: { Authorization: `Bearer ${secret}` } };
+  const me = await request.get("/api/v1/me", asToken);
+  expect(me.status()).toBe(200);
+  await page.getByRole("button", { name: `Revoke CI ${run}` }).click();
+  await expect(page.getByRole("button", { name: `Revoke CI ${run}` })).toHaveCount(0);
+  expect((await request.get("/api/v1/me", asToken)).status()).toBe(401);
+
   // After signing out, a link to the project asks for sign-in first and
   // then opens the project.
   await page.getByRole("button", { name: "Sign out" }).click();

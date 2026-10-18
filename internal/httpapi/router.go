@@ -32,6 +32,10 @@ type Identity interface {
 	CompleteSetup(ctx context.Context, in identity.SetupInput, client identity.Client) (*identity.NewSession, error)
 	SignIn(ctx context.Context, email, password string, client identity.Client) (*identity.NewSession, error)
 	Authenticate(ctx context.Context, token string) (*identity.Session, error)
+	AuthenticateAccessToken(ctx context.Context, token string) (*identity.Session, error)
+	CreateAccessToken(ctx context.Context, userID uuid.UUID, name string, lifetime time.Duration) (*identity.NewAccessToken, error)
+	ListAccessTokens(ctx context.Context, userID uuid.UUID) ([]identity.AccessToken, error)
+	RevokeAccessToken(ctx context.Context, userID, tokenID uuid.UUID) error
 	SignOut(ctx context.Context, token string) error
 	CreateUserAndSignIn(ctx context.Context, in identity.UserInput, client identity.Client) (*identity.NewSession, error)
 	UserByEmail(ctx context.Context, email string) (identity.User, bool, error)
@@ -149,9 +153,14 @@ func NewHandler(d Deps) http.Handler {
 	mux.Handle("/api/v1/sso/start", methods{http.MethodGet: http.HandlerFunc(a.startSSO)})
 	mux.Handle("/api/v1/sso/callback", methods{http.MethodGet: http.HandlerFunc(a.finishSSO)})
 	mux.Handle("/api/v1/sessions/current", methods{
-		http.MethodGet:    a.authenticated(a.getCurrentSession),
-		http.MethodDelete: a.authenticated(a.deleteCurrentSession),
+		http.MethodGet:    a.browserOnly(a.getCurrentSession),
+		http.MethodDelete: a.browserOnly(a.deleteCurrentSession),
 	})
+	mux.Handle("/api/v1/tokens", methods{
+		http.MethodGet:  a.browserOnly(a.listAccessTokens),
+		http.MethodPost: a.browserOnly(a.createAccessToken),
+	})
+	mux.Handle("/api/v1/tokens/{tokenId}", methods{http.MethodDelete: a.browserOnly(a.revokeAccessToken)})
 	mux.Handle("/api/v1/me", methods{http.MethodGet: a.authenticated(a.getMe)})
 
 	mux.Handle("/api/v1/workspaces", methods{

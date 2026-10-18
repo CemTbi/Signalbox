@@ -25,4 +25,4 @@ Decisions about architecture that come out of an RFC are also recorded as [ADRs]
 
 | RFC | Title | Status |
 |---|---|---|
-| [0001](0001-api-client-and-tests.md) | The API client, tests and the local agent (v0.2) | In discussion |
+| [0001](0001-api-client-and-tests.md) | The API client, tests and the local agent (v0.2) | Accepted |

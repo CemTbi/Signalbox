@@ -1,8 +1,8 @@
 # 0001. The API client, tests and the local agent (v0.2)
 
-- Status: In discussion
+- Status: Accepted
 - Authors: project lead, Claude
-- Discussion: the pull request that adds this file
+- Discussion: https://github.com/CemTbi/Signalbox/pull/24
 
 ## Summary
 
