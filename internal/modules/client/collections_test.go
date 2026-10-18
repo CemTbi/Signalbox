@@ -165,3 +165,46 @@ func TestCollectionRoles(t *testing.T) {
 		t.Errorf("request without a request: %v", err)
 	}
 }
+
+// Folders nest at most 20 deep, counting what a moved folder brings along.
+func TestFolderDepth(t *testing.T) {
+	f := setup(t)
+	c, err := f.mod.CreateCollection(f.ctx, f.owner, f.project, "Deep", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	folder := func(parent uuid.UUID) (client.Item, error) {
+		return f.mod.CreateItem(f.ctx, f.owner, c.ID, client.ItemInput{Kind: client.KindFolder, Name: "F", Placement: client.Placement{Parent: parent}})
+	}
+	// A chain of 19 folders, then the 20th.
+	chain := []uuid.UUID{}
+	parent := uuid.Nil
+	for range 19 {
+		it, err := folder(parent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		chain = append(chain, it.ID)
+		parent = it.ID
+	}
+	twentieth, err := folder(parent)
+	if err != nil {
+		t.Fatalf("the 20th level: %v", err)
+	}
+	var verrs validate.Errors
+	if _, err := folder(twentieth.ID); !errors.As(err, &verrs) {
+		t.Errorf("a 21st level: %v", err)
+	}
+	// A folder with one folder inside is two levels high: it fits under
+	// the 18th level, not under the 19th.
+	top, _ := folder(uuid.Nil)
+	if _, err := folder(top.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.mod.UpdateItem(f.ctx, f.owner, top.ID, workspaces.Precondition{}, client.ItemPatch{Move: &client.Placement{Parent: chain[18]}}); !errors.As(err, &verrs) {
+		t.Errorf("moving a two-level folder under level 19: %v", err)
+	}
+	if _, err := f.mod.UpdateItem(f.ctx, f.owner, top.ID, workspaces.Precondition{}, client.ItemPatch{Move: &client.Placement{Parent: chain[17]}}); err != nil {
+		t.Errorf("moving it under level 18: %v", err)
+	}
+}

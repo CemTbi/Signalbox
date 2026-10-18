@@ -521,7 +521,22 @@ func place(ctx context.Context, tx pgx.Tx, collectionID, moving uuid.UUID, p Pla
 			return "", invalid("/parentId", "Requests can't hold items; choose a folder.")
 		case cycle:
 			return "", invalid("/parentId", "A folder can't go inside itself.")
-		case depth >= maxDepth:
+		}
+		// The item lands one level below the parent, and its own subtree
+		// comes with it.
+		height := 1
+		if moving != uuid.Nil {
+			if err := tx.QueryRow(ctx, `
+				WITH RECURSIVE down AS (
+					SELECT id, 1 AS level FROM collection_items WHERE id = $1
+					UNION ALL
+					SELECT i.id, down.level + 1 FROM collection_items i JOIN down ON i.parent_id = down.id
+				)
+				SELECT max(level) FROM down`, moving).Scan(&height); err != nil {
+				return "", err
+			}
+		}
+		if depth+height > maxDepth {
 			return "", invalid("/parentId", fmt.Sprintf("Folders nest at most %d deep.", maxDepth))
 		}
 	}
