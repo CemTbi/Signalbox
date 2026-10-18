@@ -17,7 +17,7 @@ import (
 )
 
 // ErrResolvedTooLarge means filling in variables made the request larger
-// than the runner sends.
+// than the runner sends, or took more work than a request may.
 var ErrResolvedTooLarge = errors.New("client: the request is too large once its variables are filled in")
 
 // How far filling in variables goes.
@@ -27,6 +27,10 @@ const (
 	// maxResolved bounds the filled-in request, so variables that name
 	// each other twice over can't grow it without end.
 	maxResolved = 12 << 20
+	// maxWork bounds the bytes read while filling in, so variables that
+	// name each other many times over without growing the request, such as
+	// a chain ending in an empty value, can't keep the server busy.
+	maxWork = 64 << 20
 )
 
 // resolver fills in {{name}} in a request from an environment's variables
@@ -39,10 +43,11 @@ type resolver struct {
 	now        time.Time
 	unresolved map[string]bool
 	budget     int
+	work       int
 }
 
 func newResolver(values map[string]string, secrets []string, now time.Time) *resolver {
-	r := &resolver{values: values, secrets: map[string]bool{}, now: now, unresolved: map[string]bool{}, budget: maxResolved}
+	r := &resolver{values: values, secrets: map[string]bool{}, now: now, unresolved: map[string]bool{}, budget: maxResolved, work: maxWork}
 	for _, s := range secrets {
 		r.secrets[s] = true
 	}
@@ -77,6 +82,14 @@ func (r *resolver) Unresolved() []string {
 }
 
 func (r *resolver) expand(s string, depth int) string {
+	if r.budget < 0 {
+		return ""
+	}
+	// Every call costs at least a byte, so empty values count too.
+	if r.work -= len(s) + 1; r.work < 0 {
+		r.budget = -1
+		return ""
+	}
 	if !strings.Contains(s, "{{") {
 		r.budget -= len(s)
 		return s

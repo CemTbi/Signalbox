@@ -30,10 +30,10 @@
 - **Names:** a variable's name may hold anything but spaces and braces, and doesn't start with `$`, which marks the built-ins `{{$guid}}`, `{{$timestamp}}`, `{{$isoTimestamp}}` and `{{$randomInt}}`, as Postman has them. Spaces inside the braces are ignored.
 - **Nesting:** a plain value may name other variables, up to 8 deep. A secret is used as it is, so a secret that happens to contain `{{` stays intact.
 - **Unknown names** are sent as they are, and the response lists them in `unresolved`. Failing the send would block requests that use `{{` on purpose, such as a template sent to an API.
-- **Size:** the filled-in request is bounded at 12 MiB, so variables that name each other twice over can't grow it without end; past that the send fails with `request-too-large`.
+- **Size and work:** the filled-in request is bounded at 12 MiB, so variables that name each other twice over can't grow it without end. The bytes read while filling in are bounded at 64 MiB, so a chain that repeats names many times without growing the request, such as one ending in an empty value, can't keep the server busy. Past either bound the send fails with `request-too-large`.
 - **Which environment:** the send names an `environmentId`, which must be in the project. The web app remembers each person's choice per project in their browser.
 
-**History never holds a secret.** What history keeps is the request as sent, with every secret's value replaced by `•••` wherever it appears: the URL, headers, the body, and the response's headers and body too, since APIs often echo what they were sent. The masking happens before the body is cut at its size limit, so a cut can't leave part of a secret behind. The response the sender gets back is whole, since it is theirs.
+**History never holds a secret.** What history keeps is the request as sent, with every secret's value replaced by `•••` wherever it appears: the URL, headers, the body, a failure's message, which can name the host, and the response's headers and body too, since APIs often echo what they were sent. The masking happens before the body is cut at its size limit, so a cut can't leave part of a secret behind. The response the sender gets back is whole, since it is theirs.
 
 ## Consequences
 

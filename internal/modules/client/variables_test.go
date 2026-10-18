@@ -106,6 +106,22 @@ func TestVariablesAndSecrets(t *testing.T) {
 		t.Errorf("history holds the secret: %s, %v", raw, err)
 	}
 
+	// Failure messages name the host, which the secret may fill in.
+	f.run.fail = func(req runner.Request) *runner.Failure {
+		return &runner.Failure{Code: "dns", Message: "There's no host called " + strings.TrimPrefix(req.URL, "https://") + "."}
+	}
+	failed, err := f.mod.Send(f.ctx, f.owner, f.project, staging, runner.Request{Method: "GET", URL: "https://{{token}}.example.com"})
+	if err != nil || !strings.Contains(failed.Result.Failure.Message, "tok-123456") {
+		t.Fatalf("failed send = %+v, %v", failed.Result.Failure, err)
+	}
+	if got, err := f.mod.HistoryEntry(f.ctx, f.owner, failed.ID); err != nil || got.Result.Failure.Message != "There's no host called •••.example.com." {
+		t.Errorf("stored failure = %+v, %v", got.Result.Failure, err)
+	}
+	f.run.fail = nil
+	if err := f.pool.QueryRow(f.ctx, `SELECT string_agg(url || record::text, '') FROM request_history`).Scan(&raw); err != nil || strings.Contains(raw, "tok-123456") {
+		t.Errorf("history holds the secret: %s, %v", raw, err)
+	}
+
 	// Another project's environment isn't this project's.
 	other, err := f.ws.CreateProject(f.ctx, f.owner, f.workspace(t), workspaces.ProjectInput{Name: "Billing"})
 	if err != nil {

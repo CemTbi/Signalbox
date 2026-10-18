@@ -176,6 +176,12 @@ func (m *Module) Send(ctx context.Context, userID, projectID, environmentID uuid
 	kept := e
 	mask := newMasker(values, secrets)
 	kept.URL, kept.Headers, kept.Body = mask.string(kept.URL), mask.headers(kept.Headers), mask.bytes(kept.Body)
+	if f := result.Failure; f != nil {
+		// Failure messages can name the host, which a secret may fill in.
+		masked := *f
+		masked.Message = mask.string(f.Message)
+		kept.Result.Failure = &masked
+	}
 	if r := result.Response; r != nil {
 		masked := *r
 		// Masked before save cuts it, so the cut can't leave part of a

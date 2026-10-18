@@ -83,3 +83,26 @@ func TestMaskerHidesSecrets(t *testing.T) {
 		t.Errorf("masked without secrets = %q", got)
 	}
 }
+
+func TestResolverBoundsWork(t *testing.T) {
+	// Each variable names the next many times and the last is empty, so
+	// the request doesn't grow, but filling it in would take 4000^8 steps.
+	values := map[string]string{"v8": ""}
+	for i := 7; i >= 0; i-- {
+		values["v"+strconv.Itoa(i)] = strings.Repeat("{{v"+strconv.Itoa(i+1)+"}}", 4000)
+	}
+	r := newResolver(values, nil, time.Now())
+	done := make(chan error, 1)
+	go func() {
+		_, err := r.request(runner.Request{Method: "GET", URL: "https://example.com/{{v0}}"})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrResolvedTooLarge) {
+			t.Errorf("err = %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("filling in didn't stop")
+	}
+}

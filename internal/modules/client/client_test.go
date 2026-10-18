@@ -23,15 +23,19 @@ import (
 	"github.com/CemTbi/Signalbox/internal/platform/postgres/postgrestest"
 )
 
-// fakeRunner answers every request with the same response and remembers
-// what it was asked.
+// fakeRunner answers every request with the same response, or fails them
+// all as its failure says, and remembers what it was asked.
 type fakeRunner struct {
 	got  []runner.Request
 	body []byte
+	fail func(req runner.Request) *runner.Failure
 }
 
 func (f *fakeRunner) Run(_ context.Context, req runner.Request) runner.Result {
 	f.got = append(f.got, req)
+	if f.fail != nil {
+		return runner.Result{Failure: f.fail(req)}
+	}
 	return runner.Result{
 		Response: &runner.Response{Status: 200, StatusText: "OK", Proto: "HTTP/1.1", Headers: []runner.Header{{Key: "Content-Type", Value: "application/json"}}, Body: f.body, URL: req.URL},
 		Timings:  runner.Timings{Connect: 2 * time.Millisecond, Total: 12 * time.Millisecond},
