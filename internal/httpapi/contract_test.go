@@ -89,6 +89,26 @@ type harness struct {
 	ids    *identity.Service
 	// csrf is sent with unsafe requests once someone has signed in.
 	csrf string
+	// logs holds what the server logged, as JSON lines.
+	logs *logBuffer
+}
+
+// logBuffer collects log output from the server's goroutines.
+type logBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *logBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *logBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func newHarness(t *testing.T) *harness {
@@ -111,7 +131,8 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *har
 	t.Helper()
 	loadContract(t)
 	pool := postgrestest.New(t)
-	logger := slog.New(slog.DiscardHandler)
+	logs := &logBuffer{}
+	logger := slog.New(slog.NewJSONHandler(logs, nil))
 	srv := httptest.NewUnstartedServer(nil)
 	public := &url.URL{Scheme: "https", Host: srv.Listener.Addr().String()}
 	cfg := identity.Config{SetupCode: setupCode, Argon2: cheapArgon2}
@@ -147,7 +168,7 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *har
 		t.Fatal(err)
 	}
 	client.Jar = jar
-	return &harness{t: t, srv: srv, client: client, pool: pool, ids: ids}
+	return &harness{t: t, srv: srv, client: client, pool: pool, ids: ids, logs: logs}
 }
 
 // call is one request. Body is sent as JSON unless it is a string.

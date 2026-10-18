@@ -3,6 +3,7 @@
 package httpapi_test
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -39,6 +40,10 @@ func TestAccessTokens(t *testing.T) {
 	}
 	h.do(call{method: http.MethodPost, path: "/api/v1/workspaces", headers: bearer, body: map[string]string{"name": "From CI", "slug": "from-ci"}}).
 		expect(t, http.StatusCreated, "")
+	// The access log names the person and the token, and never the token's value.
+	if !logged(t, h.logs.String(), "/api/v1/me", map[string]string{"user_id": me.ID, "token_id": tok.ID}) {
+		t.Errorf("no access log entry for GET /api/v1/me with the user and token IDs:\n%s", h.logs)
+	}
 	// A token can't make tokens, or act as a browser session.
 	h.do(call{method: http.MethodPost, path: "/api/v1/tokens", headers: bearer, body: map[string]any{"name": "More"}}).
 		expect(t, http.StatusForbidden, "browser-session-required")
@@ -54,6 +59,31 @@ func TestAccessTokens(t *testing.T) {
 	if r.header.Get("WWW-Authenticate") == "" {
 		t.Error("401 for a token without WWW-Authenticate")
 	}
+	if strings.Contains(h.logs.String(), tok.Token) {
+		t.Error("the token's value was logged")
+	}
+}
+
+// logged reports whether an "http request" entry for path carries every
+// field in want.
+func logged(t *testing.T, logs, path string, want map[string]string) bool {
+	t.Helper()
+	for _, line := range strings.Split(logs, "\n") {
+		var entry map[string]any
+		if json.Unmarshal([]byte(line), &entry) != nil || entry["msg"] != "http request" || entry["path"] != path {
+			continue
+		}
+		match := true
+		for k, v := range want {
+			if entry[k] != v {
+				match = false
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }
 
 func TestAccessTokenInput(t *testing.T) {
