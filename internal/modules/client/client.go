@@ -136,7 +136,12 @@ func (m *Module) Send(ctx context.Context, userID, projectID uuid.UUID, req runn
 		Headers: redact(req.Headers), Body: req.Body, Result: result,
 	}
 	if len(e.Body) > maxStoredRequestRaw {
-		e.Body, e.BodyTruncated = e.Body[:maxStoredRequestRaw], true
+		// Cut on a character boundary, so a text body stays text.
+		n := maxStoredRequestRaw
+		for n > 0 && !utf8.RuneStart(e.Body[n]) {
+			n--
+		}
+		e.Body, e.BodyTruncated = e.Body[:n], true
 	}
 	if err := m.save(ctx, &e); err != nil {
 		// The request was sent; losing its history entry isn't worth

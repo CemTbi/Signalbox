@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 	"unicode/utf8"
@@ -180,6 +181,21 @@ func (a *api) sendRequest(w http.ResponseWriter, r *http.Request, s *identity.Se
 	}
 	if len(body.Headers) > 200 {
 		fields.Add("/headers", "maxItems", "Send at most 200 headers.")
+	}
+	// The sizes api/openapi.yaml promises, so one send can't fill history.
+	if len(req.Method) > 32 {
+		fields.Add("/method", "maxLength", "Use a method of at most 32 characters.")
+	}
+	if len(req.URL) > 8192 {
+		fields.Add("/url", "maxLength", "Use a URL of at most 8,192 characters.")
+	}
+	for i, h := range body.Headers {
+		if len(h.Key) > 1000 {
+			fields.Add(fmt.Sprintf("/headers/%d/key", i), "maxLength", "Use a header name of at most 1,000 characters.")
+		}
+		if len(h.Value) > 65536 {
+			fields.Add(fmt.Sprintf("/headers/%d/value", i), "maxLength", "Use a header value of at most 64 KiB.")
+		}
 	}
 	if len(fields) > 0 {
 		writeInvalid(w, r, fields)

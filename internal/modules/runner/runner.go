@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/CemTbi/Signalbox/internal/platform/egress"
@@ -137,36 +138,11 @@ func (r *Runner) Run(ctx context.Context, req Request) Result {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	var (
-		t                                           Timings
-		dnsStart, connectStart, tlsStart, wroteDone time.Time
-		remote                                      string
-		redirects                                   = -1
-	)
-	trace := &httptrace.ClientTrace{
-		DNSStart:     func(httptrace.DNSStartInfo) { dnsStart = time.Now() },
-		DNSDone:      func(httptrace.DNSDoneInfo) { t.DNS += since(dnsStart) },
-		ConnectStart: func(string, string) { connectStart = time.Now() },
-		ConnectDone: func(_, addr string, err error) {
-			if err == nil {
-				t.Connect += since(connectStart)
-				remote = addr
-			}
-		},
-		TLSHandshakeStart: func() { tlsStart = time.Now() },
-		TLSHandshakeDone:  func(tls.ConnectionState, error) { t.TLS += since(tlsStart) },
-		GotConn: func(info httptrace.GotConnInfo) {
-			redirects++
-			if info.Reused && info.Conn != nil {
-				remote = info.Conn.RemoteAddr().String()
-			}
-		},
-		WroteRequest:         func(httptrace.WroteRequestInfo) { wroteDone = time.Now() },
-		GotFirstResponseByte: func() { t.FirstByte = since(wroteDone) },
-	}
+	tr := &tracer{redirects: -1}
 	start := time.Now()
-	resp, err := r.client.Do(httpReq.WithContext(httptrace.WithClientTrace(ctx, trace)))
+	resp, err := r.client.Do(httpReq.WithContext(httptrace.WithClientTrace(ctx, tr.trace())))
 	if err != nil {
+		t, _, _ := tr.snapshot()
 		t.Total = time.Since(start)
 		return Result{Failure: describe(err, ctx), Timings: t}
 	}
@@ -175,6 +151,7 @@ func (r *Runner) Run(ctx context.Context, req Request) Result {
 	firstByte := time.Now()
 	// One byte past the limit tells a long body from one exactly at it.
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, r.limits.MaxBody+1))
+	t, remote, redirects := tr.snapshot()
 	if readErr != nil {
 		t.Total = time.Since(start)
 		return Result{Failure: describe(readErr, ctx), Timings: t}
@@ -197,6 +174,58 @@ func (r *Runner) Run(ctx context.Context, req Request) Result {
 	}
 	sortHeaders(out.Headers)
 	return Result{Response: out, Timings: t}
+}
+
+// tracer collects a request's timings. The transport calls it from its own
+// goroutines, and a dial it abandons can still report after another
+// connection was chosen, so every field is guarded.
+type tracer struct {
+	mu                                          sync.Mutex
+	t                                           Timings
+	dnsStart, connectStart, tlsStart, wroteDone time.Time
+	remote                                      string
+	redirects                                   int
+}
+
+func (tr *tracer) do(f func()) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	f()
+}
+
+func (tr *tracer) trace() *httptrace.ClientTrace {
+	return &httptrace.ClientTrace{
+		DNSStart:     func(httptrace.DNSStartInfo) { tr.do(func() { tr.dnsStart = time.Now() }) },
+		DNSDone:      func(httptrace.DNSDoneInfo) { tr.do(func() { tr.t.DNS += since(tr.dnsStart) }) },
+		ConnectStart: func(string, string) { tr.do(func() { tr.connectStart = time.Now() }) },
+		ConnectDone: func(_, addr string, err error) {
+			tr.do(func() {
+				if err == nil {
+					tr.t.Connect += since(tr.connectStart)
+					tr.remote = addr
+				}
+			})
+		},
+		TLSHandshakeStart: func() { tr.do(func() { tr.tlsStart = time.Now() }) },
+		TLSHandshakeDone:  func(tls.ConnectionState, error) { tr.do(func() { tr.t.TLS += since(tr.tlsStart) }) },
+		GotConn: func(info httptrace.GotConnInfo) {
+			tr.do(func() {
+				tr.redirects++
+				if info.Conn != nil {
+					tr.remote = info.Conn.RemoteAddr().String()
+				}
+			})
+		},
+		WroteRequest:         func(httptrace.WroteRequestInfo) { tr.do(func() { tr.wroteDone = time.Now() }) },
+		GotFirstResponseByte: func() { tr.do(func() { tr.t.FirstByte = since(tr.wroteDone) }) },
+	}
+}
+
+// snapshot is what the tracer has seen so far.
+func (tr *tracer) snapshot() (Timings, string, int) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	return tr.t, tr.remote, tr.redirects
 }
 
 func since(t time.Time) time.Duration {

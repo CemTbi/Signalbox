@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/CemTbi/Signalbox/internal/httpapi"
@@ -71,5 +72,16 @@ func TestSendingRequests(t *testing.T) {
 
 	h.do(call{method: http.MethodPost, path: send, body: map[string]any{"url": target.URL}, invalid: true}).
 		expect(t, http.StatusBadRequest, "validation-failed")
+	// Sizes past the contract's are refused, so one send can't fill history.
+	r = h.do(call{method: http.MethodPost, path: send, invalid: true, body: map[string]any{
+		"method": "GET", "url": target.URL + "/" + strings.Repeat("a", 9000),
+		"headers": []map[string]string{{"key": strings.Repeat("k", 1001), "value": "v"}},
+	}})
+	r.expect(t, http.StatusBadRequest, "validation-failed")
+	for _, pointer := range []string{`"/url"`, `"/headers/0/key"`} {
+		if !strings.Contains(string(r.body), pointer) {
+			t.Errorf("no error at %s: %s", pointer, r.body)
+		}
+	}
 	h.do(call{method: http.MethodGet, path: "/api/v1/history/hist_01j9z3w5y7a9c1e3g5j7m9p1r3"}).expect(t, http.StatusNotFound, "not-found")
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -186,5 +187,22 @@ func TestHistoryIsBounded(t *testing.T) {
 	}
 	if n, err := f.mod.RemoveOldHistory(f.ctx); err != nil || n != 1 {
 		t.Errorf("removed %d, %v", n, err)
+	}
+}
+
+// History cuts a long body on a character boundary, so it stays text.
+func TestHistoryCutsBodiesBetweenCharacters(t *testing.T) {
+	f := setup(t)
+	body := strings.Repeat("é", 40<<10) // 80 KiB of two-byte characters, offset by one below
+	e, err := f.mod.Send(f.ctx, f.owner, f.project, runner.Request{Method: "POST", URL: "https://api.example.com/", Body: []byte("x" + body)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.mod.HistoryEntry(f.ctx, f.owner, e.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.BodyTruncated || len(got.Body) == 0 || len(got.Body) > 64<<10 || !utf8.Valid(got.Body) {
+		t.Errorf("kept %d bytes, truncated %v, valid %v", len(got.Body), got.BodyTruncated, utf8.Valid(got.Body))
 	}
 }
