@@ -86,7 +86,32 @@ export function fromEntry(e: HistoryEntry): Draft {
   const auth = fromAuth(e.request.auth);
   const added = auth.type === "basic" || auth.type === "bearer" ? "authorization" : auth.type === "apikey" && auth.in === "header" ? auth.key.toLowerCase() : "";
   const headers = e.request.headers.filter((h) => h.key.toLowerCase() !== added).map((h) => row(h.key, h.value === "•••" ? "" : h.value));
-  return { method: e.method, url: e.url, headers: [...headers, row()], body: e.request.body ?? "", auth };
+  const url = auth.type === "apikey" && auth.in === "query" ? withoutParam(e.url, auth.key) : e.url;
+  return { method: e.method, url, headers: [...headers, row()], body: e.request.body ?? "", auth };
+}
+
+/**
+ * The URL without the query parameter an API key added, which auth adds
+ * again on send. Only the last one goes: auth appended it.
+ */
+export function withoutParam(url: string, name: string): string {
+  const hash = url.indexOf("#");
+  const [base, fragment] = hash < 0 ? [url, ""] : [url.slice(0, hash), url.slice(hash)];
+  const q = base.indexOf("?");
+  if (q < 0 || name === "") return url;
+  const params = base.slice(q + 1).split("&");
+  const decode = (s: string) => {
+    try {
+      return decodeURIComponent(s.replace(/\+/g, " "));
+    } catch {
+      return s;
+    }
+  };
+  const at = params.findLastIndex((p) => decode(p.split("=")[0] ?? "") === name);
+  if (at < 0) return url;
+  params.splice(at, 1);
+  const query = params.join("&");
+  return base.slice(0, q) + (query ? `?${query}` : "") + fragment;
 }
 
 /** Whether a history entry had credentials or secrets history didn't keep. */

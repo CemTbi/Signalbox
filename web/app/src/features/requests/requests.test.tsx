@@ -5,7 +5,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { type Draft, emptyDraft, folders, formatMs, formatSize, fromEntry, fromSaved, noAuth, prettyBody, row, toSaved, toSend, tree } from "./model";
+import { type Draft, emptyDraft, folders, formatMs, formatSize, fromEntry, fromSaved, noAuth, prettyBody, row, toSaved, toSend, tree, withoutParam } from "./model";
 import { RequestEditor } from "./RequestEditor";
 import { ResponseView } from "./ResponseView";
 
@@ -54,6 +54,14 @@ describe("model", () => {
     expect(d.auth.token).toBe("");
     expect(d.headers.map((h) => h.key)).toEqual(["Accept", ""]);
     expect(toSaved({ ...d, auth: noAuth() }).auth).toBeUndefined();
+  });
+
+  it("reopens history without the query parameter an API key added", () => {
+    const d = fromEntry({ ...entry, url: "{{baseUrl}}/orders?page=2&api_key=•••", request: { ...entry.request, auth: { type: "apikey", key: "api_key", in: "query" } } });
+    expect(d.url).toBe("{{baseUrl}}/orders?page=2");
+    expect(withoutParam("https://a.test/x?api%20key=1#top", "api key")).toBe("https://a.test/x#top");
+    expect(withoutParam("https://a.test/x?a=1&k=2&k=3", "k")).toBe("https://a.test/x?a=1&k=2");
+    expect(withoutParam("https://a.test/x", "k")).toBe("https://a.test/x");
   });
 
   it("formats bodies, sizes and times", () => {
