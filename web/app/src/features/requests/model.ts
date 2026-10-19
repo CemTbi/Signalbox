@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { HistoryEntry, HttpHeader, Item, SavedRequest, SendRequest } from "@signalbox/api-client";
+import type { HistoryEntry, HttpHeader, Item, RequestAuth, SavedRequest, SendRequest } from "@signalbox/api-client";
 
 export const methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
 
@@ -12,12 +12,49 @@ export interface HeaderRow {
   enabled: boolean;
 }
 
+/**
+ * The auth being edited. It keeps every type's fields, so switching types
+ * and back doesn't lose what was typed.
+ */
+export interface AuthDraft {
+  type: RequestAuth["type"];
+  username: string;
+  password: string;
+  token: string;
+  key: string;
+  value: string;
+  in: "header" | "query";
+}
+
 /** What the editor holds. */
 export interface Draft {
   method: string;
   url: string;
   headers: HeaderRow[];
   body: string;
+  auth: AuthDraft;
+}
+
+export function noAuth(): AuthDraft {
+  return { type: "none", username: "", password: "", token: "", key: "", value: "", in: "header" };
+}
+
+/** The auth to send or save: the chosen type's fields, or none. */
+export function toAuth(a: AuthDraft): RequestAuth | undefined {
+  switch (a.type) {
+    case "basic":
+      return { type: "basic", username: a.username, password: a.password };
+    case "bearer":
+      return { type: "bearer", token: a.token };
+    case "apikey":
+      return { type: "apikey", key: a.key.trim(), value: a.value, in: a.in };
+    default:
+      return undefined;
+  }
+}
+
+function fromAuth(a: RequestAuth | undefined): AuthDraft {
+  return { ...noAuth(), ...a, type: a?.type ?? "none", in: a?.in ?? "header" };
 }
 
 let nextRow = 1;
@@ -27,7 +64,7 @@ export function row(key = "", value = "", enabled = true): HeaderRow {
 }
 
 export function emptyDraft(): Draft {
-  return { method: "GET", url: "", headers: [row()], body: "" };
+  return { method: "GET", url: "", headers: [row()], body: "", auth: noAuth() };
 }
 
 /** The request to send: ticked headers with a name, and a body for methods that take one. */
@@ -35,21 +72,31 @@ export function toSend(d: Draft): SendRequest {
   const headers: HttpHeader[] = d.headers.filter((h) => h.enabled && h.key.trim() !== "").map((h) => ({ key: h.key.trim(), value: h.value }));
   const out: SendRequest = { method: d.method, url: d.url.trim(), headers };
   if (d.body !== "" && d.method !== "GET" && d.method !== "HEAD") out.body = d.body;
+  const auth = toAuth(d.auth);
+  if (auth) out.auth = auth;
   return out;
 }
 
 /**
  * A draft from a history entry. Credentials history kept as ••• come back
- * empty, so they're typed again rather than sent as dots.
+ * empty, so they're typed again rather than sent as dots. Headers auth
+ * added aren't kept, since auth adds them again.
  */
 export function fromEntry(e: HistoryEntry): Draft {
-  const headers = e.request.headers.map((h) => row(h.key, h.value === "•••" ? "" : h.value));
-  return { method: e.method, url: e.url, headers: [...headers, row()], body: e.request.body ?? "" };
+  const auth = fromAuth(e.request.auth);
+  const added = auth.type === "basic" || auth.type === "bearer" ? "authorization" : auth.type === "apikey" && auth.in === "header" ? auth.key.toLowerCase() : "";
+  const headers = e.request.headers.filter((h) => h.key.toLowerCase() !== added).map((h) => row(h.key, h.value === "•••" ? "" : h.value));
+  return { method: e.method, url: e.url, headers: [...headers, row()], body: e.request.body ?? "", auth };
 }
 
 /** Whether a history entry had credentials or secrets history didn't keep. */
 export function hadCredentials(e: HistoryEntry): boolean {
-  return e.request.headers.some((h) => h.value.includes("•••")) || e.url.includes("•••") || (e.request.body ?? "").includes("•••");
+  return (
+    (e.request.auth !== undefined && e.request.auth.type !== "none") ||
+    e.request.headers.some((h) => h.value.includes("•••")) ||
+    e.url.includes("•••") ||
+    (e.request.body ?? "").includes("•••")
+  );
 }
 
 /** The response's content type, without parameters. */
@@ -96,7 +143,7 @@ export function phases(t: HistoryEntry["timings"]) {
 /** A draft from a saved request. */
 export function fromSaved(r: SavedRequest): Draft {
   const headers = (r.headers ?? []).map((h) => row(h.key, h.value, h.enabled));
-  return { method: r.method, url: r.url, headers: [...headers, row()], body: r.body ?? "" };
+  return { method: r.method, url: r.url, headers: [...headers, row()], body: r.body ?? "", auth: fromAuth(r.auth) };
 }
 
 /** A draft as a collection keeps it: every header with a name, ticked or not. */
@@ -106,6 +153,7 @@ export function toSaved(d: Draft): SavedRequest {
     url: d.url,
     headers: d.headers.filter((h) => h.key.trim() !== "").map((h) => ({ key: h.key.trim(), value: h.value, enabled: h.enabled })),
     body: d.body,
+    ...(toAuth(d.auth) ? { auth: toAuth(d.auth) } : {}),
   };
 }
 

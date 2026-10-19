@@ -3023,6 +3023,7 @@ components:
       additionalProperties: false
       properties:
         environmentId: {$ref: '#/components/schemas/EnvironmentId'}
+        auth: {$ref: '#/components/schemas/RequestAuth'}
         method: {type: string, maxLength: 32, description: 'The HTTP method, such as GET.', examples: [GET]}
         url: {type: string, maxLength: 8192, description: 'The absolute http or https URL, once its variables are filled in.', examples: ['{{baseUrl}}/orders/42']}
         headers:
@@ -3038,6 +3039,7 @@ components:
       description: A request as history keeps it.
       required: [headers]
       properties:
+        auth: {$ref: '#/components/schemas/RequestAuth'}
         headers:
           type: array
           description: The headers sent, with credential values as •••.
@@ -3195,6 +3197,27 @@ components:
           items: {$ref: '#/components/schemas/SavedHeader'}
           examples: [[{key: Accept, value: application/json, enabled: true}]]
         body: {type: string, maxLength: 10485760, description: The saved body, as text., examples: ['{"sku":"A-1"}']}
+        auth: {$ref: '#/components/schemas/RequestAuth'}
+    RequestAuth:
+      type: object
+      description: |
+        How a request authenticates; absent or `none` for no auth. Its fields may hold `{{variables}}`, filled in before it is applied, so a password or token can be a secret.
+
+        - `basic` sends `Authorization: Basic` with `username` and `password`.
+        - `bearer` sends `Authorization: Bearer` with `token`.
+        - `apikey` sends `value` in the header or query parameter `key`, as `in` says.
+
+        It replaces headers of the same name. History keeps only the type, `username`, `key` and `in`, and shows the credentials it sent as `•••`.
+      required: [type]
+      additionalProperties: false
+      properties:
+        type: {type: string, enum: [none, basic, bearer, apikey], description: The kind of auth., examples: [bearer]}
+        username: {type: string, maxLength: 65536, description: The basic auth username., examples: [ada]}
+        password: {type: string, maxLength: 65536, description: The basic auth password., examples: ['{{password}}']}
+        token: {type: string, maxLength: 65536, description: The bearer token., examples: ['{{token}}']}
+        key: {type: string, maxLength: 65536, description: The header or query parameter an API key goes in., examples: [X-Api-Key]}
+        value: {type: string, maxLength: 65536, description: The API key., examples: ['{{apiKey}}']}
+        in: {type: string, enum: [header, query], description: 'Where the API key goes; header when absent.', examples: [header]}
     Item:
       type: object
       description: A folder or a saved request in a collection.

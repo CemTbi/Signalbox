@@ -5,7 +5,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { type Draft, emptyDraft, folders, formatMs, formatSize, fromEntry, fromSaved, prettyBody, row, toSaved, toSend, tree } from "./model";
+import { type Draft, emptyDraft, folders, formatMs, formatSize, fromEntry, fromSaved, noAuth, prettyBody, row, toSaved, toSend, tree } from "./model";
 import { RequestEditor } from "./RequestEditor";
 import { ResponseView } from "./ResponseView";
 
@@ -33,7 +33,7 @@ const entry: HistoryEntry = {
 
 describe("model", () => {
   it("sends ticked headers with names, and no body for GET", () => {
-    const d: Draft = { method: "GET", url: " https://a.test ", body: "ignored", headers: [row("Accept", "*/*"), row("X-Off", "1", false), row("", "orphan")] };
+    const d: Draft = { method: "GET", url: " https://a.test ", body: "ignored", headers: [row("Accept", "*/*"), row("X-Off", "1", false), row("", "orphan")], auth: noAuth() };
     expect(toSend(d)).toEqual({ method: "GET", url: "https://a.test", headers: [{ key: "Accept", value: "*/*" }] });
     expect(toSend({ ...d, method: "POST" }).body).toBe("ignored");
   });
@@ -46,6 +46,14 @@ describe("model", () => {
       ["", ""],
     ]);
     expect(d.body).toBe('{"sku":"A-1"}');
+  });
+
+  it("reopens history with its auth type, without the header auth added", () => {
+    const d = fromEntry({ ...entry, request: { ...entry.request, auth: { type: "bearer" } } });
+    expect(d.auth.type).toBe("bearer");
+    expect(d.auth.token).toBe("");
+    expect(d.headers.map((h) => h.key)).toEqual(["Accept", ""]);
+    expect(toSaved({ ...d, auth: noAuth() }).auth).toBeUndefined();
   });
 
   it("formats bodies, sizes and times", () => {
@@ -108,6 +116,23 @@ describe("RequestEditor", () => {
     expect(onSend).toHaveBeenCalledTimes(2);
   });
 
+  it("sends auth from the Auth tab, keeping fields across type changes", async () => {
+    const onSend = vi.fn();
+    render(<Editor onSend={onSend} />);
+    await userEvent.type(screen.getByLabelText("URL"), "https://api.example.com/me");
+    await userEvent.click(screen.getByRole("tab", { name: "Auth" }));
+    await userEvent.selectOptions(screen.getByLabelText("Type"), "bearer");
+    await userEvent.type(screen.getByLabelText("Token"), "{{{{token}}");
+    await userEvent.selectOptions(screen.getByLabelText("Type"), "apikey");
+    await userEvent.type(screen.getByLabelText("Key"), "api_key");
+    await userEvent.selectOptions(screen.getByLabelText("Send it in"), "query");
+    await userEvent.selectOptions(screen.getByLabelText("Type"), "bearer");
+    expect(screen.getByLabelText("Token")).toHaveValue("{{token}}");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(toSend(onSend.mock.calls[0]![0]).auth).toEqual({ type: "bearer", token: "{{token}}" });
+    expect(screen.getByRole("tab", { name: "Auth •" })).toBeInTheDocument();
+  });
+
   it("can't send for viewers", async () => {
     const onSend = vi.fn();
     render(<Editor onSend={onSend} canSend={false} />);
@@ -118,7 +143,7 @@ describe("RequestEditor", () => {
 
 describe("saved requests", () => {
   it("keep unticked headers, and come back as drafts", () => {
-    const d: Draft = { method: "POST", url: "{{baseUrl}}/orders", body: "{}", headers: [row("Accept", "*/*"), row("X-Off", "1", false), row("", "")] };
+    const d: Draft = { method: "POST", url: "{{baseUrl}}/orders", body: "{}", headers: [row("Accept", "*/*"), row("X-Off", "1", false), row("", "")], auth: noAuth() };
     const saved = toSaved(d);
     expect(saved.headers).toEqual([
       { key: "Accept", value: "*/*", enabled: true },

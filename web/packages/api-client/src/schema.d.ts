@@ -1339,6 +1339,7 @@ export interface components {
         /** @description A request to send. */
         SendRequest: {
             environmentId?: components["schemas"]["EnvironmentId"];
+            auth?: components["schemas"]["RequestAuth"];
             /**
              * @description The HTTP method, such as GET.
              * @example GET
@@ -1372,6 +1373,7 @@ export interface components {
         };
         /** @description A request as history keeps it. */
         SentRequest: {
+            auth?: components["schemas"]["RequestAuth"];
             /**
              * @description The headers sent, with credential values as •••.
              * @example [
@@ -1694,6 +1696,55 @@ export interface components {
              * @example {"sku":"A-1"}
              */
             body?: string;
+            auth?: components["schemas"]["RequestAuth"];
+        };
+        /**
+         * @description How a request authenticates; absent or `none` for no auth. Its fields may hold `{{variables}}`, filled in before it is applied, so a password or token can be a secret.
+         *
+         *     - `basic` sends `Authorization: Basic` with `username` and `password`.
+         *     - `bearer` sends `Authorization: Bearer` with `token`.
+         *     - `apikey` sends `value` in the header or query parameter `key`, as `in` says.
+         *
+         *     It replaces headers of the same name. History keeps only the type, `username`, `key` and `in`, and shows the credentials it sent as `•••`.
+         */
+        RequestAuth: {
+            /**
+             * @description The kind of auth.
+             * @example bearer
+             * @enum {string}
+             */
+            type: "none" | "basic" | "bearer" | "apikey";
+            /**
+             * @description The basic auth username.
+             * @example ada
+             */
+            username?: string;
+            /**
+             * @description The basic auth password.
+             * @example {{password}}
+             */
+            password?: string;
+            /**
+             * @description The bearer token.
+             * @example {{token}}
+             */
+            token?: string;
+            /**
+             * @description The header or query parameter an API key goes in.
+             * @example X-Api-Key
+             */
+            key?: string;
+            /**
+             * @description The API key.
+             * @example {{apiKey}}
+             */
+            value?: string;
+            /**
+             * @description Where the API key goes; header when absent.
+             * @example header
+             * @enum {string}
+             */
+            in?: "header" | "query";
         };
         /** @description A folder or a saved request in a collection. */
         Item: {

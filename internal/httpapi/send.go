@@ -23,7 +23,7 @@ import (
 
 // Client is what the API needs from the client module.
 type Client interface {
-	Send(ctx context.Context, userID, projectID, environmentID uuid.UUID, req runner.Request) (client.Entry, error)
+	Send(ctx context.Context, userID, projectID, environmentID uuid.UUID, req runner.Request, auth *client.Auth) (client.Entry, error)
 	History(ctx context.Context, userID, projectID uuid.UUID, p workspaces.PageRequest) (client.HistoryPage, error)
 	HistoryEntry(ctx context.Context, userID, entryID uuid.UUID) (client.Entry, error)
 }
@@ -35,6 +35,34 @@ const sendBodyLimit = 24 << 20
 type HeaderJSON struct {
 	Key   string `json:"key"`
 	Value string `json:"value"`
+}
+
+// AuthJSON is how a request authenticates. In history, only its type,
+// username and API key name are kept.
+type AuthJSON struct {
+	Type     string `json:"type"`
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+	Token    string `json:"token,omitempty"`
+	Key      string `json:"key,omitempty"`
+	Value    string `json:"value,omitempty"`
+	In       string `json:"in,omitempty"`
+}
+
+func authJSON(a *client.Auth) *AuthJSON {
+	if a == nil {
+		return nil
+	}
+	out := AuthJSON(*a)
+	return &out
+}
+
+func authIn(a *AuthJSON) *client.Auth {
+	if a == nil {
+		return nil
+	}
+	out := client.Auth(*a)
+	return &out
 }
 
 // TimingsJSON are a request's phases, in milliseconds.
@@ -49,6 +77,7 @@ type TimingsJSON struct {
 
 // SentRequestJSON is a request as history keeps it.
 type SentRequestJSON struct {
+	Auth          *AuthJSON    `json:"auth,omitempty"`
 	Headers       []HeaderJSON `json:"headers"`
 	Body          string       `json:"body,omitempty"`
 	BodyTruncated bool         `json:"bodyTruncated,omitempty"`
@@ -116,7 +145,7 @@ func historyEntryJSON(e client.Entry) HistoryEntryJSON {
 	t := e.Result.Timings
 	out := HistoryEntryJSON{
 		ID: id.Format(id.History, e.ID), Method: e.Method, URL: e.URL, SentAt: timestamp(e.SentAt),
-		Request:    SentRequestJSON{Headers: headersJSON(e.Headers), Body: string(e.Body), BodyTruncated: e.BodyTruncated},
+		Request:    SentRequestJSON{Auth: authJSON(e.Auth), Headers: headersJSON(e.Headers), Body: string(e.Body), BodyTruncated: e.BodyTruncated},
 		Timings:    TimingsJSON{ms(t.DNS), ms(t.Connect), ms(t.TLS), ms(t.FirstByte), ms(t.Download), ms(t.Total)},
 		Unresolved: e.Unresolved,
 	}
@@ -171,6 +200,7 @@ func (a *api) sendRequest(w http.ResponseWriter, r *http.Request, s *identity.Se
 		URL           *string      `json:"url"`
 		Headers       []HeaderJSON `json:"headers"`
 		Body          string       `json:"body"`
+		Auth          *AuthJSON    `json:"auth"`
 		TimeoutMs     int          `json:"timeoutMs"`
 	}
 	if !decodeJSONUpTo(w, r, &body, sendBodyLimit) {
@@ -219,7 +249,7 @@ func (a *api) sendRequest(w http.ResponseWriter, r *http.Request, s *identity.Se
 	for _, h := range body.Headers {
 		req.Headers = append(req.Headers, runner.Header(h))
 	}
-	e, err := a.Client.Send(r.Context(), s.User.ID, projectID, environmentID, req)
+	e, err := a.Client.Send(r.Context(), s.User.ID, projectID, environmentID, req, authIn(body.Auth))
 	if err != nil {
 		a.secretsError(w, r, "project or environment", err)
 		return
