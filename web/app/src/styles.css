@@ -1971,3 +1971,69 @@ pre.code {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+.environment-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.environment-bar label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.environment-bar select {
+  min-width: 12rem;
+  max-width: 100%;
+  padding: 6px 8px;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+}
+
+.environment-kind {
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  border: 1px solid var(--bad);
+  border-radius: 999px;
+}
+
+.variables {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  overflow-x: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.variables-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.variables-head h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.variables .header-rows td:nth-child(3) {
+  width: 1%;
+  text-align: center;
+}
+
+.variables .header-rows td:first-child {
+  width: 30%;
+  white-space: normal;
+}

@@ -254,3 +254,23 @@ export function itemsQuery(client: ApiClient, collectionId: string) {
     queryFn: () => unwrap(client.GET("/api/v1/collections/{collectionId}/items", { params: { path: { collectionId } } })),
   });
 }
+
+export const environmentsKey = (projectId: string) => ["projects", projectId, "environments"] as const;
+
+/** A project's environments, in switcher order. */
+export function environmentsQuery(client: ApiClient, projectId: string) {
+  return queryOptions({
+    queryKey: environmentsKey(projectId),
+    queryFn: () => unwrap(client.GET("/api/v1/projects/{projectId}/environments", { params: { path: { projectId } } })),
+  });
+}
+
+export const variablesKey = (environmentId: string) => ["environments", environmentId, "variables"] as const;
+
+/** An environment's variables with their ETag. Secrets come without values. */
+export function variablesQuery(client: ApiClient, environmentId: string) {
+  return queryOptions({
+    queryKey: variablesKey(environmentId),
+    queryFn: () => unwrapTagged(client.GET("/api/v1/environments/{environmentId}/variables", { params: { path: { environmentId } } })),
+  });
+}

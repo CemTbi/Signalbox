@@ -63,7 +63,15 @@ func newServeCommand() *cobra.Command {
 		Long: `Start the server with the selected roles.
 
 Every flag can also be set with an environment variable, shown in brackets.
-Flags win over environment variables.`,
+Flags win over environment variables.
+
+Secrets have no flags, since flags show up in process lists. Set them in the
+environment, or name a file that holds one with the variable plus _FILE:
+
+  SIGNALBOX_SECRET_KEY          encrypts secrets such as secret environment
+                                variables: 32 random bytes in base64, from
+                                openssl rand -base64 32
+  SIGNALBOX_OIDC_CLIENT_SECRET  the single sign-on client's secret`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			logger, err := logging.New(cmd.ErrOrStderr(), logFormat, logLevel)
@@ -71,6 +79,9 @@ Flags win over environment variables.`,
 				return err
 			}
 			if cfg.OIDC.ClientSecret, err = secret("SIGNALBOX_OIDC_CLIENT_SECRET"); err != nil {
+				return err
+			}
+			if cfg.SecretKey, err = secret("SIGNALBOX_SECRET_KEY"); err != nil {
 				return err
 			}
 			srv, err := app.New(cmd.Context(), cfg, logger)

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package client is the module for the API client: sending requests from
-// a project, and each person's history of what they sent. Collections and
-// environments join it next. Requests run in the runner (internal/modules/
-// runner); this module decides who may send what, and keeps the record.
+// a project with its environments' variables, each person's history of
+// what they sent, and collections of saved requests. Requests run in the
+// runner (internal/modules/runner); this module decides who may send what,
+// and keeps the record.
 // See docs/rfcs/0001-api-client-and-tests.md.
 package client
 
@@ -24,6 +25,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/runner"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/id"
+	"github.com/CemTbi/Signalbox/internal/platform/secretbox"
 )
 
 // Errors the module returns.
@@ -41,6 +43,7 @@ var (
 // Access tells the module what a user may do in a project.
 type Access interface {
 	ProjectRole(ctx context.Context, userID, projectID uuid.UUID) (workspaces.Role, error)
+	GetEnvironment(ctx context.Context, userID, environmentID uuid.UUID) (workspaces.Environment, workspaces.Role, error)
 }
 
 // Runner sends a request. In one process it is the runner module; when the
@@ -68,6 +71,9 @@ type Module struct {
 	logger *slog.Logger
 	access Access
 	runner Runner
+	// kek encrypts workspaces' data keys; nil when no secret key is
+	// configured.
+	kek *secretbox.Box
 }
 
 // New returns the module. run may be nil, when this process can't send
@@ -81,8 +87,16 @@ type Entry struct {
 	ID        uuid.UUID
 	ProjectID uuid.UUID
 	UserID    uuid.UUID
-	Method    string
-	URL       string
+	// EnvironmentID is the environment whose variables were filled in, or
+	// uuid.Nil.
+	EnvironmentID uuid.UUID
+	// Unresolved lists the {{names}} that had no value, sorted; they were
+	// sent as they are.
+	Unresolved []string
+	Method     string
+	// URL is as sent. In history, secrets' values are replaced by •••
+	// wherever they appear.
+	URL string
 	// Headers are as sent, with credentials replaced by •••.
 	Headers []runner.Header
 	// Body is the request body, at most 64 KiB of it.
@@ -120,34 +134,75 @@ func (m *Module) authorize(ctx context.Context, userID, projectID uuid.UUID, may
 
 // Send sends a request from a project and keeps it in the sender's
 // history. Owners, admins and editors may: the server sends it on their
-// behalf, to whatever their environments point at. The result comes back
-// whole; history keeps the first megabyte of the response body.
-func (m *Module) Send(ctx context.Context, userID, projectID uuid.UUID, req runner.Request) (Entry, error) {
+// behalf, to whatever their environments point at. With an environment of
+// the project, its variables fill in {{name}} first. The result comes back
+// whole; history keeps the first megabyte of the response body, and masks
+// the environment's secrets.
+func (m *Module) Send(ctx context.Context, userID, projectID, environmentID uuid.UUID, req runner.Request) (Entry, error) {
 	if err := m.authorize(ctx, userID, projectID, true); err != nil {
 		return Entry{}, err
 	}
 	if m.runner == nil {
 		return Entry{}, ErrRunnerUnavailable
 	}
+	var (
+		values  map[string]string
+		secrets []string
+	)
+	if environmentID != uuid.Nil {
+		env, err := m.environment(ctx, userID, environmentID, read)
+		if err != nil {
+			return Entry{}, err
+		}
+		if env.ProjectID != projectID {
+			return Entry{}, ErrNotFound
+		}
+		if values, secrets, err = m.environmentValues(ctx, env); err != nil {
+			return Entry{}, err
+		}
+	}
+	res := newResolver(values, secrets, time.Now())
+	req, err := res.request(req)
+	if err != nil {
+		return Entry{}, err
+	}
 	result := m.runner.Run(ctx, req)
 	e := Entry{
-		ID: id.New(), ProjectID: projectID, UserID: userID,
+		ID: id.New(), ProjectID: projectID, UserID: userID, EnvironmentID: environmentID, Unresolved: res.Unresolved(),
 		Method: strings.ToUpper(strings.TrimSpace(req.Method)), URL: strings.TrimSpace(req.URL),
 		Headers: redact(req.Headers), Body: req.Body, Result: result,
 	}
-	if len(e.Body) > maxStoredRequestRaw {
+	// What comes back is whole; what history keeps doesn't hold secrets.
+	kept := e
+	mask := newMasker(values, secrets)
+	kept.URL, kept.Headers, kept.Body = mask.string(kept.URL), mask.headers(kept.Headers), mask.bytes(kept.Body)
+	if f := result.Failure; f != nil {
+		// Failure messages can name the host, which a secret may fill in.
+		masked := *f
+		masked.Message = mask.string(f.Message)
+		kept.Result.Failure = &masked
+	}
+	if r := result.Response; r != nil {
+		masked := *r
+		// Masked before save cuts it, so the cut can't leave part of a
+		// secret.
+		masked.Headers, masked.URL, masked.Body = mask.headers(r.Headers), mask.string(r.URL), mask.bytes(r.Body)
+		kept.Result.Response = &masked
+	}
+	if len(kept.Body) > maxStoredRequestRaw {
 		// Cut on a character boundary, so a text body stays text.
 		n := maxStoredRequestRaw
-		for n > 0 && !utf8.RuneStart(e.Body[n]) {
+		for n > 0 && !utf8.RuneStart(kept.Body[n]) {
 			n--
 		}
-		e.Body, e.BodyTruncated = e.Body[:n], true
+		kept.Body, kept.BodyTruncated = kept.Body[:n], true
 	}
-	if err := m.save(ctx, &e); err != nil {
+	if err := m.save(ctx, &kept); err != nil {
 		// The request was sent; losing its history entry isn't worth
 		// failing the send over.
 		m.logger.WarnContext(ctx, "couldn't keep a sent request in history", "error", err, id.LogAttr("user_id", id.User, userID))
 	}
+	e.SentAt = kept.SentAt
 	return e, nil
 }
 
@@ -164,6 +219,8 @@ func redact(headers []runner.Header) []runner.Header {
 
 // stored is what history keeps of a result, as JSON.
 type stored struct {
+	EnvironmentID *uuid.UUID      `json:"environmentId,omitempty"`
+	Unresolved    []string        `json:"unresolved,omitempty"`
 	Headers       []runner.Header `json:"headers"`
 	Body          string          `json:"body,omitempty"`
 	BodyTruncated bool            `json:"bodyTruncated,omitempty"`
@@ -189,7 +246,10 @@ type storedTimings struct {
 }
 
 func (m *Module) save(ctx context.Context, e *Entry) error {
-	s := stored{Headers: e.Headers, BodyTruncated: e.BodyTruncated, Failure: e.Result.Failure, Timings: timingsOut(e.Result.Timings)}
+	s := stored{Headers: e.Headers, Unresolved: e.Unresolved, BodyTruncated: e.BodyTruncated, Failure: e.Result.Failure, Timings: timingsOut(e.Result.Timings)}
+	if e.EnvironmentID != uuid.Nil {
+		s.EnvironmentID = &e.EnvironmentID
+	}
 	if utf8.Valid(e.Body) {
 		s.Body = string(e.Body)
 	}
@@ -314,7 +374,10 @@ func (m *Module) HistoryEntry(ctx context.Context, userID, entryID uuid.UUID) (E
 	if err := json.Unmarshal(doc, &s); err != nil {
 		return Entry{}, fmt.Errorf("read history entry: %w", err)
 	}
-	e.Headers, e.Body, e.BodyTruncated = s.Headers, []byte(s.Body), s.BodyTruncated
+	e.Headers, e.Body, e.BodyTruncated, e.Unresolved = s.Headers, []byte(s.Body), s.BodyTruncated, s.Unresolved
+	if s.EnvironmentID != nil {
+		e.EnvironmentID = *s.EnvironmentID
+	}
 	e.Result = runner.Result{Failure: s.Failure, Timings: timingsIn(s.Timings)}
 	if r := s.Response; r != nil {
 		e.Result.Response = &runner.Response{Status: r.Status, StatusText: r.StatusText, Proto: r.Proto, Headers: r.Headers,

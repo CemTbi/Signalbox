@@ -1,5 +1,5 @@
-# End-to-end test additions to compose.yaml: a Dex identity provider and
-# single sign-on through it.
+# End-to-end test additions to compose.yaml: a Dex identity provider,
+# single sign-on through it, and a secret key.
 #
 #   docker compose -f deploy/compose/compose.yaml -f deploy/compose/compose.e2e.yaml up -d --wait
 
@@ -23,6 +23,8 @@ services:
       SIGNALBOX_OIDC_CLIENT_ID: signalbox
       SIGNALBOX_OIDC_CLIENT_SECRET: e2e-client-secret
       SIGNALBOX_OIDC_NAME: Dex
+      # A fixed key for tests only; never use it for real secrets.
+      SIGNALBOX_SECRET_KEY: c2lnbmFsYm94LWUyZS10ZXN0LWtleS1ub3QtcmVhbCE=
     depends_on:
       dex:
         condition: service_healthy

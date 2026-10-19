@@ -1222,12 +1222,8 @@ paths:
     get:
       operationId: listEnvironments
       summary: List a project's environments
-      description: Lists environments in the order the environment switcher shows them.
+      description: Lists all of the project's environments, in the order the environment switcher shows them. Every member of the workspace may.
       tags: [Environments]
-      x-signalbox-status: planned
-      parameters:
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Cursor'
       responses:
         '200':
           description: A page of environments.
@@ -1298,7 +1294,6 @@ paths:
       summary: Get an environment
       description: Returns one environment.
       tags: [Environments]
-      x-signalbox-status: planned
       responses:
         '200':
           description: The environment.
@@ -1378,6 +1373,71 @@ paths:
         '412': {$ref: '#/components/responses/PreconditionFailed'}
         default: {$ref: '#/components/responses/Error'}
 
+  /api/v1/environments/{environmentId}/variables:
+    parameters:
+      - $ref: '#/components/parameters/EnvironmentId'
+    get:
+      operationId: getVariables
+      summary: Get an environment's variables
+      description: |
+        Returns the environment's variables, in order. Every member of the workspace may. Secrets are write-only: they come back without their values.
+
+        The `ETag` names this version of the whole set; send it as `If-Match` when you replace them.
+      tags: [Environments]
+      responses:
+        '200':
+          description: The variables.
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvironmentVariables'}
+              example:
+                environmentId: env_01j9z3n5q7s9v1w3y5a7c9e1g3
+                variables: [{key: baseUrl, value: 'https://api.example.com', secret: false}, {key: apiKey, secret: true}]
+                updatedAt: '2026-10-18T12:00:00Z'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    put:
+      operationId: putVariables
+      summary: Replace an environment's variables
+      description: |
+        Replaces the environment's variables with the ones sent, in their order. Owners, admins and editors may.
+
+        Secret values are encrypted with the workspace's key and never returned. Send a secret without `value` to keep the value it has. Storing a new secret needs the server's secret key (`SIGNALBOX_SECRET_KEY`); without it the request fails with `secrets-unavailable`.
+      tags: [Environments]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        description: Every variable the environment keeps.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EnvironmentVariablesPut'}
+            example: {variables: [{key: baseUrl, value: 'https://api.example.com'}, {key: apiKey, value: sk_live_123, secret: true}]}
+      responses:
+        '200':
+          description: The variables as stored.
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EnvironmentVariables'}
+              example:
+                environmentId: env_01j9z3n5q7s9v1w3y5a7c9e1g3
+                variables: [{key: baseUrl, value: 'https://api.example.com', secret: false}, {key: apiKey, secret: true}]
+                updatedAt: '2026-10-18T12:00:00Z'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        '503': {$ref: '#/components/responses/SecretsUnavailable'}
+        default: {$ref: '#/components/responses/Error'}
+
   /api/v1/projects/{projectId}/canvas:
     parameters:
       - $ref: '#/components/parameters/ProjectId'
@@ -1417,7 +1477,9 @@ paths:
 
         The runner never reaches Signalbox's own database, cloud metadata endpoints or loopback; an admin can deny or allow more. A request that gets no response, because it was refused, the host doesn't exist, the connection failed or it timed out, still answers `200`, with `failure` saying why.
 
-        History keeps credential headers (`Authorization`, `Proxy-Authorization`, `Cookie`) as `•••`, and the first megabyte of the response body.
+        With `environmentId`, the environment's variables fill in `{{name}}` in the URL, headers and body first, as do the built-ins `{{$guid}}`, `{{$timestamp}}`, `{{$isoTimestamp}}` and `{{$randomInt}}`. A variable's value may name other variables; a secret's is used as it is. Names with no value are sent as they are and listed in `unresolved`.
+
+        History keeps credential headers (`Authorization`, `Proxy-Authorization`, `Cookie`) as `•••`, and the first megabyte of the response body. The environment's secret values are `•••` wherever they appear in what history keeps.
       tags: [Client]
       requestBody:
         required: true
@@ -1425,7 +1487,7 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/SendRequest'}
-            example: {method: GET, url: 'https://api.example.com/orders/42', headers: [{key: Accept, value: application/json}]}
+            example: {environmentId: env_01j9z3n5q7s9v1w3y5a7c9e1g3, method: GET, url: '{{baseUrl}}/orders/42', headers: [{key: Accept, value: application/json}]}
       responses:
         '200':
           description: What came of the request.
@@ -1437,6 +1499,7 @@ paths:
               schema: {$ref: '#/components/schemas/HistoryEntry'}
               example:
                 id: hist_01j9z3w5y7a9c1e3g5j7m9p1r3
+                environmentId: env_01j9z3n5q7s9v1w3y5a7c9e1g3
                 method: GET
                 url: 'https://api.example.com/orders/42'
                 sentAt: '2026-10-18T12:00:00Z'
@@ -1447,9 +1510,17 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '422':
+          description: Once its variables are filled in, the request is larger than the runner sends (`request-too-large`).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example: {type: about:blank, title: Unprocessable Content, status: 422, code: request-too-large, detail: 'Once its variables are filled in, the request is larger than the runner sends. Check for variables that name each other.'}
         '429': {$ref: '#/components/responses/TooManyRequests'}
         '503':
-          description: This server doesn't run the runner role (`runner-unavailable`).
+          description: This server doesn't run the runner role (`runner-unavailable`), or can't read the environment's secrets (`secrets-unavailable`, `secret-key-changed`).
           headers:
             X-Request-Id: {$ref: '#/components/headers/RequestId'}
           content:
@@ -2792,6 +2863,14 @@ components:
             detail: This invitation link is wrong, expired or already used. Ask for a new one.
             code: invitation-not-found
             requestId: 9f8e7d6c5b4a39281706f5e4
+    SecretsUnavailable:
+      description: The server can't keep or read secrets. It has no secret key (`secrets-unavailable`), or the secrets were stored with another key (`secret-key-changed`).
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/RequestId'}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example: {type: about:blank, title: Service Unavailable, status: 503, code: secrets-unavailable, detail: "This server has no secret key, so it can't keep secrets. An administrator can set SIGNALBOX_SECRET_KEY to 32 random bytes in base64, such as the output of openssl rand -base64 32."}
     TooManyRequests:
       description: The caller sent too many requests. Wait for the time in `Retry-After`.
       headers:
@@ -2943,8 +3022,9 @@ components:
       required: [method, url]
       additionalProperties: false
       properties:
+        environmentId: {$ref: '#/components/schemas/EnvironmentId'}
         method: {type: string, maxLength: 32, description: 'The HTTP method, such as GET.', examples: [GET]}
-        url: {type: string, maxLength: 8192, description: 'The absolute http or https URL.', examples: ['https://api.example.com/orders/42']}
+        url: {type: string, maxLength: 8192, description: 'The absolute http or https URL, once its variables are filled in.', examples: ['{{baseUrl}}/orders/42']}
         headers:
           type: array
           description: Headers, in order. Empty names are skipped. The runner adds `User-Agent` if there's none.
@@ -3009,8 +3089,14 @@ components:
       required: [id, method, url, sentAt, request, timings]
       properties:
         id: {$ref: '#/components/schemas/HistoryEntryId'}
+        environmentId: {$ref: '#/components/schemas/EnvironmentId'}
+        unresolved:
+          type: array
+          description: The `{{names}}` that had no value, and were sent as they are.
+          items: {type: string}
+          examples: [[orderId]]
         method: {type: string, description: The method sent., examples: [GET]}
-        url: {type: string, description: The URL sent., examples: ['https://api.example.com/orders/42']}
+        url: {type: string, description: 'The URL sent, variables filled in. In history, secret values are •••.', examples: ['https://api.example.com/orders/42']}
         sentAt: {$ref: '#/components/schemas/Timestamp'}
         request: {$ref: '#/components/schemas/SentRequest'}
         response: {$ref: '#/components/schemas/RunnerResponse'}
@@ -3842,6 +3928,54 @@ components:
           minimum: 0
           description: The new place in the environment switcher.
           examples: [0]
+    EnvironmentVariable:
+      type: object
+      description: One of an environment's variables. A secret has no `value` when it is read.
+      required: [key, secret]
+      properties:
+        key: {$ref: '#/components/schemas/VariableKey'}
+        value: {type: string, maxLength: 65536, description: The value., examples: ['https://api.example.com']}
+        secret: {type: boolean, description: 'Whether the value is a secret: encrypted at rest, never returned, and masked in history.', examples: [false]}
+    VariableKey:
+      type: string
+      description: 'A variable''s name, as `{{name}}` uses it: no spaces or braces, and not starting with `$`.'
+      minLength: 1
+      maxLength: 200
+      pattern: '^[^${}\s][^{}\s]*$'
+      examples: [baseUrl]
+    EnvironmentVariables:
+      type: object
+      description: An environment's variables, in order.
+      required: [environmentId, variables]
+      properties:
+        environmentId: {$ref: '#/components/schemas/EnvironmentId'}
+        variables:
+          type: array
+          description: The variables, in order.
+          maxItems: 500
+          items: {$ref: '#/components/schemas/EnvironmentVariable'}
+          examples: [[{key: baseUrl, value: 'https://api.example.com', secret: false}, {key: apiKey, secret: true}]]
+        updatedAt: {$ref: '#/components/schemas/Timestamp'}
+    EnvironmentVariablesPut:
+      type: object
+      description: Every variable an environment keeps.
+      required: [variables]
+      additionalProperties: false
+      properties:
+        variables:
+          type: array
+          description: The variables, in order, each name once. A secret without `value` keeps the value it has.
+          maxItems: 500
+          items:
+            type: object
+            description: A variable to keep.
+            required: [key]
+            additionalProperties: false
+            properties:
+              key: {$ref: '#/components/schemas/VariableKey'}
+              value: {type: string, maxLength: 65536, description: The value; for a secret, its new value., examples: ['https://api.example.com']}
+              secret: {type: boolean, default: false, description: Whether the value is a secret., examples: [false]}
+          examples: [[{key: baseUrl, value: 'https://api.example.com'}, {key: apiKey, value: sk_live_123, secret: true}]]
     EnvironmentPage:
       type: object
       description: One page of the environment list, with a cursor for the next page.
