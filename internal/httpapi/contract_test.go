@@ -174,6 +174,7 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *har
 		Collections: client.New(pool, logger, ws, nil),
 		Client:      sender,
 		Variables:   sender,
+		Imports:     sender,
 		PublicURL:   public,
 	})
 	srv.StartTLS()

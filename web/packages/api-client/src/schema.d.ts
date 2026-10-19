@@ -815,6 +815,97 @@ export interface paths {
         patch: operations["updateCollection"];
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/collection-imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import a Postman collection
+         * @description Imports a Postman Collection v2.1 or v2.0 file as a new collection, with its folders, requests, variables and scripts, and reports what will run differently and what was left out. Owners, admins and editors may.
+         *
+         *     Auth a request inherits from its folder or the collection is copied onto the request. Scripts are kept but never run during an import.
+         */
+        post: operations["importCollection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/collections/{collectionId}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The collection's ID. */
+                collectionId: components["parameters"]["CollectionId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Export a collection to Postman
+         * @description Returns the collection as a Postman Collection v2.1 file, which Postman and Newman read, with its folders, requests, auth, variables and scripts. Every member of the workspace may.
+         */
+        get: operations["exportCollection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/environments/{environmentId}/variable-imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The environment's ID. */
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import a Postman environment
+         * @description Adds a Postman environment file's variables to the environment. A variable with the name of one the environment has replaces it in place; the others go at the end. Postman's secret variables stay secret, which needs the server's secret key. Owners, admins and editors may.
+         */
+        post: operations["importVariables"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/curl-imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read a curl command
+         * @description Turns a curl command, such as one from a browser's Copy as cURL for bash or cmd, into a request to send or save, and reports the options it couldn't follow. Nothing is stored.
+         */
+        post: operations["importCurl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/collections/{collectionId}/items": {
         parameters: {
             query?: never;
@@ -1339,6 +1430,7 @@ export interface components {
         /** @description A request to send. */
         SendRequest: {
             environmentId?: components["schemas"]["EnvironmentId"];
+            collectionId?: components["schemas"]["CollectionId"];
             auth?: components["schemas"]["RequestAuth"];
             /**
              * @description The HTTP method, such as GET.
@@ -1605,8 +1697,121 @@ export interface components {
              * @example Everything about orders.
              */
             description?: string;
+            /**
+             * @description The collection's variables, in order. They fill in `{{name}}` when a request is sent with `collectionId`; an environment's variables win over them. They aren't secret.
+             * @example [
+             *       {
+             *         "key": "baseUrl",
+             *         "value": "https://api.example.com"
+             *       }
+             *     ]
+             */
+            variables?: components["schemas"]["CollectionVariable"][];
+            scripts?: components["schemas"]["Scripts"];
             createdAt: components["schemas"]["Timestamp"];
             updatedAt: components["schemas"]["Timestamp"];
+        };
+        /** @description One of a collection's variables. */
+        CollectionVariable: {
+            key: components["schemas"]["VariableKey"];
+            /**
+             * @description The variable's value.
+             * @example https://api.example.com
+             */
+            value: string;
+        };
+        /** @description The JavaScript a collection, folder or request runs before a request and after its response, as Postman has them. They are kept and exported; sending from the API doesn't run them yet. */
+        Scripts: {
+            /**
+             * @description The pre-request script.
+             * @example pm.variables.set('now', Date.now());
+             */
+            prerequest?: string;
+            /**
+             * @description The test script.
+             * @example pm.test('ok', () => pm.response.to.have.status(200));
+             */
+            test?: string;
+        };
+        /** @description What an import found. It is clean when nothing was left out and nothing will run differently than in Postman or curl. */
+        ImportReport: {
+            /**
+             * @description Whether every note is only information.
+             * @example false
+             */
+            clean: boolean;
+            /**
+             * @description How many folders were converted.
+             * @example 3
+             */
+            folders: number;
+            /**
+             * @description How many requests were converted.
+             * @example 24
+             */
+            requests: number;
+            /**
+             * @description How many variables were converted.
+             * @example 2
+             */
+            variables: number;
+            /**
+             * @description What will run differently, what was left out, and what's worth knowing, in the file's order.
+             * @example [
+             *       {
+             *         "item": "Orders / Upload",
+             *         "level": "omitted",
+             *         "message": "The file field \"file\" wasn't imported; file fields aren't supported yet."
+             *       }
+             *     ]
+             */
+            notes: components["schemas"]["ImportNote"][];
+        };
+        /** @description One line of an import report. */
+        ImportNote: {
+            /**
+             * @description Where it is: folder names and the request's name, joined by " / ". Absent for the whole file.
+             * @example Orders / Upload
+             */
+            item?: string;
+            /**
+             * @description `differs`: it will run differently. `omitted`: it was left out. `info`: worth knowing, changes nothing.
+             * @example omitted
+             * @enum {string}
+             */
+            level: "info" | "differs" | "omitted";
+            /**
+             * @description What happened
+             * @example The file field "file" wasn't imported; file fields aren't supported yet.
+             */
+            message: string;
+        };
+        /** @description A Postman Collection v2.1 or v2.0 file, or a Postman environment file, as Postman exports it. At most 25 MiB. */
+        PostmanFile: {
+            [key: string]: unknown;
+        };
+        /** @description The imported collection, and the report. A dry run has only the report. */
+        CollectionImport: {
+            collection?: components["schemas"]["Collection"];
+            report: components["schemas"]["ImportReport"];
+        };
+        /** @description The environment's variables after the import, and the report. A dry run has only the report. */
+        VariablesImport: {
+            variables?: components["schemas"]["EnvironmentVariables"];
+            report: components["schemas"]["ImportReport"];
+        };
+        /** @description A curl command, as a browser's Copy as cURL gives it, for bash or cmd. */
+        CurlCommand: {
+            /**
+             * @description The curl command line.
+             * @example curl 'https://api.example.com/orders' -H 'accept: application/json'
+             */
+            command: string;
+        };
+        /** @description The request a curl command makes, ready to send or save, and the report. */
+        CurlImport: {
+            request: components["schemas"]["SavedRequest"];
+            report: components["schemas"]["ImportReport"];
         };
         /** @description A new collection. */
         CollectionCreate: {
@@ -1633,6 +1838,16 @@ export interface components {
              * @example Everything about orders.
              */
             description?: string | null;
+            /**
+             * @description The collection's variables, replacing all of them; null removes them.
+             * @example [
+             *       {
+             *         "key": "baseUrl",
+             *         "value": "https://api.example.com"
+             *       }
+             *     ]
+             */
+            variables?: components["schemas"]["CollectionVariable"][] | null;
         };
         /** @description A project's collections. */
         CollectionList: {
@@ -1772,6 +1987,7 @@ export interface components {
              */
             description?: string;
             request?: components["schemas"]["SavedRequest"];
+            scripts?: components["schemas"]["Scripts"];
             createdAt: components["schemas"]["Timestamp"];
             updatedAt: components["schemas"]["Timestamp"];
         };
@@ -3566,6 +3782,25 @@ export interface components {
                  *       "detail": "This invitation link is wrong, expired or already used. Ask for a new one.",
                  *       "code": "invitation-not-found",
                  *       "requestId": "9f8e7d6c5b4a39281706f5e4"
+                 *     }
+                 */
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description The file isn't a Postman collection or environment Signalbox reads (`not-postman`), or the text isn't a curl command it reads (`not-curl`). The detail says why. */
+        NotImportable: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "type": "about:blank",
+                 *       "title": "Unprocessable Content",
+                 *       "status": 422,
+                 *       "code": "not-postman",
+                 *       "detail": "Signalbox can't import this file: it's a Postman v1 collection; export it from Postman again as Collection v2.1."
                  *     }
                  */
                 "application/problem+json": components["schemas"]["Problem"];
@@ -6258,6 +6493,282 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             412: components["responses"]["PreconditionFailed"];
+            default: components["responses"]["Error"];
+        };
+    };
+    importCollection: {
+        parameters: {
+            query?: {
+                /**
+                 * @description true checks the file and returns the report without importing it.
+                 * @example true
+                 */
+                dryRun?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /** @description The Postman collection file. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "info": {
+                 *         "name": "Shop API",
+                 *         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+                 *       },
+                 *       "item": [
+                 *         {
+                 *           "name": "Get an order",
+                 *           "request": {
+                 *             "method": "GET",
+                 *             "url": "{{baseUrl}}/orders/1"
+                 *           }
+                 *         }
+                 *       ]
+                 *     }
+                 */
+                "application/json": components["schemas"]["PostmanFile"];
+            };
+        };
+        responses: {
+            /** @description The report of a dry run. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "report": {
+                     *         "clean": true,
+                     *         "folders": 0,
+                     *         "requests": 1,
+                     *         "variables": 0,
+                     *         "notes": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["CollectionImport"];
+                };
+            };
+            /** @description The imported collection, and the report. */
+            201: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    Location: components["headers"]["Location"];
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "collection": {
+                     *         "id": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *         "projectId": "prj_01j9z3m2p4r6t8v0x2z4b6d8f0",
+                     *         "name": "Shop API",
+                     *         "variables": [],
+                     *         "createdAt": "2026-10-19T12:00:00Z",
+                     *         "updatedAt": "2026-10-19T12:00:00Z"
+                     *       },
+                     *       "report": {
+                     *         "clean": true,
+                     *         "folders": 0,
+                     *         "requests": 1,
+                     *         "variables": 0,
+                     *         "notes": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["CollectionImport"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["ContentTooLarge"];
+            422: components["responses"]["NotImportable"];
+            default: components["responses"]["Error"];
+        };
+    };
+    exportCollection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The collection's ID. */
+                collectionId: components["parameters"]["CollectionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The collection as a Postman file. */
+            200: {
+                headers: {
+                    /** @description Names the file, such as `Shop API.postman_collection.json`. */
+                    "Content-Disposition"?: string;
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "info": {
+                     *         "_postman_id": "0192a6b4-5e3c-7d8f-9a1b-2c3d4e5f6a7b",
+                     *         "name": "Shop API",
+                     *         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+                     *       },
+                     *       "item": []
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PostmanFile"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    importVariables: {
+        parameters: {
+            query?: {
+                /**
+                 * @description true checks the environment file and returns the report without importing it.
+                 * @example true
+                 */
+                dryRun?: boolean;
+            };
+            header?: never;
+            path: {
+                /** @description The environment's ID. */
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        /** @description The Postman environment file. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "name": "Staging",
+                 *       "_postman_variable_scope": "environment",
+                 *       "values": [
+                 *         {
+                 *           "key": "baseUrl",
+                 *           "value": "https://staging.example.com",
+                 *           "enabled": true
+                 *         }
+                 *       ]
+                 *     }
+                 */
+                "application/json": components["schemas"]["PostmanFile"];
+            };
+        };
+        responses: {
+            /** @description The environment's variables after the import, and the report; a dry run has only the report. */
+            200: {
+                headers: {
+                    ETag: components["headers"]["ETag"];
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "variables": {
+                     *         "environmentId": "env_01j9z3n5q7s9v1w3y5a7c9e1g3",
+                     *         "variables": [
+                     *           {
+                     *             "key": "baseUrl",
+                     *             "value": "https://staging.example.com",
+                     *             "secret": false
+                     *           }
+                     *         ],
+                     *         "updatedAt": "2026-10-19T12:00:00Z"
+                     *       },
+                     *       "report": {
+                     *         "clean": true,
+                     *         "folders": 0,
+                     *         "requests": 0,
+                     *         "variables": 1,
+                     *         "notes": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["VariablesImport"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["ContentTooLarge"];
+            422: components["responses"]["NotImportable"];
+            503: components["responses"]["SecretsUnavailable"];
+            default: components["responses"]["Error"];
+        };
+    };
+    importCurl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The command. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "command": "curl 'https://api.example.com/orders' -H 'accept: application/json'"
+                 *     }
+                 */
+                "application/json": components["schemas"]["CurlCommand"];
+            };
+        };
+        responses: {
+            /** @description The request, and the report. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "request": {
+                     *         "method": "GET",
+                     *         "url": "https://api.example.com/orders",
+                     *         "headers": [
+                     *           {
+                     *             "key": "accept",
+                     *             "value": "application/json",
+                     *             "enabled": true
+                     *           }
+                     *         ]
+                     *       },
+                     *       "report": {
+                     *         "clean": true,
+                     *         "folders": 0,
+                     *         "requests": 1,
+                     *         "variables": 0,
+                     *         "notes": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["CurlImport"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["NotImportable"];
             default: components["responses"]["Error"];
         };
     };

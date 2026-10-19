@@ -1702,6 +1702,153 @@ paths:
         '404': {$ref: '#/components/responses/NotFound'}
         '412': {$ref: '#/components/responses/PreconditionFailed'}
         default: {$ref: '#/components/responses/Error'}
+  /api/v1/projects/{projectId}/collection-imports:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    post:
+      operationId: importCollection
+      summary: Import a Postman collection
+      description: |
+        Imports a Postman Collection v2.1 or v2.0 file as a new collection, with its folders, requests, variables and scripts, and reports what will run differently and what was left out. Owners, admins and editors may.
+
+        Auth a request inherits from its folder or the collection is copied onto the request. Scripts are kept but never run during an import.
+      tags: [Client]
+      parameters:
+        - name: dryRun
+          in: query
+          required: false
+          description: true checks the file and returns the report without importing it.
+          schema: {type: boolean}
+          example: true
+      requestBody:
+        required: true
+        description: The Postman collection file.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PostmanFile'}
+            example: {info: {name: Shop API, schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json'}, item: [{name: Get an order, request: {method: GET, url: '{{baseUrl}}/orders/1'}}]}
+      responses:
+        '200':
+          description: The report of a dry run.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CollectionImport'}
+              example: {report: {clean: true, folders: 0, requests: 1, variables: 0, notes: []}}
+        '201':
+          description: The imported collection, and the report.
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+            Location: {$ref: '#/components/headers/Location'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CollectionImport'}
+              example:
+                collection: {id: col_01j9z3w5y7a9c1e3g5j7m9p1r3, projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0, name: Shop API, variables: [], createdAt: '2026-10-19T12:00:00Z', updatedAt: '2026-10-19T12:00:00Z'}
+                report: {clean: true, folders: 0, requests: 1, variables: 0, notes: []}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '413': {$ref: '#/components/responses/ContentTooLarge'}
+        '422': {$ref: '#/components/responses/NotImportable'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/collections/{collectionId}/export:
+    parameters:
+      - $ref: '#/components/parameters/CollectionId'
+    get:
+      operationId: exportCollection
+      summary: Export a collection to Postman
+      description: Returns the collection as a Postman Collection v2.1 file, which Postman and Newman read, with its folders, requests, auth, variables and scripts. Every member of the workspace may.
+      tags: [Client]
+      responses:
+        '200':
+          description: The collection as a Postman file.
+          headers:
+            Content-Disposition:
+              description: 'Names the file, such as `Shop API.postman_collection.json`.'
+              schema: {type: string}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PostmanFile'}
+              example: {info: {_postman_id: 0192a6b4-5e3c-7d8f-9a1b-2c3d4e5f6a7b, name: Shop API, schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json'}, item: []}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/environments/{environmentId}/variable-imports:
+    parameters:
+      - $ref: '#/components/parameters/EnvironmentId'
+    post:
+      operationId: importVariables
+      summary: Import a Postman environment
+      description: |
+        Adds a Postman environment file's variables to the environment. A variable with the name of one the environment has replaces it in place; the others go at the end. Postman's secret variables stay secret, which needs the server's secret key. Owners, admins and editors may.
+      tags: [Environments]
+      parameters:
+        - name: dryRun
+          in: query
+          required: false
+          description: true checks the environment file and returns the report without importing it.
+          schema: {type: boolean}
+          example: true
+      requestBody:
+        required: true
+        description: The Postman environment file.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PostmanFile'}
+            example: {name: Staging, _postman_variable_scope: environment, values: [{key: baseUrl, value: 'https://staging.example.com', enabled: true}]}
+      responses:
+        '200':
+          description: The environment's variables after the import, and the report; a dry run has only the report.
+          headers:
+            ETag: {$ref: '#/components/headers/ETag'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VariablesImport'}
+              example:
+                variables: {environmentId: env_01j9z3n5q7s9v1w3y5a7c9e1g3, variables: [{key: baseUrl, value: 'https://staging.example.com', secret: false}], updatedAt: '2026-10-19T12:00:00Z'}
+                report: {clean: true, folders: 0, requests: 0, variables: 1, notes: []}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '413': {$ref: '#/components/responses/ContentTooLarge'}
+        '422': {$ref: '#/components/responses/NotImportable'}
+        '503': {$ref: '#/components/responses/SecretsUnavailable'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/curl-imports:
+    post:
+      operationId: importCurl
+      summary: Read a curl command
+      description: Turns a curl command, such as one from a browser's Copy as cURL for bash or cmd, into a request to send or save, and reports the options it couldn't follow. Nothing is stored.
+      tags: [Client]
+      requestBody:
+        required: true
+        description: The command.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CurlCommand'}
+            example: {command: "curl 'https://api.example.com/orders' -H 'accept: application/json'"}
+      responses:
+        '200':
+          description: The request, and the report.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CurlImport'}
+              example:
+                request: {method: GET, url: 'https://api.example.com/orders', headers: [{key: accept, value: application/json, enabled: true}]}
+                report: {clean: true, folders: 0, requests: 1, variables: 0, notes: []}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '422': {$ref: '#/components/responses/NotImportable'}
+        default: {$ref: '#/components/responses/Error'}
   /api/v1/collections/{collectionId}/items:
     parameters:
       - $ref: '#/components/parameters/CollectionId'
@@ -2863,6 +3010,14 @@ components:
             detail: This invitation link is wrong, expired or already used. Ask for a new one.
             code: invitation-not-found
             requestId: 9f8e7d6c5b4a39281706f5e4
+    NotImportable:
+      description: The file isn't a Postman collection or environment Signalbox reads (`not-postman`), or the text isn't a curl command it reads (`not-curl`). The detail says why.
+      headers:
+        X-Request-Id: {$ref: '#/components/headers/RequestId'}
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example: {type: about:blank, title: Unprocessable Content, status: 422, code: not-postman, detail: "Signalbox can't import this file: it's a Postman v1 collection; export it from Postman again as Collection v2.1."}
     SecretsUnavailable:
       description: The server can't keep or read secrets. It has no secret key (`secrets-unavailable`), or the secrets were stored with another key (`secret-key-changed`).
       headers:
@@ -3023,6 +3178,7 @@ components:
       additionalProperties: false
       properties:
         environmentId: {$ref: '#/components/schemas/EnvironmentId'}
+        collectionId: {$ref: '#/components/schemas/CollectionId'}
         auth: {$ref: '#/components/schemas/RequestAuth'}
         method: {type: string, maxLength: 32, description: 'The HTTP method, such as GET.', examples: [GET]}
         url: {type: string, maxLength: 8192, description: 'The absolute http or https URL, once its variables are filled in.', examples: ['{{baseUrl}}/orders/42']}
@@ -3147,8 +3303,87 @@ components:
         projectId: {$ref: '#/components/schemas/ProjectId'}
         name: {type: string, maxLength: 100, description: The collection's name., examples: [Orders API]}
         description: {type: string, maxLength: 2000, description: What the collection is for., examples: [Everything about orders.]}
+        variables:
+          type: array
+          description: The collection's variables, in order. They fill in `{{name}}` when a request is sent with `collectionId`; an environment's variables win over them. They aren't secret.
+          maxItems: 500
+          items: {$ref: '#/components/schemas/CollectionVariable'}
+          examples: [[{key: baseUrl, value: 'https://api.example.com'}]]
+        scripts: {$ref: '#/components/schemas/Scripts'}
         createdAt: {$ref: '#/components/schemas/Timestamp'}
         updatedAt: {$ref: '#/components/schemas/Timestamp'}
+    CollectionVariable:
+      type: object
+      description: One of a collection's variables.
+      required: [key, value]
+      additionalProperties: false
+      properties:
+        key: {$ref: '#/components/schemas/VariableKey'}
+        value: {type: string, maxLength: 65536, description: The variable's value., examples: ['https://api.example.com']}
+    Scripts:
+      type: object
+      description: The JavaScript a collection, folder or request runs before a request and after its response, as Postman has them. They are kept and exported; sending from the API doesn't run them yet.
+      properties:
+        prerequest: {type: string, maxLength: 262144, description: The pre-request script., examples: ["pm.variables.set('now', Date.now());"]}
+        test: {type: string, maxLength: 262144, description: The test script., examples: ["pm.test('ok', () => pm.response.to.have.status(200));"]}
+    ImportReport:
+      type: object
+      description: What an import found. It is clean when nothing was left out and nothing will run differently than in Postman or curl.
+      required: [clean, folders, requests, variables, notes]
+      properties:
+        clean: {type: boolean, description: Whether every note is only information., examples: [false]}
+        folders: {type: integer, minimum: 0, description: How many folders were converted., examples: [3]}
+        requests: {type: integer, minimum: 0, description: How many requests were converted., examples: [24]}
+        variables: {type: integer, minimum: 0, description: How many variables were converted., examples: [2]}
+        notes:
+          type: array
+          description: What will run differently, what was left out, and what's worth knowing, in the file's order.
+          items: {$ref: '#/components/schemas/ImportNote'}
+          examples: [[{item: Orders / Upload, level: omitted, message: "The file field \"file\" wasn't imported; file fields aren't supported yet."}]]
+    ImportNote:
+      type: object
+      description: One line of an import report.
+      required: [level, message]
+      properties:
+        item: {type: string, description: 'Where it is: folder names and the request''s name, joined by " / ". Absent for the whole file.', examples: [Orders / Upload]}
+        level:
+          type: string
+          enum: [info, differs, omitted]
+          description: '`differs`: it will run differently. `omitted`: it was left out. `info`: worth knowing, changes nothing.'
+          examples: [omitted]
+        message: {type: string, description: What happened, in words a person can act on., examples: ["The file field \"file\" wasn't imported; file fields aren't supported yet."]}
+    PostmanFile:
+      type: object
+      description: A Postman Collection v2.1 or v2.0 file, or a Postman environment file, as Postman exports it. At most 25 MiB.
+      additionalProperties: true
+    CollectionImport:
+      type: object
+      description: The imported collection, and the report. A dry run has only the report.
+      required: [report]
+      properties:
+        collection: {$ref: '#/components/schemas/Collection'}
+        report: {$ref: '#/components/schemas/ImportReport'}
+    VariablesImport:
+      type: object
+      description: The environment's variables after the import, and the report. A dry run has only the report.
+      required: [report]
+      properties:
+        variables: {$ref: '#/components/schemas/EnvironmentVariables'}
+        report: {$ref: '#/components/schemas/ImportReport'}
+    CurlCommand:
+      type: object
+      description: A curl command, as a browser's Copy as cURL gives it, for bash or cmd.
+      required: [command]
+      additionalProperties: false
+      properties:
+        command: {type: string, minLength: 1, maxLength: 1048576, description: The curl command line., examples: ["curl 'https://api.example.com/orders' -H 'accept: application/json'"]}
+    CurlImport:
+      type: object
+      description: The request a curl command makes, ready to send or save, and the report.
+      required: [request, report]
+      properties:
+        request: {$ref: '#/components/schemas/SavedRequest'}
+        report: {$ref: '#/components/schemas/ImportReport'}
     CollectionCreate:
       type: object
       description: A new collection.
@@ -3165,6 +3400,12 @@ components:
       properties:
         name: {type: string, minLength: 1, maxLength: 100, description: A new name., examples: [Orders API v2]}
         description: {type: [string, 'null'], maxLength: 2000, description: A new description; null clears it., examples: [Everything about orders.]}
+        variables:
+          type: [array, 'null']
+          description: The collection's variables, replacing all of them; null removes them.
+          maxItems: 500
+          items: {$ref: '#/components/schemas/CollectionVariable'}
+          examples: [[{key: baseUrl, value: 'https://api.example.com'}]]
     CollectionList:
       type: object
       description: A project's collections.
@@ -3234,6 +3475,7 @@ components:
         name: {type: string, maxLength: 200, description: The item's name., examples: [Get an order]}
         description: {type: string, maxLength: 10000, description: 'What the item does, in CommonMark.', examples: [Returns one order.]}
         request: {$ref: '#/components/schemas/SavedRequest'}
+        scripts: {$ref: '#/components/schemas/Scripts'}
         createdAt: {$ref: '#/components/schemas/Timestamp'}
         updatedAt: {$ref: '#/components/schemas/Timestamp'}
     ItemCreate:

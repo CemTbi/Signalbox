@@ -23,7 +23,7 @@ import (
 
 // Client is what the API needs from the client module.
 type Client interface {
-	Send(ctx context.Context, userID, projectID, environmentID uuid.UUID, req runner.Request, auth *client.Auth) (client.Entry, error)
+	Send(ctx context.Context, userID, projectID uuid.UUID, req runner.Request, opts client.SendOptions) (client.Entry, error)
 	History(ctx context.Context, userID, projectID uuid.UUID, p workspaces.PageRequest) (client.HistoryPage, error)
 	HistoryEntry(ctx context.Context, userID, entryID uuid.UUID) (client.Entry, error)
 }
@@ -196,6 +196,7 @@ func (a *api) sendRequest(w http.ResponseWriter, r *http.Request, s *identity.Se
 	}
 	var body struct {
 		EnvironmentID string       `json:"environmentId"`
+		CollectionID  string       `json:"collectionId"`
 		Method        *string      `json:"method"`
 		URL           *string      `json:"url"`
 		Headers       []HeaderJSON `json:"headers"`
@@ -219,6 +220,13 @@ func (a *api) sendRequest(w http.ResponseWriter, r *http.Request, s *identity.Se
 		var err error
 		if environmentID, err = id.Parse(id.Environment, body.EnvironmentID); err != nil {
 			fields.Add("/environmentId", "pattern", "Use an environment ID, such as env_01j9z3n5q7s9v1w3y5a7c9e1g3.")
+		}
+	}
+	var collectionID uuid.UUID
+	if body.CollectionID != "" {
+		var err error
+		if collectionID, err = id.Parse(id.Collection, body.CollectionID); err != nil {
+			fields.Add("/collectionId", "pattern", "Use a collection ID, such as col_01j9z3w5y7a9c1e3g5j7m9p1r3.")
 		}
 	}
 	if body.TimeoutMs < 0 || body.TimeoutMs > 300_000 {
@@ -249,7 +257,7 @@ func (a *api) sendRequest(w http.ResponseWriter, r *http.Request, s *identity.Se
 	for _, h := range body.Headers {
 		req.Headers = append(req.Headers, runner.Header(h))
 	}
-	e, err := a.Client.Send(r.Context(), s.User.ID, projectID, environmentID, req, authIn(body.Auth))
+	e, err := a.Client.Send(r.Context(), s.User.ID, projectID, req, client.SendOptions{EnvironmentID: environmentID, CollectionID: collectionID, Auth: authIn(body.Auth)})
 	if err != nil {
 		a.secretsError(w, r, "project or environment", err)
 		return

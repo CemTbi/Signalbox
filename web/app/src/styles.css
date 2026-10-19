@@ -2043,3 +2043,74 @@ pre.code {
   gap: 10px;
   max-width: 36rem;
 }
+
+.import-panel,
+.environment-import {
+  display: grid;
+  gap: 10px;
+}
+
+.import-panel {
+  padding: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.import-report {
+  display: grid;
+  gap: 8px;
+}
+
+.import-summary {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 14px;
+  border-left: 3px solid var(--warn);
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.import-summary.clean {
+  border-left-color: var(--ok);
+}
+
+.import-notes {
+  display: grid;
+  gap: 6px;
+  max-height: 20rem;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.import-note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.import-level {
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+}
+
+.import-omitted .import-level {
+  border-color: var(--bad);
+}
+
+.import-differs .import-level {
+  border-color: var(--warn);
+}
+
+.import-item {
+  font-weight: 600;
+  color: var(--ink-2);
+}

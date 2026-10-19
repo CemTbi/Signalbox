@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
-
 	"github.com/CemTbi/Signalbox/internal/modules/client"
 	"github.com/CemTbi/Signalbox/internal/modules/runner"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
@@ -40,7 +38,7 @@ func TestAuthIsAppliedAfterVariables(t *testing.T) {
 	// Basic auth encodes the filled-in username and password, and replaces
 	// an Authorization header the request has.
 	req := runner.Request{Method: "GET", URL: "https://api.example.com/me", Headers: []runner.Header{{Key: "authorization", Value: "stale"}, {Key: "Accept", Value: "*/*"}}}
-	e, err := f.mod.Send(f.ctx, f.owner, f.project, staging, req, &client.Auth{Type: "basic", Username: "{{user}}", Password: "{{password}}"})
+	e, err := f.mod.Send(f.ctx, f.owner, f.project, req, client.SendOptions{EnvironmentID: staging, Auth: &client.Auth{Type: "basic", Username: "{{user}}", Password: "{{password}}"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,8 +54,7 @@ func TestAuthIsAppliedAfterVariables(t *testing.T) {
 	// An API key in the query is escaped, and history masks it even when it
 	// isn't a secret variable.
 	f.run.body = []byte(`{"echo":"k&y=1"}`)
-	e, err = f.mod.Send(f.ctx, f.owner, f.project, uuid.Nil, runner.Request{Method: "GET", URL: "https://api.example.com/orders?page=2"},
-		&client.Auth{Type: "apikey", Key: "api_key", Value: "k&y=1", In: "query"})
+	e, err = f.mod.Send(f.ctx, f.owner, f.project, runner.Request{Method: "GET", URL: "https://api.example.com/orders?page=2"}, client.SendOptions{Auth: &client.Auth{Type: "apikey", Key: "api_key", Value: "k&y=1", In: "query"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,13 +71,13 @@ func TestAuthIsAppliedAfterVariables(t *testing.T) {
 	}
 
 	// A bearer token and an API key header.
-	if _, err := f.mod.Send(f.ctx, f.owner, f.project, uuid.Nil, runner.Request{Method: "GET", URL: "https://api.example.com/"}, &client.Auth{Type: "Bearer", Token: "t0ken"}); err != nil {
+	if _, err := f.mod.Send(f.ctx, f.owner, f.project, runner.Request{Method: "GET", URL: "https://api.example.com/"}, client.SendOptions{Auth: &client.Auth{Type: "Bearer", Token: "t0ken"}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := header(f.run.got[len(f.run.got)-1].Headers, "Authorization"); len(got) != 1 || got[0] != "Bearer t0ken" {
 		t.Errorf("bearer = %v", got)
 	}
-	if _, err := f.mod.Send(f.ctx, f.owner, f.project, uuid.Nil, runner.Request{Method: "GET", URL: "https://api.example.com/"}, &client.Auth{Type: "apikey", Key: "X-Api-Key", Value: "abc123"}); err != nil {
+	if _, err := f.mod.Send(f.ctx, f.owner, f.project, runner.Request{Method: "GET", URL: "https://api.example.com/"}, client.SendOptions{Auth: &client.Auth{Type: "apikey", Key: "X-Api-Key", Value: "abc123"}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := header(f.run.got[len(f.run.got)-1].Headers, "X-Api-Key"); len(got) != 1 || got[0] != "abc123" {
@@ -99,11 +96,11 @@ func TestAuthIsAppliedAfterVariables(t *testing.T) {
 
 	// Auth is checked.
 	var fields validate.Errors
-	_, err = f.mod.Send(f.ctx, f.owner, f.project, uuid.Nil, runner.Request{Method: "GET", URL: "https://api.example.com/"}, &client.Auth{Type: "apikey", In: "cookie"})
+	_, err = f.mod.Send(f.ctx, f.owner, f.project, runner.Request{Method: "GET", URL: "https://api.example.com/"}, client.SendOptions{Auth: &client.Auth{Type: "apikey", In: "cookie"}})
 	if !errors.As(err, &fields) || len(fields) != 2 {
 		t.Errorf("bad api key: %v", err)
 	}
-	if _, err := f.mod.Send(f.ctx, f.owner, f.project, uuid.Nil, runner.Request{Method: "GET", URL: "https://api.example.com/"}, &client.Auth{Type: "digest"}); !errors.As(err, &fields) {
+	if _, err := f.mod.Send(f.ctx, f.owner, f.project, runner.Request{Method: "GET", URL: "https://api.example.com/"}, client.SendOptions{Auth: &client.Auth{Type: "digest"}}); !errors.As(err, &fields) {
 		t.Errorf("digest: %v", err)
 	}
 }

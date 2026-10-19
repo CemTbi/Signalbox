@@ -1,0 +1,91 @@
+{
+	"info": {
+		"_postman_id": "8d1c3a52-6b1e-4f8e-9a1c-2f3b4c5d6e7f",
+		"name": "Shop API",
+		"description": "Orders and payments.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"auth": {
+		"type": "bearer",
+		"bearer": [{"key": "token", "value": "{{token}}", "type": "string"}]
+	},
+	"event": [
+		{"listen": "prerequest", "script": {"type": "text/javascript", "exec": ["pm.variables.set('started', Date.now());"]}}
+	],
+	"variable": [
+		{"key": "baseUrl", "value": "https://api.example.com"},
+		{"key": "orderId", "value": 42},
+		{"key": "bad key", "value": "x"},
+		{"key": "old", "value": "y", "disabled": true}
+	],
+	"item": [
+		{
+			"name": "Orders",
+			"auth": {"type": "apikey", "apikey": [{"key": "key", "value": "X-Api-Key"}, {"key": "value", "value": "{{apiKey}}"}, {"key": "in", "value": "header"}]},
+			"item": [
+				{
+					"name": "Get an order",
+					"event": [
+						{"listen": "test", "script": {"exec": ["pm.test('ok', () => pm.response.to.have.status(200));", "const $ = require('cheerio');", "pm.visualizer.set('x');"]}}
+					],
+					"request": {
+						"method": "GET",
+						"header": [{"key": "Accept", "value": "application/json"}, {"key": "X-Debug", "value": "1", "disabled": true}],
+						"url": {
+							"raw": "{{baseUrl}}/orders/:id?expand=lines",
+							"host": ["{{baseUrl}}"],
+							"path": ["orders", ":id"],
+							"query": [{"key": "expand", "value": "lines"}],
+							"variable": [{"key": "id", "value": "{{orderId}}"}]
+						}
+					},
+					"response": [{"name": "OK", "code": 200}]
+				},
+				{
+					"name": "Create an order",
+					"request": {
+						"auth": {"type": "basic", "basic": [{"key": "username", "value": "ada"}, {"key": "password", "value": "{{password}}"}]},
+						"method": "POST",
+						"header": [],
+						"body": {"mode": "raw", "raw": "{\"sku\":\"A-1\",\"id\":\"{{$guid}}\",\"email\":\"{{$randomEmail}}\"}", "options": {"raw": {"language": "json"}}},
+						"url": "{{baseUrl}}/orders"
+					}
+				}
+			]
+		},
+		{
+			"name": "Sign in",
+			"request": {
+				"auth": {"type": "noauth"},
+				"method": "POST",
+				"body": {"mode": "urlencoded", "urlencoded": [{"key": "user", "value": "ada lovelace"}, {"key": "pass", "value": "{{password}}"}, {"key": "skip", "value": "1", "disabled": true}]},
+				"url": {"protocol": "https", "host": ["auth", "example", "com"], "path": ["token"]}
+			}
+		},
+		{
+			"name": "Upload",
+			"request": {
+				"method": "POST",
+				"body": {"mode": "formdata", "formdata": [{"key": "title", "value": "Invoice", "type": "text"}, {"key": "file", "type": "file", "src": "/tmp/a.pdf"}]},
+				"url": "{{baseUrl}}/uploads"
+			},
+			"protocolProfileBehavior": {"disableBodyPruning": true, "followRedirects": false}
+		},
+		{
+			"name": "Signed",
+			"request": {
+				"auth": {"type": "awsv4", "awsv4": [{"key": "region", "value": "eu-west-1"}]},
+				"method": "GET",
+				"url": "{{baseUrl}}/signed"
+			}
+		},
+		{
+			"name": "Query",
+			"request": {
+				"method": "POST",
+				"body": {"mode": "graphql", "graphql": {"query": "{ order(id: 1) { id } }", "variables": ""}},
+				"url": "{{baseUrl}}/graphql"
+			}
+		}
+	]
+}

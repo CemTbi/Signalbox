@@ -93,6 +93,9 @@ type Deps struct {
 	Collections Collections
 	// Variables keeps environments' variables and secrets.
 	Variables Variables
+	// Imports reads Postman files and curl commands, and exports
+	// collections.
+	Imports Imports
 	// PublicURL is the address people open Signalbox at. It decides the
 	// session cookie's name and flags, and the origin that unsafe requests
 	// must come from. Default http://localhost:8080.
@@ -226,6 +229,10 @@ func NewHandler(d Deps) http.Handler {
 		http.MethodPatch:  a.authenticated(a.updateCollection),
 		http.MethodDelete: a.authenticated(a.deleteCollection),
 	})
+	mux.Handle("/api/v1/projects/{projectId}/collection-imports", methods{http.MethodPost: a.authenticated(a.importCollection)})
+	mux.Handle("/api/v1/collections/{collectionId}/export", methods{http.MethodGet: a.authenticated(a.exportCollection)})
+	mux.Handle("/api/v1/environments/{environmentId}/variable-imports", methods{http.MethodPost: a.authenticated(a.importVariables)})
+	mux.Handle("/api/v1/curl-imports", methods{http.MethodPost: a.authenticated(a.importCurl)})
 	mux.Handle("/api/v1/collections/{collectionId}/items", methods{
 		http.MethodGet:  a.authenticated(a.listItems),
 		http.MethodPost: a.authenticated(a.createItem),
