@@ -56,6 +56,7 @@ type SavedRequestJSON struct {
 	URL     string            `json:"url"`
 	Headers []SavedHeaderJSON `json:"headers,omitempty"`
 	Body    string            `json:"body,omitempty"`
+	Auth    *AuthJSON         `json:"auth,omitempty"`
 }
 
 // ItemJSON is a folder or request in API responses.
@@ -87,7 +88,7 @@ func itemJSON(it client.Item) ItemJSON {
 		out.ParentID = id.Format(id.Item, it.ParentID)
 	}
 	if r := it.Request; r != nil {
-		out.Request = &SavedRequestJSON{Method: r.Method, URL: r.URL, Body: r.Body}
+		out.Request = &SavedRequestJSON{Method: r.Method, URL: r.URL, Body: r.Body, Auth: authJSON(r.Auth)}
 		for _, h := range r.Headers {
 			out.Request.Headers = append(out.Request.Headers, SavedHeaderJSON(h))
 		}
@@ -99,7 +100,7 @@ func savedRequest(r *SavedRequestJSON) *client.SavedRequest {
 	if r == nil {
 		return nil
 	}
-	out := &client.SavedRequest{Method: r.Method, URL: r.URL, Body: r.Body, Headers: []client.SavedHeader{}}
+	out := &client.SavedRequest{Method: r.Method, URL: r.URL, Body: r.Body, Headers: []client.SavedHeader{}, Auth: authIn(r.Auth)}
 	for _, h := range r.Headers {
 		out.Headers = append(out.Headers, client.SavedHeader(h))
 	}

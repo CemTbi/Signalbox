@@ -35,3 +35,4 @@ Write a new ADR by copying [template.md](template.md) to the next number. Propos
 | [0027](0027-runner-and-history.md) | The runner role and request history | Accepted |
 | [0028](0028-collections.md) | Collections of saved requests | Accepted |
 | [0029](0029-environment-variables.md) | Environment variables and secrets | Accepted |
+| [0030](0030-request-auth.md) | Request auth | Accepted |

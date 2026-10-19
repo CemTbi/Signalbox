@@ -100,7 +100,7 @@ func TestSendKeepsHistory(t *testing.T) {
 		Method: "post", URL: " https://api.example.com/orders ", Body: []byte(`{"sku":"A-1"}`),
 		Headers: []runner.Header{{Key: "Authorization", Value: "Bearer secret"}, {Key: "cookie", Value: "s=1"}, {Key: "X-Trace", Value: "abc"}},
 	}
-	e, err := f.mod.Send(f.ctx, f.owner, f.project, uuid.Nil, req)
+	e, err := f.mod.Send(f.ctx, f.owner, f.project, uuid.Nil, req, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,13 +141,13 @@ func TestOnlyEditorsSendAndPeopleSeeTheirOwnHistory(t *testing.T) {
 	stranger := f.user(t, "mallory")
 	req := runner.Request{Method: "GET", URL: "https://api.example.com/"}
 
-	if _, err := f.mod.Send(f.ctx, viewer, f.project, uuid.Nil, req); !errors.Is(err, client.ErrForbidden) {
+	if _, err := f.mod.Send(f.ctx, viewer, f.project, uuid.Nil, req, nil); !errors.Is(err, client.ErrForbidden) {
 		t.Errorf("viewer sends: %v", err)
 	}
-	if _, err := f.mod.Send(f.ctx, stranger, f.project, uuid.Nil, req); !errors.Is(err, client.ErrNotFound) {
+	if _, err := f.mod.Send(f.ctx, stranger, f.project, uuid.Nil, req, nil); !errors.Is(err, client.ErrNotFound) {
 		t.Errorf("stranger sends: %v", err)
 	}
-	e, err := f.mod.Send(f.ctx, editor, f.project, uuid.Nil, req)
+	e, err := f.mod.Send(f.ctx, editor, f.project, uuid.Nil, req, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestOnlyEditorsSendAndPeopleSeeTheirOwnHistory(t *testing.T) {
 	}
 
 	noRunner := client.New(f.pool, slog.New(slog.DiscardHandler), f.ws, nil)
-	if _, err := noRunner.Send(f.ctx, f.owner, f.project, uuid.Nil, req); !errors.Is(err, client.ErrRunnerUnavailable) {
+	if _, err := noRunner.Send(f.ctx, f.owner, f.project, uuid.Nil, req, nil); !errors.Is(err, client.ErrRunnerUnavailable) {
 		t.Errorf("without a runner: %v", err)
 	}
 }
@@ -170,7 +170,7 @@ func TestOnlyEditorsSendAndPeopleSeeTheirOwnHistory(t *testing.T) {
 func TestHistoryIsBounded(t *testing.T) {
 	f := setup(t)
 	f.run.body = []byte(strings.Repeat("x", 2<<20))
-	e, err := f.mod.Send(f.ctx, f.owner, f.project, uuid.Nil, runner.Request{Method: "GET", URL: "https://api.example.com/big"})
+	e, err := f.mod.Send(f.ctx, f.owner, f.project, uuid.Nil, runner.Request{Method: "GET", URL: "https://api.example.com/big"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestHistoryIsBounded(t *testing.T) {
 func TestHistoryCutsBodiesBetweenCharacters(t *testing.T) {
 	f := setup(t)
 	body := strings.Repeat("é", 40<<10) // 80 KiB of two-byte characters, offset by one below
-	e, err := f.mod.Send(f.ctx, f.owner, f.project, uuid.Nil, runner.Request{Method: "POST", URL: "https://api.example.com/", Body: []byte("x" + body)})
+	e, err := f.mod.Send(f.ctx, f.owner, f.project, uuid.Nil, runner.Request{Method: "POST", URL: "https://api.example.com/", Body: []byte("x" + body)}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

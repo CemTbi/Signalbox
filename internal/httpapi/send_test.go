@@ -85,3 +85,37 @@ func TestSendingRequests(t *testing.T) {
 	}
 	h.do(call{method: http.MethodGet, path: "/api/v1/history/hist_01j9z3w5y7a9c1e3g5j7m9p1r3"}).expect(t, http.StatusNotFound, "not-found")
 }
+
+func TestSendingWithAuth(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(r.Header.Get("Authorization") + " " + r.URL.Query().Get("key")))
+	}))
+	defer target.Close()
+	h := newHarness(t)
+	h.setUp()
+	p := h.newProject("shop")
+	send := "/api/v1/projects/" + p.ID + "/send"
+
+	r := h.do(call{method: http.MethodPost, path: send, body: map[string]any{
+		"method": "GET", "url": target.URL, "auth": map[string]string{"type": "bearer", "token": "t0ken-123"},
+	}})
+	r.expect(t, http.StatusOK, "")
+	var sent httpapi.HistoryEntryJSON
+	r.decode(t, &sent)
+	if sent.Response == nil || sent.Response.Body != "Bearer t0ken-123 " || sent.Request.Auth == nil || sent.Request.Auth.Type != "bearer" || sent.Request.Auth.Token != "" {
+		t.Fatalf("sent = %+v", sent)
+	}
+	r = h.do(call{method: http.MethodGet, path: "/api/v1/history/" + sent.ID})
+	if strings.Contains(string(r.body), "t0ken-123") {
+		t.Errorf("history holds the token: %s", r.body)
+	}
+	r = h.do(call{method: http.MethodPost, path: send, body: map[string]any{
+		"method": "GET", "url": target.URL, "auth": map[string]string{"type": "apikey", "key": "key", "value": "k-1", "in": "query"},
+	}})
+	r.decode(t, &sent)
+	if sent.Response == nil || sent.Response.Body != " k-1" {
+		t.Errorf("api key = %+v", sent.Response)
+	}
+	h.do(call{method: http.MethodPost, path: send, invalid: true, body: map[string]any{"method": "GET", "url": target.URL, "auth": map[string]string{"type": "digest"}}}).
+		expect(t, http.StatusBadRequest, "validation-failed")
+}

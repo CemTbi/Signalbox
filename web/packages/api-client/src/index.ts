@@ -29,6 +29,7 @@ export type EnvironmentVariables = Schemas["EnvironmentVariables"];
 export type Collection = Schemas["Collection"];
 export type Item = Schemas["Item"];
 export type SavedRequest = Schemas["SavedRequest"];
+export type RequestAuth = Schemas["RequestAuth"];
 export type Session = Schemas["Session"];
 export type SetupStatus = Schemas["SetupStatus"];
 export type SignInOptions = Schemas["SignInOptions"];

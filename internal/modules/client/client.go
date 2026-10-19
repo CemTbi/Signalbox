@@ -26,6 +26,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/id"
 	"github.com/CemTbi/Signalbox/internal/platform/secretbox"
+	"github.com/CemTbi/Signalbox/internal/platform/validate"
 )
 
 // Errors the module returns.
@@ -97,6 +98,9 @@ type Entry struct {
 	// URL is as sent. In history, secrets' values are replaced by •••
 	// wherever they appear.
 	URL string
+	// Auth is how the request was authenticated. In history it keeps only
+	// its type, username and API key name.
+	Auth *Auth
 	// Headers are as sent, with credentials replaced by •••.
 	Headers []runner.Header
 	// Body is the request body, at most 64 KiB of it.
@@ -135,10 +139,15 @@ func (m *Module) authorize(ctx context.Context, userID, projectID uuid.UUID, may
 // Send sends a request from a project and keeps it in the sender's
 // history. Owners, admins and editors may: the server sends it on their
 // behalf, to whatever their environments point at. With an environment of
-// the project, its variables fill in {{name}} first. The result comes back
-// whole; history keeps the first megabyte of the response body, and masks
-// the environment's secrets.
-func (m *Module) Send(ctx context.Context, userID, projectID, environmentID uuid.UUID, req runner.Request) (Entry, error) {
+// the project, its variables fill in {{name}} first, then auth is applied.
+// The result comes back whole; history keeps the first megabyte of the
+// response body, and masks the environment's secrets and the credentials
+// auth sent.
+func (m *Module) Send(ctx context.Context, userID, projectID, environmentID uuid.UUID, req runner.Request, auth *Auth) (Entry, error) {
+	var errs validate.Errors
+	if auth = checkAuth(&errs, "/auth", auth); len(errs) > 0 {
+		return Entry{}, errs
+	}
 	if err := m.authorize(ctx, userID, projectID, true); err != nil {
 		return Entry{}, err
 	}
@@ -166,16 +175,26 @@ func (m *Module) Send(ctx context.Context, userID, projectID, environmentID uuid
 	if err != nil {
 		return Entry{}, err
 	}
+	auth = auth.resolve(res)
+	if res.budget < 0 {
+		return Entry{}, ErrResolvedTooLarge
+	}
+	credentials := auth.apply(&req)
 	result := m.runner.Run(ctx, req)
 	e := Entry{
-		ID: id.New(), ProjectID: projectID, UserID: userID, EnvironmentID: environmentID, Unresolved: res.Unresolved(),
+		ID: id.New(), ProjectID: projectID, UserID: userID, EnvironmentID: environmentID, Unresolved: res.Unresolved(), Auth: auth.kept(),
 		Method: strings.ToUpper(strings.TrimSpace(req.Method)), URL: strings.TrimSpace(req.URL),
 		Headers: redact(req.Headers), Body: req.Body, Result: result,
 	}
 	// What comes back is whole; what history keeps doesn't hold secrets.
 	kept := e
-	mask := newMasker(values, secrets)
+	mask := newMasker(values, secrets, credentials...)
 	kept.URL, kept.Headers, kept.Body = mask.string(kept.URL), mask.headers(kept.Headers), mask.bytes(kept.Body)
+	if a := kept.Auth; a != nil {
+		masked := *a
+		masked.Username = mask.string(a.Username)
+		kept.Auth = &masked
+	}
 	if f := result.Failure; f != nil {
 		// Failure messages can name the host, which a secret may fill in.
 		masked := *f
@@ -221,6 +240,7 @@ func redact(headers []runner.Header) []runner.Header {
 type stored struct {
 	EnvironmentID *uuid.UUID      `json:"environmentId,omitempty"`
 	Unresolved    []string        `json:"unresolved,omitempty"`
+	Auth          *Auth           `json:"auth,omitempty"`
 	Headers       []runner.Header `json:"headers"`
 	Body          string          `json:"body,omitempty"`
 	BodyTruncated bool            `json:"bodyTruncated,omitempty"`
@@ -246,7 +266,7 @@ type storedTimings struct {
 }
 
 func (m *Module) save(ctx context.Context, e *Entry) error {
-	s := stored{Headers: e.Headers, Unresolved: e.Unresolved, BodyTruncated: e.BodyTruncated, Failure: e.Result.Failure, Timings: timingsOut(e.Result.Timings)}
+	s := stored{Headers: e.Headers, Unresolved: e.Unresolved, Auth: e.Auth, BodyTruncated: e.BodyTruncated, Failure: e.Result.Failure, Timings: timingsOut(e.Result.Timings)}
 	if e.EnvironmentID != uuid.Nil {
 		s.EnvironmentID = &e.EnvironmentID
 	}
@@ -374,7 +394,7 @@ func (m *Module) HistoryEntry(ctx context.Context, userID, entryID uuid.UUID) (E
 	if err := json.Unmarshal(doc, &s); err != nil {
 		return Entry{}, fmt.Errorf("read history entry: %w", err)
 	}
-	e.Headers, e.Body, e.BodyTruncated, e.Unresolved = s.Headers, []byte(s.Body), s.BodyTruncated, s.Unresolved
+	e.Headers, e.Body, e.BodyTruncated, e.Unresolved, e.Auth = s.Headers, []byte(s.Body), s.BodyTruncated, s.Unresolved, s.Auth
 	if s.EnvironmentID != nil {
 		e.EnvironmentID = *s.EnvironmentID
 	}

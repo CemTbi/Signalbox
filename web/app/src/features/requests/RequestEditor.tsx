@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { type FormEvent, type KeyboardEvent, useId, useState } from "react";
-import { type Draft, type HeaderRow, methods, row } from "./model";
+import { type AuthDraft, type Draft, type HeaderRow, methods, row } from "./model";
 
 /**
  * The request being written: method, URL, headers and body. Ctrl+Enter
@@ -20,7 +20,7 @@ export function RequestEditor({
   sending: boolean;
   canSend: boolean;
 }) {
-  const [tab, setTab] = useState<"headers" | "body">("headers");
+  const [tab, setTab] = useState<"headers" | "body" | "auth">("headers");
   const ids = { method: useId(), url: useId(), body: useId() };
   const headerCount = draft.headers.filter((h) => h.enabled && h.key.trim() !== "").length;
 
@@ -79,6 +79,9 @@ export function RequestEditor({
         <button type="button" role="tab" aria-selected={tab === "body"} onClick={() => setTab("body")}>
           Body{draft.body ? " •" : ""}
         </button>
+        <button type="button" role="tab" aria-selected={tab === "auth"} onClick={() => setTab("auth")}>
+          Auth{draft.auth.type !== "none" ? " •" : ""}
+        </button>
       </div>
       {tab === "headers" ? (
         <table className="header-rows" role="tabpanel">
@@ -117,6 +120,8 @@ export function RequestEditor({
             ))}
           </tbody>
         </table>
+      ) : tab === "auth" ? (
+        <AuthEditor auth={draft.auth} onChange={(auth) => onChange({ ...draft, auth })} />
       ) : (
         <div className="field" role="tabpanel">
           <label htmlFor={ids.body}>Body</label>
@@ -129,5 +134,64 @@ export function RequestEditor({
         </div>
       )}
     </form>
+  );
+}
+
+/** How the request authenticates. Fields take {{variables}}, so credentials can be secrets. */
+function AuthEditor({ auth, onChange }: { auth: AuthDraft; onChange: (a: AuthDraft) => void }) {
+  const ids = { type: useId(), a: useId(), b: useId(), in: useId() };
+  const set = (change: Partial<AuthDraft>) => onChange({ ...auth, ...change });
+  const field = (id: string, label: string, value: string, change: (v: string) => void, placeholder: string, secret = false) => (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <input
+        id={id}
+        className="mono"
+        type={secret ? "password" : "text"}
+        value={value}
+        placeholder={placeholder}
+        spellCheck={false}
+        autoComplete="off"
+        onChange={(e) => change(e.target.value)}
+      />
+    </div>
+  );
+  return (
+    <div className="auth-editor" role="tabpanel">
+      <div className="field">
+        <label htmlFor={ids.type}>Type</label>
+        <select id={ids.type} value={auth.type} onChange={(e) => set({ type: e.target.value as AuthDraft["type"] })}>
+          <option value="none">No auth</option>
+          <option value="basic">Basic</option>
+          <option value="bearer">Bearer token</option>
+          <option value="apikey">API key</option>
+        </select>
+      </div>
+      {auth.type === "basic" ? (
+        <>
+          {field(ids.a, "Username", auth.username, (username) => set({ username }), "ada")}
+          {field(ids.b, "Password", auth.password, (password) => set({ password }), "{{password}}", true)}
+        </>
+      ) : null}
+      {auth.type === "bearer" ? field(ids.a, "Token", auth.token, (token) => set({ token }), "{{token}}", true) : null}
+      {auth.type === "apikey" ? (
+        <>
+          {field(ids.a, "Key", auth.key, (key) => set({ key }), "X-Api-Key")}
+          {field(ids.b, "Value", auth.value, (value) => set({ value }), "{{apiKey}}", true)}
+          <div className="field">
+            <label htmlFor={ids.in}>Send it in</label>
+            <select id={ids.in} value={auth.in} onChange={(e) => set({ in: e.target.value as AuthDraft["in"] })}>
+              <option value="header">A header</option>
+              <option value="query">The query</option>
+            </select>
+          </div>
+        </>
+      ) : null}
+      <p className="field-hint">
+        {auth.type === "none"
+          ? "The request is sent without auth, unless its headers carry some."
+          : "Variables are filled in first, so a value like {{token}} can be a secret. History keeps the type, never the credentials."}
+      </p>
+    </div>
   );
 }

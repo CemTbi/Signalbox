@@ -59,6 +59,8 @@ type SavedRequest struct {
 	URL     string        `json:"url"`
 	Headers []SavedHeader `json:"headers"`
 	Body    string        `json:"body"`
+	// Auth is nil for none.
+	Auth *Auth `json:"auth,omitempty"`
 }
 
 // Item kinds.
@@ -222,6 +224,7 @@ func checkRequest(errs *validate.Errors, r *SavedRequest) {
 	if len(r.Body) > maxBody {
 		errs.Add("/request/body", "maxLength", "Keep a body of at most 10 MiB.")
 	}
+	r.Auth = checkAuth(errs, "/request/auth", r.Auth)
 }
 
 const collectionColumns = `id, project_id, name, description, version, created_at, updated_at`

@@ -2037,3 +2037,9 @@ pre.code {
   width: 30%;
   white-space: normal;
 }
+
+.auth-editor {
+  display: grid;
+  gap: 10px;
+  max-width: 36rem;
+}

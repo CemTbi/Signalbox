@@ -162,10 +162,17 @@ func (r *resolver) builtin(name string) (string, bool) {
 // masker replaces secret values with ••• in what history keeps.
 type masker struct{ r *strings.Replacer }
 
-func newMasker(values map[string]string, secrets []string) masker {
-	vals := make([]string, 0, len(secrets))
+// newMasker masks the values of the secrets, and the extra values, such as
+// credentials an auth sent.
+func newMasker(values map[string]string, secrets []string, extra ...string) masker {
+	vals := make([]string, 0, len(secrets)+len(extra))
 	for _, s := range secrets {
 		if v := values[s]; v != "" {
+			vals = append(vals, v)
+		}
+	}
+	for _, v := range extra {
+		if v != "" {
 			vals = append(vals, v)
 		}
 	}
