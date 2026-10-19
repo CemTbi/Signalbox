@@ -124,6 +124,26 @@ func TestReadPostmanCollectionRefusesOtherFiles(t *testing.T) {
 	}
 }
 
+func TestCollectionVariablesAreBounded(t *testing.T) {
+	big := strings.Repeat("x", 60<<10)
+	vars := make([]string, 40)
+	for i := range vars {
+		vars[i] = `{"key":"v` + strings.Repeat("a", i) + `","value":"` + big + `"}`
+	}
+	data := `{"info":{"name":"Big","schema":"https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},"item":[],"variable":[` + strings.Join(vars, ",") + `]}`
+	c, r, err := convert.ReadPostmanCollection([]byte(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	size := 0
+	for _, v := range c.Variables {
+		size += len(v.Key) + len(v.Value)
+	}
+	if size > convert.MaxCollectionVariables || len(c.Variables) == 40 || !has(notes(r)[""], "at most 2 MiB together") {
+		t.Errorf("%d variables of %d bytes, notes %v", len(c.Variables), size, notes(r)[""])
+	}
+}
+
 func TestPostmanV20(t *testing.T) {
 	data := `{"info":{"name":"Old","schema":"https://schema.getpostman.com/json/collection/v2.0.0/collection.json"},
 		"item":[{"name":"Me","request":{"url":"https://a.test/me","method":"GET","header":"Accept: */*\nX-A: 1",
@@ -254,6 +274,15 @@ func TestReadCurl(t *testing.T) {
 	form, _, _ := convert.ReadCurl(`curl -F title=Invoice -F file=@a.pdf --oauth2-bearer t0k -H "Authorization: Basic x" https://a.test/up`)
 	if form.Method != http.MethodPost || form.Auth.Token != "t0k" || len(form.Headers) != 1 || !strings.Contains(form.Body, "Invoice") {
 		t.Errorf("form = %+v", form)
+	}
+	// Bash's $'…' escapes, as a browser writes them, and inline data keeps
+	// its line breaks.
+	escaped, _, err := convert.ReadCurl(`curl https://a.test/ --data-raw $'{"a":"hi\u0021 \x41\101\q\n"}' -d $'line1\nline2'`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "{\"a\":\"hi! AA\\q\n\"}&line1\nline2"; escaped.Body != want {
+		t.Errorf("escaped body = %q, want %q", escaped.Body, want)
 	}
 	for _, bad := range []string{"curl", "curl -H", "curl 'https://a.test"} {
 		if _, _, err := convert.ReadCurl(bad); !errors.Is(err, convert.ErrNotCurl) {

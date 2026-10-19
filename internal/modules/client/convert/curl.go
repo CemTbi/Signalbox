@@ -67,11 +67,12 @@ func splitShell(s string) ([]string, error) {
 			j := i + 2
 			for j < len(r) && r[j] != '\'' {
 				if r[j] == '\\' && j+1 < len(r) {
-					j++
-					cur.WriteString(cEscape(r[j]))
-				} else {
-					cur.WriteRune(r[j])
+					var s string
+					s, j = cEscape(r, j+1)
+					cur.WriteString(s)
+					continue
 				}
+				cur.WriteRune(r[j])
 				j++
 			}
 			if j >= len(r) {
@@ -126,19 +127,64 @@ func uncaret(s string) string {
 	return b.String()
 }
 
-func cEscape(c rune) string {
-	switch c {
-	case 'n':
-		return "\n"
-	case 't':
-		return "\t"
-	case 'r':
-		return "\r"
-	case '0':
-		return "\x00"
-	default:
-		return string(c)
+// cEscape reads the escape at r[i], just after a backslash in $'…', as
+// bash does, and returns what it stands for and the index after it. A
+// browser's Copy as cURL writes characters such as ! as !.
+func cEscape(r []rune, i int) (string, int) {
+	simple := map[rune]string{
+		'a': "\a", 'b': "\b", 'e': "\x1b", 'E': "\x1b", 'f': "\f", 'n': "\n", 'r': "\r", 't': "\t", 'v': "\v",
+		'\\': `\`, '\'': "'", '"': `"`, '?': "?",
 	}
+	if s, ok := simple[r[i]]; ok {
+		return s, i + 1
+	}
+	// digits reads up to limit digits of base from r[from:].
+	digits := func(from, limit int, base rune) (rune, int) {
+		var v rune
+		j := from
+		for j < len(r) && j-from < limit {
+			d := hexValue(r[j])
+			if d < 0 || d >= base {
+				break
+			}
+			v = v*base + d
+			j++
+		}
+		return v, j
+	}
+	switch c := r[i]; {
+	case c >= '0' && c <= '7':
+		v, j := digits(i, 3, 8)
+		return string([]byte{byte(v & 0xff)}), j //nolint:gosec // G115: masked to a byte, as bash does with \777
+	case c == 'x' || c == 'u' || c == 'U':
+		limit := map[rune]int{'x': 2, 'u': 4, 'U': 8}[c]
+		v, j := digits(i+1, limit, 16)
+		switch {
+		case j == i+1:
+			return `\` + string(c), i + 1
+		case c == 'x':
+			return string([]byte{byte(v)}), j //nolint:gosec // G115: two hex digits fit a byte
+		default:
+			return string(v), j
+		}
+	case c == 'c' && i+1 < len(r):
+		return string(r[i+1] & 0x1f), i + 2
+	default:
+		// Bash keeps the backslash of an escape it doesn't know.
+		return `\` + string(c), i + 1
+	}
+}
+
+func hexValue(c rune) rune {
+	switch {
+	case c >= '0' && c <= '9':
+		return c - '0'
+	case c >= 'a' && c <= 'f':
+		return c - 'a' + 10
+	case c >= 'A' && c <= 'F':
+		return c - 'A' + 10
+	}
+	return -1
 }
 
 // Options curl reads that change nothing about the request Signalbox
@@ -231,9 +277,6 @@ func ReadCurl(command string) (Request, Report, error) {
 				if strings.HasPrefix(v, "@") && opt != "--data-raw" {
 					r.add("", Omitted, "The data from the file %s wasn't imported; files aren't read.", v[1:])
 					continue
-				}
-				if opt == "-d" || opt == "--data" || opt == "--data-ascii" {
-					v = strings.NewReplacer("\r", "", "\n", "").Replace(v)
 				}
 				cr.data = append(cr.data, v)
 			}

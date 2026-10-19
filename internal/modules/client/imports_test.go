@@ -4,8 +4,10 @@ package client_test
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/CemTbi/Signalbox/internal/modules/client"
@@ -86,6 +88,13 @@ func TestImportAndExportACollection(t *testing.T) {
 	vars := []client.CollectionVariable{{Key: "baseUrl", Value: "https://v2.example.com"}}
 	if c, err = f.mod.UpdateCollection(f.ctx, f.owner, c.ID, workspaces.Precondition{}, client.CollectionPatch{Variables: &vars}); err != nil || !reflect.DeepEqual(c.Variables, vars) {
 		t.Errorf("update variables = %+v, %v", c.Variables, err)
+	}
+	huge := make([]client.CollectionVariable, 40)
+	for i := range huge {
+		huge[i] = client.CollectionVariable{Key: fmt.Sprintf("v%d", i), Value: strings.Repeat("x", 60<<10)}
+	}
+	if _, err := f.mod.UpdateCollection(f.ctx, f.owner, c.ID, workspaces.Precondition{}, client.CollectionPatch{Variables: &huge}); err == nil || !strings.Contains(err.Error(), "2 MiB") {
+		t.Errorf("2.4 MiB of variables: %v", err)
 	}
 	bad := []client.CollectionVariable{{Key: "a b"}, {Key: "x"}, {Key: "x"}}
 	if _, err := f.mod.UpdateCollection(f.ctx, f.owner, c.ID, workspaces.Precondition{}, client.CollectionPatch{Variables: &bad}); err == nil {

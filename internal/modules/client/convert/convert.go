@@ -136,6 +136,10 @@ const (
 	MaxBody                  = 10 << 20
 	MaxValue                 = 64 << 10
 	MaxVariables             = 500
+	// MaxCollectionVariables bounds the size of all a collection's
+	// variables together, keys and values, well inside what the database
+	// keeps.
+	MaxCollectionVariables = 2 << 20
 	// MaxFileSize bounds a Postman file.
 	MaxFileSize = 25 << 20
 )

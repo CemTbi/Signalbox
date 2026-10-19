@@ -232,8 +232,9 @@ func parts(raw json.RawMessage, sep string) string {
 
 // importer carries a Postman import's state.
 type importer struct {
-	report Report
-	count  int
+	report   Report
+	count    int
+	varBytes int
 }
 
 // ReadPostmanCollection reads a Postman Collection v2.1 or v2.0 file.
@@ -295,14 +296,18 @@ func (im *importer) collectionVariable(c *Collection, v pmVariable) {
 		im.report.add("", Omitted, "The variable %q wasn't imported: its value is larger than 64 KiB.", key)
 	case len(c.Variables) >= MaxVariables:
 		im.report.add("", Omitted, "The variable %q wasn't imported: a collection keeps at most %d variables.", key, MaxVariables)
+	case im.varBytes+len(key)+len(value) > MaxCollectionVariables:
+		im.report.add("", Omitted, "The variable %q wasn't imported: a collection's variables may hold at most 2 MiB together.", key)
 	default:
 		for i, have := range c.Variables {
 			if have.Key == key {
 				// Postman uses the last one.
+				im.varBytes += len(value) - len(have.Value)
 				c.Variables[i].Value = value
 				return
 			}
 		}
+		im.varBytes += len(key) + len(value)
 		c.Variables = append(c.Variables, Variable{Key: key, Value: value})
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/CemTbi/Signalbox/internal/modules/client/convert"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/id"
 	"github.com/CemTbi/Signalbox/internal/platform/validate"
@@ -267,7 +268,9 @@ func checkCollectionVariables(errs *validate.Errors, vs []CollectionVariable) {
 		return
 	}
 	seen := map[string]bool{}
+	size := 0
 	for i, v := range vs {
+		size += len(v.Key) + len(v.Value)
 		at := fmt.Sprintf("/variables/%d", i)
 		switch {
 		case !validKey(v.Key) || utf8.RuneCountInString(v.Key) > maxVariableKey:
@@ -279,6 +282,9 @@ func checkCollectionVariables(errs *validate.Errors, vs []CollectionVariable) {
 		if utf8.RuneCountInString(v.Value) > maxVariableValue {
 			errs.Add(at+"/value", "maxLength", "Use a value of at most 65,536 characters.")
 		}
+	}
+	if size > convert.MaxCollectionVariables {
+		errs.Add("/variables", "maxLength", "A collection's variables may hold at most 2 MiB together. Move large values elsewhere.")
 	}
 }
 
