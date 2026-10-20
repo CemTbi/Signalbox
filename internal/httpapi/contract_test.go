@@ -32,6 +32,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/client"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
 	"github.com/CemTbi/Signalbox/internal/modules/runner"
+	"github.com/CemTbi/Signalbox/internal/modules/scripts"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/egress"
 	"github.com/CemTbi/Signalbox/internal/platform/oidctest"
@@ -162,6 +163,9 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *har
 		t.Fatal(err)
 	}
 	sender.UseSecretKey(key)
+	scriptPool := scripts.NewPool(1, scripts.Options{Send: sender.ScriptSender(), MaxMemory: -1})
+	t.Cleanup(scriptPool.Close)
+	sender.UseScripts(scriptPool)
 	srv.Config.Handler = httpapi.NewHandler(httpapi.Deps{
 		Logger:      logger,
 		Health:      health.New("signalbox-server", "test"),

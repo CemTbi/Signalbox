@@ -270,7 +270,7 @@ func ReadPostmanCollection(data []byte) (Collection, Report, error) {
 	}
 	c.Items = items
 	if c.Scripts.PreRequest != "" || c.Scripts.Test != "" || im.hasScripts(items) {
-		im.report.add("", Info, "Scripts are kept with their collection, folders and requests. Sending from the Requests page doesn't run them yet.")
+		im.report.add("", Info, "Scripts are kept with their collection, folders and requests. They run when a request is sent, and never during the import.")
 	}
 	return c, im.report, nil
 }

@@ -28,6 +28,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/client"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
 	"github.com/CemTbi/Signalbox/internal/modules/runner"
+	"github.com/CemTbi/Signalbox/internal/modules/scripts"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/egress"
 	"github.com/CemTbi/Signalbox/internal/platform/postgres"
@@ -211,6 +212,10 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 		}
 		mods := apis.New(db, logger, s.workspaces)
 		s.client = client.New(db, logger, s.workspaces, run)
+		// Scripts run where requests are sent: in this process, for now.
+		if run != nil {
+			s.client.UseScripts(scripts.NewPool(2, scripts.Options{Send: s.client.ScriptSender()}))
+		}
 		if kek != nil {
 			s.client.UseSecretKey(kek)
 		} else {

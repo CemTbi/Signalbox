@@ -5,7 +5,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { type Draft, emptyDraft, folders, formatMs, formatSize, fromEntry, fromSaved, noAuth, prettyBody, row, toSaved, toSend, tree, withoutParam } from "./model";
+import { type Draft, emptyDraft, folders, formatMs, formatSize, fromEntry, fromSaved, noAuth, noScripts, prettyBody, row, toSaved, toSend, tree, withoutParam } from "./model";
 import { RequestEditor } from "./RequestEditor";
 import { ResponseView } from "./ResponseView";
 
@@ -33,7 +33,7 @@ const entry: HistoryEntry = {
 
 describe("model", () => {
   it("sends ticked headers with names, and no body for GET", () => {
-    const d: Draft = { method: "GET", url: " https://a.test ", body: "ignored", headers: [row("Accept", "*/*"), row("X-Off", "1", false), row("", "orphan")], auth: noAuth() };
+    const d: Draft = { method: "GET", url: " https://a.test ", body: "ignored", headers: [row("Accept", "*/*"), row("X-Off", "1", false), row("", "orphan")], auth: noAuth(), scripts: noScripts() };
     expect(toSend(d)).toEqual({ method: "GET", url: "https://a.test", headers: [{ key: "Accept", value: "*/*" }] });
     expect(toSend({ ...d, method: "POST" }).body).toBe("ignored");
   });
@@ -83,6 +83,26 @@ describe("ResponseView", () => {
     await userEvent.click(screen.getByRole("tab", { name: "Timings" }));
     expect(screen.getByText("TLS handshake")).toBeInTheDocument();
     expect(screen.getByText(/from 203\.0\.113\.7:443/)).toBeInTheDocument();
+  });
+
+  it("shows the scripts' tests and console, and their errors", async () => {
+    const scripts = {
+      tests: [
+        { from: "Get", name: "is ok", passed: true },
+        { from: "Get", name: "has lines", passed: false, error: "AssertionError: expected 0 to be above 0" },
+      ],
+      logs: [{ from: "Shop API", level: "log", message: "order 42" }],
+      errors: [{ from: "Orders", event: "test" as const, name: "TypeError", message: "x is undefined" }],
+      changes: [{ from: "Get", scope: "environment", op: "set", key: "orderId" }],
+      skipped: false,
+    };
+    render(<ResponseView entry={{ ...entry, scripts }} />);
+    expect(screen.getByRole("tab", { name: "Tests (1/2)", selected: true })).toBeInTheDocument();
+    expect(screen.getByText("AssertionError: expected 0 to be above 0")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("The test script of Orders stopped: TypeError: x is undefined");
+    await userEvent.click(screen.getByRole("tab", { name: "Console (1)" }));
+    expect(screen.getByText("order 42")).toBeInTheDocument();
+    expect(screen.getByText(/changed orderId \(environment\) for this send only/)).toBeInTheDocument();
   });
 
   it("says why there was no response", () => {
@@ -141,6 +161,17 @@ describe("RequestEditor", () => {
     expect(screen.getByRole("tab", { name: "Auth •" })).toBeInTheDocument();
   });
 
+  it("sends the scripts from the Scripts tab", async () => {
+    const onSend = vi.fn();
+    render(<Editor onSend={onSend} />);
+    await userEvent.type(screen.getByLabelText("URL"), "https://api.example.com/");
+    await userEvent.click(screen.getByRole("tab", { name: "Scripts" }));
+    await userEvent.type(screen.getByLabelText("Test script"), "pm.test('ok', () => {{});");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(toSend(onSend.mock.calls[0]![0]).scripts).toEqual({ test: "pm.test('ok', () => {});" });
+    expect(screen.getByRole("tab", { name: "Scripts •" })).toBeInTheDocument();
+  });
+
   it("can't send for viewers", async () => {
     const onSend = vi.fn();
     render(<Editor onSend={onSend} canSend={false} />);
@@ -151,7 +182,7 @@ describe("RequestEditor", () => {
 
 describe("saved requests", () => {
   it("keep unticked headers, and come back as drafts", () => {
-    const d: Draft = { method: "POST", url: "{{baseUrl}}/orders", body: "{}", headers: [row("Accept", "*/*"), row("X-Off", "1", false), row("", "")], auth: noAuth() };
+    const d: Draft = { method: "POST", url: "{{baseUrl}}/orders", body: "{}", headers: [row("Accept", "*/*"), row("X-Off", "1", false), row("", "")], auth: noAuth(), scripts: noScripts() };
     const saved = toSaved(d);
     expect(saved.headers).toEqual([
       { key: "Accept", value: "*/*", enabled: true },

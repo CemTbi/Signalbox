@@ -122,3 +122,38 @@ func TestSendingWithAuth(t *testing.T) {
 	h.do(call{method: http.MethodPost, path: send, invalid: true, body: map[string]any{"method": "GET", "url": target.URL, "auth": map[string]string{"type": "digest"}}}).
 		expect(t, http.StatusBadRequest, "validation-failed")
 }
+
+func TestSendingWithScripts(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":` + r.Header.Get("X-Id") + `}`))
+	}))
+	defer target.Close()
+	h := newHarness(t)
+	h.setUp()
+	p := h.newProject("shop")
+	send := "/api/v1/projects/" + p.ID + "/send"
+
+	r := h.do(call{method: http.MethodPost, path: send, body: map[string]any{
+		"method": "GET", "url": target.URL, "headers": []map[string]string{{"key": "X-Id", "value": "{{id}}"}},
+		"scripts": map[string]string{
+			"prerequest": `pm.variables.set("id", 42); console.log("pre");`,
+			"test":       `pm.test("echoes the id", () => pm.expect(pm.response.json().id).to.eql(42)); pm.test("fails", () => pm.expect(1).to.eql(2));`,
+		},
+	}})
+	r.expect(t, http.StatusOK, "")
+	var sent httpapi.HistoryEntryJSON
+	r.decode(t, &sent)
+	if sent.Scripts == nil || len(sent.Scripts.Tests) != 2 || !sent.Scripts.Tests[0].Passed || sent.Scripts.Tests[1].Passed || len(sent.Scripts.Logs) != 1 {
+		t.Fatalf("scripts = %+v", sent.Scripts)
+	}
+
+	r = h.do(call{method: http.MethodPost, path: send, body: map[string]any{"method": "GET", "url": target.URL, "scripts": map[string]string{"prerequest": `throw new TypeError("no")`}}})
+	var failed httpapi.HistoryEntryJSON
+	r.decode(t, &failed)
+	if failed.Failure == nil || failed.Failure.Code != "script" || failed.Response != nil || len(failed.Scripts.Errors) != 1 {
+		t.Errorf("failed script = %+v %+v", failed.Failure, failed.Scripts)
+	}
+	h.do(call{method: http.MethodPost, path: send, invalid: true, body: map[string]any{"method": "GET", "url": target.URL, "itemId": "col_nope"}}).
+		expect(t, http.StatusBadRequest, "validation-failed")
+}

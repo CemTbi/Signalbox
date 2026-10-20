@@ -700,6 +700,8 @@ export interface paths {
          *
          *     The runner never reaches Signalbox's own database, cloud metadata endpoints or loopback; an admin can deny or allow more. A request that gets no response, because it was refused, the host doesn't exist, the connection failed or it timed out, still answers `200`, with `failure` saying why.
          *
+         *     With `itemId`, the saved request's collection's and folders' pre-request and test scripts run around it, and the collection's variables fill in `{{name}}` where the environment has none. `scripts` are the request's own, as the editor has them; without them, the saved request's run. Pre-request scripts run first, and a failing one stops the request (`failure.code` is `script`). Test scripts run against the response. Variables scripts set last for the send; they aren't saved.
+         *
          *     With `environmentId`, the environment's variables fill in `{{name}}` in the URL, headers and body first, as do the built-ins `{{$guid}}`, `{{$timestamp}}`, `{{$isoTimestamp}}` and `{{$randomInt}}`. A variable's value may name other variables; a secret's is used as it is. Names with no value are sent as they are and listed in `unresolved`.
          *
          *     History keeps credential headers (`Authorization`, `Proxy-Authorization`, `Cookie`) as `•••`, and the first megabyte of the response body. The environment's secret values are `•••` wherever they appear in what history keeps.
@@ -1431,6 +1433,8 @@ export interface components {
         SendRequest: {
             environmentId?: components["schemas"]["EnvironmentId"];
             collectionId?: components["schemas"]["CollectionId"];
+            itemId?: components["schemas"]["ItemId"];
+            scripts?: components["schemas"]["Scripts"];
             auth?: components["schemas"]["RequestAuth"];
             /**
              * @description The HTTP method, such as GET.
@@ -1554,11 +1558,11 @@ export interface components {
         /** @description Why a request got no response. */
         RunnerFailure: {
             /**
-             * @description The kind of failure.
+             * @description The kind of failure. `script`: a pre-request script failed, so the request wasn't sent. `skipped`: a pre-request script skipped it.
              * @example timeout
              * @enum {string}
              */
-            code: "invalid-request" | "blocked" | "dns" | "connect" | "tls" | "timeout" | "network";
+            code: "invalid-request" | "blocked" | "dns" | "connect" | "tls" | "timeout" | "network" | "script" | "skipped";
             /**
              * @description What went wrong
              * @example The server didn't answer in time.
@@ -1623,6 +1627,7 @@ export interface components {
             request: components["schemas"]["SentRequest"];
             response?: components["schemas"]["RunnerResponse"];
             failure?: components["schemas"]["RunnerFailure"];
+            scripts?: components["schemas"]["ScriptOutcome"];
             timings: components["schemas"]["RunnerTimings"];
         };
         /** @description An entry in a history list. */
@@ -1720,7 +1725,7 @@ export interface components {
              */
             value: string;
         };
-        /** @description The JavaScript a collection, folder or request runs before a request and after its response, as Postman has them. They are kept and exported; sending from the API doesn't run them yet. */
+        /** @description The JavaScript a collection, folder or request runs before a request and after its response, as Postman has them, in Signalbox's sandbox. Sending a saved request runs its collection's, folders' and own scripts. */
         Scripts: {
             /**
              * @description The pre-request script.
@@ -1732,6 +1737,138 @@ export interface components {
              * @example pm.test('ok', () => pm.response.to.have.status(200));
              */
             test?: string;
+        };
+        /** @description What a send's scripts did. Variables they changed last for the send; they aren't saved. */
+        ScriptOutcome: {
+            /**
+             * @description The tests the scripts ran, in order.
+             * @example [
+             *       {
+             *         "from": "Get an order",
+             *         "name": "is ok",
+             *         "passed": true
+             *       }
+             *     ]
+             */
+            tests: {
+                /**
+                 * @description Whose script it was: the collection's, a folder's or the request's name.
+                 * @example Get an order
+                 */
+                from: string;
+                /**
+                 * @description The test's name.
+                 * @example is ok
+                 */
+                name: string;
+                /**
+                 * @description Whether it passed.
+                 * @example true
+                 */
+                passed: boolean;
+                /**
+                 * @description Whether it was skipped.
+                 * @example false
+                 */
+                skipped?: boolean;
+                /**
+                 * @description Why it failed.
+                 * @example AssertionError: expected 404 to equal 200
+                 */
+                error?: string;
+            }[];
+            /**
+             * @description What the scripts logged with console, in order.
+             * @example [
+             *       {
+             *         "from": "Shop API",
+             *         "level": "log",
+             *         "message": "order 42"
+             *       }
+             *     ]
+             */
+            logs: {
+                /**
+                 * @description Whose script logged it.
+                 * @example Shop API
+                 */
+                from: string;
+                /**
+                 * @description log, info, warn or error.
+                 * @example log
+                 */
+                level: string;
+                /**
+                 * @description What was logged. History shows secrets as •••.
+                 * @example order 42
+                 */
+                message: string;
+            }[];
+            /**
+             * @description Errors that ended a script.
+             * @example []
+             */
+            errors: {
+                /**
+                 * @description Whose script failed.
+                 * @example Orders
+                 */
+                from: string;
+                /**
+                 * @description Which script.
+                 * @example prerequest
+                 * @enum {string}
+                 */
+                event: "prerequest" | "test";
+                /**
+                 * @description The error's name, such as TypeError.
+                 * @example TypeError
+                 */
+                name: string;
+                /**
+                 * @description What went wrong.
+                 * @example Cannot read properties of undefined (reading 'id')
+                 */
+                message: string;
+            }[];
+            /**
+             * @description Variables the scripts set, unset or cleared.
+             * @example [
+             *       {
+             *         "from": "Get an order",
+             *         "scope": "environment",
+             *         "op": "set",
+             *         "key": "orderId"
+             *       }
+             *     ]
+             */
+            changes: {
+                /**
+                 * @description Whose script changed it.
+                 * @example Get an order
+                 */
+                from: string;
+                /**
+                 * @description The scope: local, environment, collection or globals.
+                 * @example environment
+                 */
+                scope: string;
+                /**
+                 * @description set, unset or clear.
+                 * @example set
+                 */
+                op: string;
+                /**
+                 * @description The variable.
+                 * @example orderId
+                 */
+                key?: string;
+            }[];
+            /**
+             * @description Whether a pre-request script skipped the request.
+             * @example false
+             */
+            skipped: boolean;
         };
         /** @description What an import found. It is clean when nothing was left out and nothing will run differently than in Postman or curl. */
         ImportReport: {
@@ -2010,6 +2147,7 @@ export interface components {
              */
             description?: string;
             request?: components["schemas"]["SavedRequest"];
+            scripts?: components["schemas"]["Scripts"];
             /**
              * @description The folder to add it to; absent for the top.
              * @example item_01j9z3w5y7a9c1e3g5j7m9p1r3
@@ -2034,6 +2172,7 @@ export interface components {
              */
             description?: string | null;
             request?: components["schemas"]["SavedRequest"];
+            scripts?: components["schemas"]["Scripts"];
             /**
              * @description The folder to move it to; null for the top.
              * @example item_01j9z3w5y7a9c1e3g5j7m9p1r3

@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/CemTbi/Signalbox/internal/modules/runner"
+	"github.com/CemTbi/Signalbox/internal/modules/scripts"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/id"
 	"github.com/CemTbi/Signalbox/internal/platform/secretbox"
@@ -75,6 +76,9 @@ type Module struct {
 	// kek encrypts workspaces' data keys; nil when no secret key is
 	// configured.
 	kek *secretbox.Box
+	// scripts runs pre-request and test scripts; nil when they can't run.
+	scripts     ScriptPool
+	scriptSlots chan struct{}
 }
 
 // New returns the module. run may be nil, when this process can't send
@@ -98,6 +102,8 @@ type Entry struct {
 	// URL is as sent. In history, secrets' values are replaced by •••
 	// wherever they appear.
 	URL string
+	// Scripts is what the request's scripts did; nil when it had none.
+	Scripts *ScriptOutcome
 	// Auth is how the request was authenticated. In history it keeps only
 	// its type, username and API key name.
 	Auth *Auth
@@ -142,23 +148,40 @@ type SendOptions struct {
 	// fill in {{name}}, or uuid.Nil.
 	EnvironmentID uuid.UUID
 	// CollectionID is a collection of the project whose variables fill in
-	// {{name}} where the environment has none, or uuid.Nil.
+	// {{name}} where the environment has none, or uuid.Nil. ItemID sets
+	// it to the item's.
 	CollectionID uuid.UUID
+	// ItemID is the saved request being sent, whose collection's and
+	// folders' scripts run around it, or uuid.Nil.
+	ItemID uuid.UUID
+	// Scripts are the request's own scripts, as the editor has them; nil
+	// uses the saved request's.
+	Scripts *Scripts
 	// Auth is applied after the variables; nil for none.
 	Auth *Auth
 }
 
 // Send sends a request from a project and keeps it in the sender's
 // history. Owners, admins and editors may: the server sends it on their
-// behalf, to whatever their environments point at. The environment's and
-// then the collection's variables fill in {{name}} first, then auth is
-// applied. The result comes back whole; history keeps the first megabyte
-// of the response body, and masks the environment's secrets and the
-// credentials auth sent.
+// behalf, to whatever their environments point at.
+//
+// Pre-request scripts run first: the collection's, then each folder's, then
+// the request's. The variables then fill in {{name}}, narrowest first:
+// what scripts set, the environment's, the collection's. Auth is applied,
+// the request is sent, and the test scripts run. Variables scripts change
+// last for the send.
+//
+// The result comes back whole; history keeps the first megabyte of the
+// response body, and masks the environment's secrets and the credentials
+// auth sent.
 func (m *Module) Send(ctx context.Context, userID, projectID uuid.UUID, req runner.Request, opts SendOptions) (Entry, error) {
 	environmentID, auth := opts.EnvironmentID, opts.Auth
 	var errs validate.Errors
-	if auth = checkAuth(&errs, "/auth", auth); len(errs) > 0 {
+	auth = checkAuth(&errs, "/auth", auth)
+	if opts.Scripts != nil {
+		checkScripts(&errs, "/scripts", *opts.Scripts)
+	}
+	if len(errs) > 0 {
 		return Entry{}, errs
 	}
 	if err := m.authorize(ctx, userID, projectID, true); err != nil {
@@ -167,27 +190,47 @@ func (m *Module) Send(ctx context.Context, userID, projectID uuid.UUID, req runn
 	if m.runner == nil {
 		return Entry{}, ErrRunnerUnavailable
 	}
-	values := map[string]string{}
-	var secrets []string
+	var c chain
+	if opts.ItemID != uuid.Nil || opts.Scripts != nil {
+		if opts.ItemID != uuid.Nil {
+			if err := m.authorizeFor(ctx, userID, projectOfItem, opts.ItemID, read); err != nil {
+				return Entry{}, err
+			}
+		}
+		var collectionID uuid.UUID
+		var err error
+		if c, collectionID, err = m.scriptChain(ctx, opts.ItemID, opts.Scripts); err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return Entry{}, err
+			}
+			return Entry{}, fmt.Errorf("read scripts: %w", err)
+		}
+		if collectionID != uuid.Nil {
+			opts.CollectionID = collectionID
+		}
+	}
+	collectionValues := map[string]string{}
 	if opts.CollectionID != uuid.Nil {
-		var c Collection
+		var col Collection
 		var err error
 		if err := m.authorizeFor(ctx, userID, projectOfCollection, opts.CollectionID, read); err != nil {
 			return Entry{}, err
 		}
-		if c, err = readCollection(m.db.QueryRow(ctx, `SELECT `+collectionColumns+` FROM collections WHERE id = $1`, opts.CollectionID)); err != nil {
+		if col, err = readCollection(m.db.QueryRow(ctx, `SELECT `+collectionColumns+` FROM collections WHERE id = $1`, opts.CollectionID)); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return Entry{}, ErrNotFound
 			}
 			return Entry{}, fmt.Errorf("get collection: %w", err)
 		}
-		if c.ProjectID != projectID {
+		if col.ProjectID != projectID {
 			return Entry{}, ErrNotFound
 		}
-		for _, v := range c.Variables {
-			values[v.Key] = v.Value
+		for _, v := range col.Variables {
+			collectionValues[v.Key] = v.Value
 		}
 	}
+	envValues := map[string]string{}
+	var secrets []string
 	if environmentID != uuid.Nil {
 		env, err := m.environment(ctx, userID, environmentID, read)
 		if err != nil {
@@ -196,15 +239,36 @@ func (m *Module) Send(ctx context.Context, userID, projectID uuid.UUID, req runn
 		if env.ProjectID != projectID {
 			return Entry{}, ErrNotFound
 		}
-		envValues, envSecrets, err := m.environmentValues(ctx, env)
-		if err != nil {
+		if envValues, secrets, err = m.environmentValues(ctx, env); err != nil {
 			return Entry{}, err
 		}
-		// The environment's win: it's narrower, as in Postman.
-		for k, v := range envValues {
-			values[k] = v
+	}
+	values := map[string]string{}
+	for k, v := range collectionValues {
+		values[k] = v
+	}
+	// The environment's win: it's narrower, as in Postman.
+	for k, v := range envValues {
+		values[k] = v
+	}
+	// The secrets' stored values, which history masks even after a script
+	// changes them.
+	stored := map[string]string{}
+	for _, k := range secrets {
+		stored[k] = values[k]
+	}
+
+	var run *scriptRun
+	send := true
+	if !c.empty() {
+		var release func()
+		var err error
+		if run, release, err = m.startScripts(ctx, c, scripts.Variables{Collection: anyMap(collectionValues), Environment: anyMap(envValues)}); err != nil {
+			return Entry{}, err
 		}
-		secrets = envSecrets
+		defer release()
+		send = run.pre(ctx, &req)
+		values = run.values()
 	}
 	res := newResolver(values, secrets, time.Now())
 	req, err := res.request(req)
@@ -216,15 +280,37 @@ func (m *Module) Send(ctx context.Context, userID, projectID uuid.UUID, req runn
 		return Entry{}, ErrResolvedTooLarge
 	}
 	credentials := auth.apply(&req)
-	result := m.runner.Run(ctx, req)
+	var result runner.Result
+	switch {
+	case send:
+		result = m.runner.Run(ctx, req)
+		if run != nil && result.Response != nil {
+			run.test(ctx, req, result.Response, result.Timings.Total.Milliseconds())
+		}
+	case run.outcome.Skipped:
+		result.Failure = &runner.Failure{Code: "skipped", Message: "A pre-request script skipped the request, so it wasn't sent."}
+	default:
+		last := run.outcome.Errors[len(run.outcome.Errors)-1]
+		result.Failure = &runner.Failure{Code: "script",
+			Message: fmt.Sprintf("The pre-request script of %s failed, so the request wasn't sent. %s: %s", last.From, last.Name, last.Message)}
+	}
 	e := Entry{
 		ID: id.New(), ProjectID: projectID, UserID: userID, EnvironmentID: environmentID, Unresolved: res.Unresolved(), Auth: auth.kept(),
 		Method: strings.ToUpper(strings.TrimSpace(req.Method)), URL: strings.TrimSpace(req.URL),
 		Headers: redact(req.Headers), Body: req.Body, Result: result,
 	}
-	// What comes back is whole; what history keeps doesn't hold secrets.
+	if run != nil {
+		e.Scripts = &run.outcome
+	}
+	// What comes back is whole; what history keeps doesn't hold secrets:
+	// their stored values, their values now, and what auth sent.
+	hidden := credentials
+	for _, k := range secrets {
+		hidden = append(hidden, values[k])
+	}
 	kept := e
-	mask := newMasker(values, secrets, credentials...)
+	mask := newMasker(stored, secrets, hidden...)
+	kept.Scripts = e.Scripts.mask(mask)
 	kept.URL, kept.Headers, kept.Body = mask.string(kept.URL), mask.headers(kept.Headers), mask.bytes(kept.Body)
 	if a := kept.Auth; a != nil {
 		masked := *a
@@ -277,6 +363,7 @@ type stored struct {
 	EnvironmentID *uuid.UUID      `json:"environmentId,omitempty"`
 	Unresolved    []string        `json:"unresolved,omitempty"`
 	Auth          *Auth           `json:"auth,omitempty"`
+	Scripts       *ScriptOutcome  `json:"scripts,omitempty"`
 	Headers       []runner.Header `json:"headers"`
 	Body          string          `json:"body,omitempty"`
 	BodyTruncated bool            `json:"bodyTruncated,omitempty"`
@@ -302,7 +389,7 @@ type storedTimings struct {
 }
 
 func (m *Module) save(ctx context.Context, e *Entry) error {
-	s := stored{Headers: e.Headers, Unresolved: e.Unresolved, Auth: e.Auth, BodyTruncated: e.BodyTruncated, Failure: e.Result.Failure, Timings: timingsOut(e.Result.Timings)}
+	s := stored{Headers: e.Headers, Unresolved: e.Unresolved, Auth: e.Auth, Scripts: e.Scripts, BodyTruncated: e.BodyTruncated, Failure: e.Result.Failure, Timings: timingsOut(e.Result.Timings)}
 	if e.EnvironmentID != uuid.Nil {
 		s.EnvironmentID = &e.EnvironmentID
 	}
@@ -431,6 +518,7 @@ func (m *Module) HistoryEntry(ctx context.Context, userID, entryID uuid.UUID) (E
 		return Entry{}, fmt.Errorf("read history entry: %w", err)
 	}
 	e.Headers, e.Body, e.BodyTruncated, e.Unresolved, e.Auth = s.Headers, []byte(s.Body), s.BodyTruncated, s.Unresolved, s.Auth
+	e.Scripts = s.Scripts
 	if s.EnvironmentID != nil {
 		e.EnvironmentID = *s.EnvironmentID
 	}

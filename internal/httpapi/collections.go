@@ -310,6 +310,7 @@ func (a *api) createItem(w http.ResponseWriter, r *http.Request, s *identity.Ses
 		Name        *string           `json:"name"`
 		Description string            `json:"description"`
 		Request     *SavedRequestJSON `json:"request"`
+		Scripts     *ScriptsJSON      `json:"scripts"`
 		ParentID    *string           `json:"parentId"`
 		Before      *string           `json:"before"`
 	}
@@ -320,6 +321,9 @@ func (a *api) createItem(w http.ResponseWriter, r *http.Request, s *identity.Ses
 	in := client.ItemInput{
 		Kind: required(&fields, "/kind", body.Kind), Name: required(&fields, "/name", body.Name), Description: body.Description,
 		Request: savedRequest(body.Request), Placement: placementFrom(&fields, body.ParentID, body.Before),
+	}
+	if sc := scriptsIn(body.Scripts); sc != nil {
+		in.Scripts = *sc
 	}
 	if len(fields) > 0 {
 		writeInvalid(w, r, fields)
@@ -362,7 +366,7 @@ func (a *api) updateItem(w http.ResponseWriter, r *http.Request, s *identity.Ses
 	var fields validate.Errors
 	for key := range patch {
 		switch key {
-		case "name", "description", "request", "parentId", "before":
+		case "name", "description", "request", "scripts", "parentId", "before":
 		default:
 			fields.Add("/"+key, "additionalProperties", "Remove this field; it can't be changed.")
 		}
@@ -371,6 +375,15 @@ func (a *api) updateItem(w http.ResponseWriter, r *http.Request, s *identity.Ses
 		fields.Add("", "minProperties", "Send at least one field to change.")
 	}
 	change := client.ItemPatch{Name: patch.str(&fields, "name", false), Description: patch.str(&fields, "description", true)}
+	if raw, ok := patch["scripts"]; ok {
+		var sc ScriptsJSON
+		dec := json.NewDecoder(bytes.NewReader(raw))
+		dec.DisallowUnknownFields()
+		if string(raw) != "null" && dec.Decode(&sc) != nil {
+			fields.Add("/scripts", "type", "Send the scripts as prerequest and test.")
+		}
+		change.Scripts = scriptsIn(&sc)
+	}
 	if raw, ok := patch["request"]; ok {
 		var req SavedRequestJSON
 		dec := json.NewDecoder(bytes.NewReader(raw))
