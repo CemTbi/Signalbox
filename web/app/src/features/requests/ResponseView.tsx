@@ -6,7 +6,8 @@ import { contentType, formatMs, formatSize, phases, prettyBody } from "./model";
 
 /** What came of a request: the response, or why there was none. */
 export function ResponseView({ entry }: { entry: HistoryEntry }) {
-  const [tab, setTab] = useState<"body" | "headers" | "timings">("body");
+  const scripts = entry.scripts;
+  const [tab, setTab] = useState<"body" | "headers" | "timings" | "tests" | "console">(scripts?.tests.length ? "tests" : "body");
   const r = entry.response;
   const t = entry.timings;
 
@@ -14,12 +15,14 @@ export function ResponseView({ entry }: { entry: HistoryEntry }) {
     return (
       <section className="response" aria-label="Response">
         <p className="response-failure" role="alert">
-          <strong>No response.</strong> {entry.failure?.message}
+          <strong>{entry.failure?.code === "skipped" ? "Not sent." : "No response."}</strong> {entry.failure?.message}
         </p>
         {t.totalMs > 0 ? <p className="field-hint">Gave up after {formatMs(t.totalMs)}.</p> : null}
+        {scripts ? <ScriptsView scripts={scripts} /> : null}
       </section>
     );
   }
+  const passed = scripts?.tests.filter((x) => x.passed).length ?? 0;
 
   const type = contentType(r.headers);
   const body = r.bodyEncoding === "base64" ? null : prettyBody(r.body, type);
@@ -44,7 +47,18 @@ export function ResponseView({ entry }: { entry: HistoryEntry }) {
         <button type="button" role="tab" aria-selected={tab === "timings"} onClick={() => setTab("timings")}>
           Timings
         </button>
+        {scripts ? (
+          <>
+            <button type="button" role="tab" aria-selected={tab === "tests"} onClick={() => setTab("tests")}>
+              Tests ({passed}/{scripts.tests.length})
+            </button>
+            <button type="button" role="tab" aria-selected={tab === "console"} onClick={() => setTab("console")}>
+              Console ({scripts.logs.length})
+            </button>
+          </>
+        ) : null}
       </div>
+      {scripts?.errors.length ? <ScriptErrors errors={scripts.errors} /> : null}
       {tab === "body" ? (
         <div role="tabpanel">
           {r.truncated ? <p className="field-hint">The body was longer than Signalbox keeps; this is its start.</p> : null}
@@ -73,10 +87,79 @@ export function ResponseView({ entry }: { entry: HistoryEntry }) {
             ))}
           </tbody>
         </table>
-      ) : (
+      ) : tab === "timings" ? (
         <Timings timings={t} remote={r.remoteAddress} />
-      )}
+      ) : tab === "tests" && scripts ? (
+        <TestList scripts={scripts} />
+      ) : scripts ? (
+        <ConsoleList scripts={scripts} />
+      ) : null}
     </section>
+  );
+}
+
+type Outcome = NonNullable<HistoryEntry["scripts"]>;
+
+/** What the scripts did when there was no response to show beside it. */
+function ScriptsView({ scripts }: { scripts: Outcome }) {
+  return (
+    <>
+      {scripts.errors.length ? <ScriptErrors errors={scripts.errors} /> : null}
+      {scripts.tests.length ? <TestList scripts={scripts} /> : null}
+      {scripts.logs.length ? <ConsoleList scripts={scripts} /> : null}
+    </>
+  );
+}
+
+function ScriptErrors({ errors }: { errors: Outcome["errors"] }) {
+  return (
+    <ul className="script-errors" role="alert">
+      {errors.map((e, i) => (
+        <li key={i}>
+          The {e.event === "prerequest" ? "pre-request" : "test"} script of <strong>{e.from}</strong> stopped: {e.name}: {e.message}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function TestList({ scripts }: { scripts: Outcome }) {
+  if (scripts.tests.length === 0) return <p className="field-hint" role="tabpanel">The scripts ran no tests. Add some with pm.test.</p>;
+  return (
+    <ul className="test-list" role="tabpanel" aria-label="Tests">
+      {scripts.tests.map((x, i) => (
+        <li key={i} className={x.skipped ? "test-skipped" : x.passed ? "test-passed" : "test-failed"}>
+          <span className="test-mark">{x.skipped ? "Skipped" : x.passed ? "Passed" : "Failed"}</span>
+          <span>{x.name}</span>
+          <span className="muted"> · {x.from}</span>
+          {x.error ? <span className="test-error mono">{x.error}</span> : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ConsoleList({ scripts }: { scripts: Outcome }) {
+  return (
+    <div role="tabpanel">
+      {scripts.logs.length === 0 ? (
+        <p className="field-hint">The scripts logged nothing. Use console.log to see values here.</p>
+      ) : (
+        <ol className="console-list mono" aria-label="Console">
+          {scripts.logs.map((l, i) => (
+            <li key={i} className={`console-${l.level}`}>
+              <span className="muted">{l.from}</span> {l.message}
+            </li>
+          ))}
+        </ol>
+      )}
+      {scripts.changes.length ? (
+        <p className="field-hint">
+          Scripts changed {[...new Set(scripts.changes.map((c) => (c.key ? `${c.key} (${c.scope})` : `${c.scope} (cleared)`)))].join(", ")} for this send only;
+          the changes aren't saved.
+        </p>
+      ) : null}
+    </div>
   );
 }
 

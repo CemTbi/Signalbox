@@ -2114,3 +2114,72 @@ pre.code {
   font-weight: 600;
   color: var(--ink-2);
 }
+
+.scripts-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.script-errors {
+  margin: 0;
+  padding: 8px 12px 8px 28px;
+  font-size: 14px;
+  border: 1px solid var(--bad);
+  border-radius: var(--radius);
+}
+
+.test-list,
+.console-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.test-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+  font-size: 14px;
+}
+
+.test-mark {
+  min-width: 4.5rem;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.test-passed .test-mark {
+  color: var(--ok);
+}
+
+.test-failed .test-mark {
+  color: var(--bad);
+}
+
+.test-skipped .test-mark {
+  color: var(--ink-2);
+}
+
+.test-error {
+  flex-basis: 100%;
+  padding-left: calc(4.5rem + 8px);
+  font-size: 12px;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+.console-list li {
+  padding: 2px 0;
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--rule);
+}
+
+.console-warn,
+.console-error {
+  color: var(--bad);
+}

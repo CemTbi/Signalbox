@@ -10,7 +10,7 @@ import { environmentsQuery, historyKey, historyQuery, itemsKey, projectQuery, wo
 import { CollectionsPanel } from "./CollectionsPanel";
 import { CurlImport } from "./CurlImport";
 import { ImportReport, type Report } from "./ImportReport";
-import { type Draft, emptyDraft, formatMs, fromEntry, fromSaved, hadCredentials, toSaved, toSend } from "./model";
+import { type Draft, emptyDraft, formatMs, fromEntry, fromSaved, hadCredentials, toSaved, toScripts, toSend } from "./model";
 import { RequestEditor } from "./RequestEditor";
 import { ResponseView } from "./ResponseView";
 import { type SaveTarget, SaveForm } from "./SaveForm";
@@ -76,7 +76,8 @@ export function RequestsPage() {
         api.POST("/api/v1/projects/{projectId}/send", {
           params: { path: { projectId } },
           // A saved request uses its collection's variables, and the environment's win.
-          body: { ...toSend(d), ...(environment ? { environmentId: environment.id } : {}), ...(openItem ? { collectionId: openItem.collectionId } : {}) },
+          // A saved request runs its collection's and folders' scripts, and uses its collection's variables. Its own scripts are the editor's.
+          body: { ...toSend(d), ...(environment ? { environmentId: environment.id } : {}), ...(openItem ? { itemId: openItem.id, scripts: toScripts(d.scripts) } : {}) },
         }),
       ),
     onSuccess: async (entry) => {
@@ -97,7 +98,7 @@ export function RequestsPage() {
   const openSaved = useMutation({
     mutationFn: (item: Item) => unwrapTagged(api.GET("/api/v1/items/{itemId}", { params: { path: { itemId: item.id } } })),
     onSuccess: ({ data, etag }) => {
-      if (data.request) setDraft(fromSaved(data.request));
+      if (data.request) setDraft(fromSaved(data.request, data.scripts));
       setOpenItem({ id: data.id, collectionId: data.collectionId, name: data.name, etag });
       setShown(null);
       setNotice(null);
@@ -109,7 +110,7 @@ export function RequestsPage() {
       unwrapTagged(
         api.PATCH("/api/v1/items/{itemId}", {
           params: { path: { itemId: item.id }, header: { "If-Match": item.etag } },
-          body: { request: toSaved(draft) },
+          body: { request: toSaved(draft), scripts: toScripts(draft.scripts) },
         }),
       ),
     onSuccess: async ({ data, etag }) => {
@@ -122,7 +123,7 @@ export function RequestsPage() {
       unwrapTagged(
         api.POST("/api/v1/collections/{collectionId}/items", {
           params: { path: { collectionId: t.collectionId } },
-          body: { kind: "request", name: t.name, request: toSaved(draft), ...(t.parentId ? { parentId: t.parentId } : {}) },
+          body: { kind: "request", name: t.name, request: toSaved(draft), scripts: toScripts(draft.scripts), ...(t.parentId ? { parentId: t.parentId } : {}) },
         }),
       ),
     onSuccess: async ({ data, etag }) => {

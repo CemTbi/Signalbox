@@ -1477,6 +1477,8 @@ paths:
 
         The runner never reaches Signalbox's own database, cloud metadata endpoints or loopback; an admin can deny or allow more. A request that gets no response, because it was refused, the host doesn't exist, the connection failed or it timed out, still answers `200`, with `failure` saying why.
 
+        With `itemId`, the saved request's collection's and folders' pre-request and test scripts run around it, and the collection's variables fill in `{{name}}` where the environment has none. `scripts` are the request's own, as the editor has them; without them, the saved request's run. Pre-request scripts run first, and a failing one stops the request (`failure.code` is `script`). Test scripts run against the response. Variables scripts set last for the send; they aren't saved.
+
         With `environmentId`, the environment's variables fill in `{{name}}` in the URL, headers and body first, as do the built-ins `{{$guid}}`, `{{$timestamp}}`, `{{$isoTimestamp}}` and `{{$randomInt}}`. A variable's value may name other variables; a secret's is used as it is. Names with no value are sent as they are and listed in `unresolved`.
 
         History keeps credential headers (`Authorization`, `Proxy-Authorization`, `Cookie`) as `•••`, and the first megabyte of the response body. The environment's secret values are `•••` wherever they appear in what history keeps.
@@ -3179,6 +3181,8 @@ components:
       properties:
         environmentId: {$ref: '#/components/schemas/EnvironmentId'}
         collectionId: {$ref: '#/components/schemas/CollectionId'}
+        itemId: {$ref: '#/components/schemas/ItemId'}
+        scripts: {$ref: '#/components/schemas/Scripts'}
         auth: {$ref: '#/components/schemas/RequestAuth'}
         method: {type: string, maxLength: 32, description: 'The HTTP method, such as GET.', examples: [GET]}
         url: {type: string, maxLength: 8192, description: 'The absolute http or https URL, once its variables are filled in.', examples: ['{{baseUrl}}/orders/42']}
@@ -3228,7 +3232,7 @@ components:
       description: Why a request got no response.
       required: [code, message]
       properties:
-        code: {type: string, enum: [invalid-request, blocked, dns, connect, tls, timeout, network], description: The kind of failure., examples: [timeout]}
+        code: {type: string, enum: [invalid-request, blocked, dns, connect, tls, timeout, network, script, skipped], description: 'The kind of failure. `script`: a pre-request script failed, so the request wasn''t sent. `skipped`: a pre-request script skipped it.', examples: [timeout]}
         message: {type: string, description: What went wrong, in words a person can act on., examples: ["The server didn't answer in time."]}
     RunnerTimings:
       type: object
@@ -3259,6 +3263,7 @@ components:
         request: {$ref: '#/components/schemas/SentRequest'}
         response: {$ref: '#/components/schemas/RunnerResponse'}
         failure: {$ref: '#/components/schemas/RunnerFailure'}
+        scripts: {$ref: '#/components/schemas/ScriptOutcome'}
         timings: {$ref: '#/components/schemas/RunnerTimings'}
     HistorySummary:
       type: object
@@ -3322,10 +3327,70 @@ components:
         value: {type: string, maxLength: 65536, description: The variable's value., examples: ['https://api.example.com']}
     Scripts:
       type: object
-      description: The JavaScript a collection, folder or request runs before a request and after its response, as Postman has them. They are kept and exported; sending from the API doesn't run them yet.
+      description: The JavaScript a collection, folder or request runs before a request and after its response, as Postman has them, in Signalbox's sandbox. Sending a saved request runs its collection's, folders' and own scripts.
       properties:
         prerequest: {type: string, maxLength: 262144, description: The pre-request script., examples: ["pm.variables.set('now', Date.now());"]}
         test: {type: string, maxLength: 262144, description: The test script., examples: ["pm.test('ok', () => pm.response.to.have.status(200));"]}
+    ScriptOutcome:
+      type: object
+      description: What a send's scripts did. Variables they changed last for the send; they aren't saved.
+      required: [tests, logs, errors, changes, skipped]
+      properties:
+        tests:
+          type: array
+          description: The tests the scripts ran, in order.
+          maxItems: 1000
+          items:
+            type: object
+            description: One pm.test.
+            required: [from, name, passed]
+            properties:
+              from: {type: string, description: 'Whose script it was: the collection''s, a folder''s or the request''s name.', examples: [Get an order]}
+              name: {type: string, description: The test's name., examples: [is ok]}
+              passed: {type: boolean, description: Whether it passed., examples: [true]}
+              skipped: {type: boolean, description: Whether it was skipped., examples: [false]}
+              error: {type: string, description: Why it failed., examples: ['AssertionError: expected 404 to equal 200']}
+          examples: [[{from: Get an order, name: is ok, passed: true}]]
+        logs:
+          type: array
+          description: What the scripts logged with console, in order.
+          maxItems: 200
+          items:
+            type: object
+            description: One console call.
+            required: [from, level, message]
+            properties:
+              from: {type: string, description: Whose script logged it., examples: [Shop API]}
+              level: {type: string, description: 'log, info, warn or error.', examples: [log]}
+              message: {type: string, description: What was logged. History shows secrets as •••., examples: [order 42]}
+          examples: [[{from: Shop API, level: log, message: order 42}]]
+        errors:
+          type: array
+          description: Errors that ended a script.
+          items:
+            type: object
+            description: One error.
+            required: [from, event, name, message]
+            properties:
+              from: {type: string, description: Whose script failed., examples: [Orders]}
+              event: {type: string, enum: [prerequest, test], description: Which script., examples: [prerequest]}
+              name: {type: string, description: 'The error''s name, such as TypeError.', examples: [TypeError]}
+              message: {type: string, description: What went wrong., examples: ["Cannot read properties of undefined (reading 'id')"]}
+          examples: [[]]
+        changes:
+          type: array
+          description: Variables the scripts set, unset or cleared.
+          items:
+            type: object
+            description: One change.
+            required: [from, scope, op]
+            properties:
+              from: {type: string, description: Whose script changed it., examples: [Get an order]}
+              scope: {type: string, description: 'The scope: local, environment, collection or globals.', examples: [environment]}
+              op: {type: string, description: 'set, unset or clear.', examples: [set]}
+              key: {type: string, description: The variable., examples: [orderId]}
+          examples: [[{from: Get an order, scope: environment, op: set, key: orderId}]]
+        skipped: {type: boolean, description: Whether a pre-request script skipped the request., examples: [false]}
     ImportReport:
       type: object
       description: What an import found. It is clean when nothing was left out and nothing will run differently than in Postman or curl.
@@ -3488,6 +3553,7 @@ components:
         name: {type: string, minLength: 1, maxLength: 200, description: The new item's name., examples: [Get an order]}
         description: {type: string, maxLength: 10000, description: 'What the new item does, in CommonMark.', examples: [Returns one order.]}
         request: {$ref: '#/components/schemas/SavedRequest'}
+        scripts: {$ref: '#/components/schemas/Scripts'}
         parentId:
           $ref: '#/components/schemas/ItemId'
           type: string
@@ -3507,6 +3573,7 @@ components:
         name: {type: string, minLength: 1, maxLength: 200, description: The item's new name., examples: [Get one order]}
         description: {type: [string, 'null'], maxLength: 10000, description: The item's new description; null clears it., examples: [Returns one order.]}
         request: {$ref: '#/components/schemas/SavedRequest'}
+        scripts: {$ref: '#/components/schemas/Scripts'}
         parentId: {type: [string, 'null'], pattern: '^item_[0-9a-hjkmnp-tv-z]{26}$', description: The folder to move it to; null for the top., examples: [item_01j9z3w5y7a9c1e3g5j7m9p1r3]}
         before: {type: [string, 'null'], pattern: '^item_[0-9a-hjkmnp-tv-z]{26}$', description: The item to move it before; null for the end., examples: [item_01j9z3w6a8c0e2g4j6m8p0r2t4]}
     ItemList:

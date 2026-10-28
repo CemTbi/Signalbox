@@ -26,6 +26,12 @@ export interface AuthDraft {
   in: "header" | "query";
 }
 
+/** A request's own scripts. */
+export interface ScriptsDraft {
+  prerequest: string;
+  test: string;
+}
+
 /** What the editor holds. */
 export interface Draft {
   method: string;
@@ -33,6 +39,16 @@ export interface Draft {
   headers: HeaderRow[];
   body: string;
   auth: AuthDraft;
+  scripts: ScriptsDraft;
+}
+
+export function noScripts(): ScriptsDraft {
+  return { prerequest: "", test: "" };
+}
+
+/** The scripts to save or send, without the empty ones. */
+export function toScripts(s: ScriptsDraft): { prerequest?: string; test?: string } {
+  return { ...(s.prerequest.trim() ? { prerequest: s.prerequest } : {}), ...(s.test.trim() ? { test: s.test } : {}) };
 }
 
 export function noAuth(): AuthDraft {
@@ -64,7 +80,7 @@ export function row(key = "", value = "", enabled = true): HeaderRow {
 }
 
 export function emptyDraft(): Draft {
-  return { method: "GET", url: "", headers: [row()], body: "", auth: noAuth() };
+  return { method: "GET", url: "", headers: [row()], body: "", auth: noAuth(), scripts: noScripts() };
 }
 
 /** The request to send: ticked headers with a name, and a body for methods that take one. */
@@ -74,6 +90,8 @@ export function toSend(d: Draft): SendRequest {
   if (d.body !== "" && d.method !== "GET" && d.method !== "HEAD") out.body = d.body;
   const auth = toAuth(d.auth);
   if (auth) out.auth = auth;
+  const scripts = toScripts(d.scripts);
+  if (scripts.prerequest || scripts.test) out.scripts = scripts;
   return out;
 }
 
@@ -87,7 +105,7 @@ export function fromEntry(e: HistoryEntry): Draft {
   const added = auth.type === "basic" || auth.type === "bearer" ? "authorization" : auth.type === "apikey" && auth.in === "header" ? auth.key.toLowerCase() : "";
   const headers = e.request.headers.filter((h) => h.key.toLowerCase() !== added).map((h) => row(h.key, h.value === "•••" ? "" : h.value));
   const url = auth.type === "apikey" && auth.in === "query" ? withoutParam(e.url, auth.key) : e.url;
-  return { method: e.method, url, headers: [...headers, row()], body: e.request.body ?? "", auth };
+  return { method: e.method, url, headers: [...headers, row()], body: e.request.body ?? "", auth, scripts: noScripts() };
 }
 
 /**
@@ -165,10 +183,17 @@ export function phases(t: HistoryEntry["timings"]) {
   ];
 }
 
-/** A draft from a saved request. */
-export function fromSaved(r: SavedRequest): Draft {
+/** A draft from a saved request, with its scripts. */
+export function fromSaved(r: SavedRequest, scripts?: { prerequest?: string; test?: string }): Draft {
   const headers = (r.headers ?? []).map((h) => row(h.key, h.value, h.enabled));
-  return { method: r.method, url: r.url, headers: [...headers, row()], body: r.body ?? "", auth: fromAuth(r.auth) };
+  return {
+    method: r.method,
+    url: r.url,
+    headers: [...headers, row()],
+    body: r.body ?? "",
+    auth: fromAuth(r.auth),
+    scripts: { prerequest: scripts?.prerequest ?? "", test: scripts?.test ?? "" },
+  };
 }
 
 /** A draft as a collection keeps it: every header with a name, ticked or not. */

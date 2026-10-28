@@ -20,8 +20,8 @@ export function RequestEditor({
   sending: boolean;
   canSend: boolean;
 }) {
-  const [tab, setTab] = useState<"headers" | "body" | "auth">("headers");
-  const ids = { method: useId(), url: useId(), body: useId() };
+  const [tab, setTab] = useState<"headers" | "body" | "auth" | "scripts">("headers");
+  const ids = { method: useId(), url: useId(), body: useId(), pre: useId(), test: useId() };
   const headerCount = draft.headers.filter((h) => h.enabled && h.key.trim() !== "").length;
 
   function submit(e: FormEvent) {
@@ -82,6 +82,9 @@ export function RequestEditor({
         <button type="button" role="tab" aria-selected={tab === "auth"} onClick={() => setTab("auth")}>
           Auth{draft.auth.type !== "none" ? " •" : ""}
         </button>
+        <button type="button" role="tab" aria-selected={tab === "scripts"} onClick={() => setTab("scripts")}>
+          Scripts{draft.scripts.prerequest.trim() || draft.scripts.test.trim() ? " •" : ""}
+        </button>
       </div>
       {tab === "headers" ? (
         <table className="header-rows" role="tabpanel">
@@ -122,6 +125,37 @@ export function RequestEditor({
         </table>
       ) : tab === "auth" ? (
         <AuthEditor auth={draft.auth} onChange={(auth) => onChange({ ...draft, auth })} />
+      ) : tab === "scripts" ? (
+        <div className="scripts-editor" role="tabpanel">
+          <div className="field">
+            <label htmlFor={ids.pre}>Pre-request script</label>
+            <textarea
+              id={ids.pre}
+              className="mono"
+              rows={6}
+              value={draft.scripts.prerequest}
+              placeholder={'pm.variables.set("now", Date.now());'}
+              spellCheck={false}
+              onChange={(e) => onChange({ ...draft, scripts: { ...draft.scripts, prerequest: e.target.value } })}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor={ids.test}>Test script</label>
+            <textarea
+              id={ids.test}
+              className="mono"
+              rows={6}
+              value={draft.scripts.test}
+              placeholder={'pm.test("is ok", () => pm.response.to.have.status(200));'}
+              spellCheck={false}
+              onChange={(e) => onChange({ ...draft, scripts: { ...draft.scripts, test: e.target.value } })}
+            />
+          </div>
+          <p className="field-hint">
+            JavaScript, as in Postman: pm.request, pm.response, pm.test, pm.expect and the variables. A saved request&apos;s collection and folder scripts
+            run around these. Variables scripts set last for the send.
+          </p>
+        </div>
       ) : (
         <div className="field" role="tabpanel">
           <label htmlFor={ids.body}>Body</label>

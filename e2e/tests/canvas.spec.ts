@@ -181,6 +181,12 @@ test("services are placed on the canvas by hand and stay where they are put", as
   await page.getByLabel("Environment").selectOption("");
   await page.getByRole("button", { name: "Send" }).click();
   await expect(response.getByText("200", { exact: true })).toBeVisible();
+  // Its test script runs against the response.
+  await page.getByRole("tab", { name: "Scripts", exact: true }).click();
+  await page.getByLabel("Test script").fill(`pm.test("meta has a version", () => pm.expect(pm.response.json()).to.have.property("version"));`);
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(response.getByRole("tab", { name: "Tests (1/1)" })).toBeVisible();
+  await expect(response.getByText("meta has a version")).toBeVisible();
 
   // A curl command fills in the editor.
   await page.getByRole("button", { name: "Import cURL" }).click();

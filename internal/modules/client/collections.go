@@ -121,6 +121,7 @@ type ItemInput struct {
 	Name        string
 	Description string
 	Request     *SavedRequest
+	Scripts     Scripts
 	Placement   Placement
 }
 
@@ -129,7 +130,20 @@ type ItemPatch struct {
 	Name        *string
 	Description *string
 	Request     *SavedRequest
+	Scripts     *Scripts
 	Move        *Placement
+}
+
+// maxScript bounds each script.
+const maxScript = 256 << 10
+
+func checkScripts(errs *validate.Errors, pointer string, s Scripts) {
+	if len(s.PreRequest) > maxScript {
+		errs.Add(pointer+"/prerequest", "maxLength", "Keep a script to at most 256 KiB.")
+	}
+	if len(s.Test) > maxScript {
+		errs.Add(pointer+"/test", "maxLength", "Keep a script to at most 256 KiB.")
+	}
 }
 
 // CollectionPatch changes the fields that aren't nil.
@@ -499,6 +513,7 @@ func (m *Module) CreateItem(ctx context.Context, userID, collectionID uuid.UUID,
 	default:
 		errs.Add("/kind", "enum", "Choose folder or request.")
 	}
+	checkScripts(&errs, "/scripts", in.Scripts)
 	if err := errs.Err(); err != nil {
 		return Item{}, err
 	}
@@ -527,10 +542,14 @@ func (m *Module) CreateItem(ctx context.Context, userID, collectionID uuid.UUID,
 				return err
 			}
 		}
+		scripts, err := json.Marshal(in.Scripts)
+		if err != nil {
+			return err
+		}
 		it, err = readItem(tx.QueryRow(ctx, `
-			INSERT INTO collection_items (id, collection_id, parent_id, rank, kind, name, description, request)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING `+itemColumns,
-			id.New(), collectionID, nullID(in.Placement.Parent), rank, in.Kind, in.Name, in.Description, req))
+			INSERT INTO collection_items (id, collection_id, parent_id, rank, kind, name, description, request, scripts)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING `+itemColumns,
+			id.New(), collectionID, nullID(in.Placement.Parent), rank, in.Kind, in.Name, in.Description, req, scripts))
 		return err
 	})
 	if isModuleError(err) {
@@ -643,6 +662,11 @@ func (m *Module) UpdateItem(ctx context.Context, userID, itemID uuid.UUID, pre w
 	if patch.Request != nil {
 		checkRequest(&errs, patch.Request)
 	}
+	var scripts []byte
+	if patch.Scripts != nil {
+		checkScripts(&errs, "/scripts", *patch.Scripts)
+		scripts, _ = json.Marshal(*patch.Scripts)
+	}
 	if err := errs.Err(); err != nil {
 		return Item{}, err
 	}
@@ -693,9 +717,9 @@ func (m *Module) UpdateItem(ctx context.Context, userID, itemID uuid.UUID, pre w
 			UPDATE collection_items SET
 				name = coalesce($2, name), description = coalesce($3, description), request = coalesce($4, request),
 				parent_id = CASE WHEN $5 THEN $6::uuid ELSE parent_id END, rank = CASE WHEN $5 THEN $7 ELSE rank END,
-				version = version + 1, updated_at = now()
+				scripts = coalesce($8, scripts), version = version + 1, updated_at = now()
 			WHERE id = $1 RETURNING `+itemColumns,
-			itemID, patch.Name, patch.Description, req, moved, parent, rank))
+			itemID, patch.Name, patch.Description, req, moved, parent, rank, scripts))
 		return err
 	})
 	if isModuleError(err) {
