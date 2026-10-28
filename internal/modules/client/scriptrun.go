@@ -77,12 +77,12 @@ func (m *Module) scriptChain(ctx context.Context, itemID uuid.UUID, own *Scripts
 		var cs Collection
 		rows, err := m.db.Query(ctx, `
 			WITH RECURSIVE up AS (
-				SELECT id, parent_id, collection_id, kind, name, scripts, 0 AS depth FROM collection_items WHERE id = $1
+				SELECT id, parent_id, collection_id, kind, name, scripts, request->'contract' AS contract, 0 AS depth FROM collection_items WHERE id = $1
 				UNION ALL
-				SELECT i.id, i.parent_id, i.collection_id, i.kind, i.name, i.scripts, up.depth + 1
+				SELECT i.id, i.parent_id, i.collection_id, i.kind, i.name, i.scripts, NULL, up.depth + 1
 				FROM collection_items i JOIN up ON i.id = up.parent_id
 			)
-			SELECT collection_id, kind, name, scripts FROM up ORDER BY depth DESC`, itemID)
+			SELECT collection_id, kind, name, scripts, contract FROM up ORDER BY depth DESC`, itemID)
 		if err != nil {
 			return Step{}, uuid.Nil, err
 		}
@@ -90,10 +90,11 @@ func (m *Module) scriptChain(ctx context.Context, itemID uuid.UUID, own *Scripts
 			collection uuid.UUID
 			kind, name string
 			scripts    Scripts
+			contract   *ContractRef
 		}
 		links, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (link, error) {
 			var l link
-			err := row.Scan(&l.collection, &l.kind, &l.name, &l.scripts)
+			err := row.Scan(&l.collection, &l.kind, &l.name, &l.scripts, &l.contract)
 			return l, err
 		})
 		if err != nil {
@@ -113,7 +114,7 @@ func (m *Module) scriptChain(ctx context.Context, itemID uuid.UUID, own *Scripts
 			path = append(path, l.name)
 		}
 		last := links[len(links)-1]
-		c.Name, c.Path = last.name, strings.Join(path, " / ")
+		c.Name, c.Path, c.Contract = last.name, strings.Join(path, " / "), last.contract
 		if own == nil {
 			own = &last.scripts
 		}

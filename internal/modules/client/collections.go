@@ -47,6 +47,11 @@ type Collection struct {
 	Version   int64
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	// ContractSpecID is the spec whose contract tests the collection
+	// holds, and ContractVersionID the version they were generated from
+	// last; uuid.Nil for other collections.
+	ContractSpecID    uuid.UUID
+	ContractVersionID uuid.UUID
 }
 
 // CollectionVariable is one of a collection's variables. They aren't
@@ -80,6 +85,9 @@ type SavedRequest struct {
 	Body    string        `json:"body"`
 	// Auth is nil for none.
 	Auth *Auth `json:"auth,omitempty"`
+	// Contract is the operation of a published spec version the request
+	// calls, whose responses are checked against it; nil for none.
+	Contract *ContractRef `json:"contract,omitempty"`
 }
 
 // Item kinds.
@@ -261,13 +269,21 @@ func checkRequest(errs *validate.Errors, r *SavedRequest) {
 		errs.Add("/request/body", "maxLength", "Keep a body of at most 10 MiB.")
 	}
 	r.Auth = checkAuth(errs, "/request/auth", r.Auth)
+	if c := r.Contract; c != nil {
+		c.Method = strings.ToUpper(strings.TrimSpace(c.Method))
+		if c.VersionID == uuid.Nil || c.Method == "" || len(c.Method) > 32 || !strings.HasPrefix(c.Path, "/") || len(c.Path) > 8192 {
+			errs.Add("/request/contract", "invalid", "Name a published version, a method and a path starting with /, or leave the contract out.")
+		}
+	}
 }
 
-const collectionColumns = `id, project_id, name, description, variables, scripts, version, created_at, updated_at`
+const collectionColumns = `id, project_id, name, description, variables, scripts, version, created_at, updated_at,
+	coalesce(contract_spec_id, '00000000-0000-0000-0000-000000000000'), coalesce(contract_version_id, '00000000-0000-0000-0000-000000000000')`
 
 func readCollection(row pgx.Row) (Collection, error) {
 	var c Collection
-	err := row.Scan(&c.ID, &c.ProjectID, &c.Name, &c.Description, &c.Variables, &c.Scripts, &c.Version, &c.CreatedAt, &c.UpdatedAt)
+	err := row.Scan(&c.ID, &c.ProjectID, &c.Name, &c.Description, &c.Variables, &c.Scripts, &c.Version, &c.CreatedAt, &c.UpdatedAt,
+		&c.ContractSpecID, &c.ContractVersionID)
 	if c.Variables == nil {
 		c.Variables = []CollectionVariable{}
 	}

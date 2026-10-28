@@ -280,7 +280,7 @@ func (m *Module) Start(ctx context.Context, userID, collectionID uuid.UUID, opts
 	if err != nil {
 		return Run{}, fmt.Errorf("start a run: %w", err)
 	}
-	ro := client.RunOptions{Iterations: iterations, Data: opts.Data, Environment: env.Values, Secrets: env.Secrets, Delay: opts.Delay, Bail: opts.Bail}
+	ro := client.RunOptions{Iterations: iterations, Data: opts.Data, Environment: env.Values, Secrets: env.Secrets, Delay: opts.Delay, Bail: opts.Bail, ProjectID: col.ProjectID}
 	m.wg.Add(1)
 	go func() {
 		defer m.wg.Done()

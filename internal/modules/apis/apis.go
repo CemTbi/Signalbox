@@ -68,6 +68,8 @@ type Module struct {
 	access Access
 	// checkTimeout bounds checking one document.
 	checkTimeout time.Duration
+	// contracts keeps the contract checkers of versions used last.
+	contracts checkers
 }
 
 // New returns the module.

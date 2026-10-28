@@ -94,7 +94,7 @@ func planOf(col Collection, items []Item, folderID uuid.UUID) *Plan {
 			}
 			p.Steps = append(p.Steps, Step{
 				ItemID: it.ID, Name: it.Name, Path: strings.Join(path, " / "),
-				Request: it.Request.toRunner(), Auth: it.Request.Auth, Chain: links,
+				Request: it.Request.toRunner(), Auth: it.Request.Auth, Chain: links, Contract: it.Request.Contract,
 			})
 		}
 	}

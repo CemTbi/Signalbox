@@ -40,8 +40,25 @@ type CollectionJSON struct {
 	Description string                   `json:"description,omitempty"`
 	Variables   []CollectionVariableJSON `json:"variables"`
 	Scripts     *ScriptsJSON             `json:"scripts,omitempty"`
-	CreatedAt   string                   `json:"createdAt"`
-	UpdatedAt   string                   `json:"updatedAt"`
+	// Contract says the collection holds a spec's contract tests.
+	Contract  *CollectionContractJSON `json:"contract,omitempty"`
+	CreatedAt string                  `json:"createdAt"`
+	UpdatedAt string                  `json:"updatedAt"`
+}
+
+// CollectionContractJSON is the spec a collection's contract tests come
+// from, and the version they were generated from last.
+type CollectionContractJSON struct {
+	SpecID    string `json:"specId"`
+	VersionID string `json:"versionId,omitempty"`
+}
+
+// ContractRefJSON is the operation of a published version a saved request
+// calls, whose responses are checked against it.
+type ContractRefJSON struct {
+	VersionID string `json:"versionId"`
+	Method    string `json:"method"`
+	Path      string `json:"path"`
 }
 
 // CollectionVariableJSON is a collection variable.
@@ -74,11 +91,12 @@ type SavedHeaderJSON struct {
 // SavedRequestJSON is a request as a collection keeps it. In lists it has
 // only the method and URL.
 type SavedRequestJSON struct {
-	Method  string            `json:"method"`
-	URL     string            `json:"url"`
-	Headers []SavedHeaderJSON `json:"headers,omitempty"`
-	Body    string            `json:"body,omitempty"`
-	Auth    *AuthJSON         `json:"auth,omitempty"`
+	Method   string            `json:"method"`
+	URL      string            `json:"url"`
+	Headers  []SavedHeaderJSON `json:"headers,omitempty"`
+	Body     string            `json:"body,omitempty"`
+	Auth     *AuthJSON         `json:"auth,omitempty"`
+	Contract *ContractRefJSON  `json:"contract,omitempty"`
 }
 
 // ItemJSON is a folder or request in API responses.
@@ -104,6 +122,12 @@ func collectionJSON(c client.Collection) CollectionJSON {
 	for i, v := range c.Variables {
 		out.Variables[i] = CollectionVariableJSON(v)
 	}
+	if c.ContractSpecID != uuid.Nil {
+		out.Contract = &CollectionContractJSON{SpecID: id.Format(id.Spec, c.ContractSpecID)}
+		if c.ContractVersionID != uuid.Nil {
+			out.Contract.VersionID = id.Format(id.Version, c.ContractVersionID)
+		}
+	}
 	return out
 }
 
@@ -117,6 +141,9 @@ func itemJSON(it client.Item) ItemJSON {
 	}
 	if r := it.Request; r != nil {
 		out.Request = &SavedRequestJSON{Method: r.Method, URL: r.URL, Body: r.Body, Auth: authJSON(r.Auth)}
+		if c := r.Contract; c != nil {
+			out.Request.Contract = &ContractRefJSON{VersionID: id.Format(id.Version, c.VersionID), Method: c.Method, Path: c.Path}
+		}
 		for _, h := range r.Headers {
 			out.Request.Headers = append(out.Request.Headers, SavedHeaderJSON(h))
 		}
@@ -129,6 +156,11 @@ func savedRequest(r *SavedRequestJSON) *client.SavedRequest {
 		return nil
 	}
 	out := &client.SavedRequest{Method: r.Method, URL: r.URL, Body: r.Body, Headers: []client.SavedHeader{}, Auth: authIn(r.Auth)}
+	if c := r.Contract; c != nil {
+		out.Contract = &client.ContractRef{Method: c.Method, Path: c.Path}
+		// An ID that isn't a version's fails the request's validation.
+		out.Contract.VersionID, _ = id.Parse(id.Version, c.VersionID)
+	}
 	for _, h := range r.Headers {
 		out.Headers = append(out.Headers, client.SavedHeader(h))
 	}

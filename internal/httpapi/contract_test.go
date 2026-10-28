@@ -167,6 +167,7 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *har
 	scriptPool := scripts.NewPool(1, scripts.Options{Send: sender.ScriptSender(), MaxMemory: -1})
 	t.Cleanup(scriptPool.Close)
 	sender.UseScripts(scriptPool)
+	sender.UseContracts(mods, mods)
 	runs := testruns.New(pool, logger, ws, sender)
 	t.Cleanup(runs.Close)
 	srv.Config.Handler = httpapi.NewHandler(httpapi.Deps{
@@ -183,6 +184,7 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *har
 		Variables:   sender,
 		Imports:     sender,
 		Runs:        runs,
+		Contracts:   sender,
 		PublicURL:   public,
 	})
 	srv.StartTLS()

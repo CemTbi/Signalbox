@@ -21,8 +21,9 @@ import (
 // request, a run on the server and an offline run of the CLI behave the
 // same. See docs/adr/0033-collection-runs.md.
 type Engine struct {
-	runner  Runner
-	scripts ScriptPool
+	runner    Runner
+	scripts   ScriptPool
+	contracts ContractChecker
 	// slots bounds how many sets of scripts run at once.
 	slots chan struct{}
 }
@@ -36,7 +37,7 @@ func NewEngine(run Runner, pool ScriptPool) *Engine {
 
 // Engine returns the engine the module sends with.
 func (m *Module) Engine() *Engine {
-	return &Engine{runner: m.runner, scripts: m.scripts, slots: m.scriptSlots}
+	return &Engine{runner: m.runner, scripts: m.scripts, slots: m.scriptSlots, contracts: m.contracts}
 }
 
 // CanSend reports whether the engine has a runner to send with.
@@ -61,6 +62,9 @@ type Step struct {
 	Auth *Auth
 	// Chain is the scripts that run around the request, outermost first.
 	Chain []Link
+	// Contract is the spec operation whose responses are checked; nil
+	// for none.
+	Contract *ContractRef
 }
 
 func (s Step) chain() chain {
@@ -105,6 +109,9 @@ type RunOptions struct {
 	Delay time.Duration
 	// Bail stops the run at the first step that fails.
 	Bail bool
+	// ProjectID is the project the run is in, whose spec versions
+	// contract tests are checked against.
+	ProjectID uuid.UUID
 }
 
 // StepResult is a step as it ran, with secrets masked.
@@ -159,6 +166,7 @@ type state struct {
 	// stored are the secrets' values before any script changed them.
 	stored  map[string]string
 	secrets []string
+	project uuid.UUID
 }
 
 // stepOut is a step as it ran, unmasked.
@@ -188,7 +196,7 @@ func (e *Engine) Run(ctx context.Context, p Plan, opts RunOptions, emit func(Ste
 	}
 	st := &state{
 		vars:       scripts.Variables{Collection: anyMap(p.Variables), Environment: anyMap(opts.Environment)},
-		iterations: iterations, secrets: opts.Secrets, stored: map[string]string{},
+		iterations: iterations, secrets: opts.Secrets, stored: map[string]string{}, project: opts.ProjectID,
 	}
 	for _, k := range opts.Secrets {
 		st.stored[k] = opts.Environment[k]
@@ -311,6 +319,12 @@ func (e *Engine) step(ctx context.Context, st *state, s Step) (stepOut, error) {
 			Message: fmt.Sprintf("The pre-request script of %s failed, so the request wasn't sent. %s: %s", last.From, last.Name, last.Message)}
 	}
 	out.req = req
+	if s.Contract != nil && e.contracts != nil && out.result.Response != nil {
+		if run == nil {
+			run = &scriptRun{vars: st.vars}
+		}
+		run.outcome.Tests = append(run.outcome.Tests, e.checkContract(ctx, st.project, *s.Contract, req, out.result.Response)...)
+	}
 	if run != nil {
 		out.scripts, out.next = &run.outcome, run.next
 		// Local values last for one request.

@@ -204,3 +204,12 @@ describe("saved requests", () => {
     expect(folders(items).map(({ item, depth }) => `${item.id}:${depth}`)).toEqual(["a:0", "b:1", "c:2", "d:0"]);
   });
 });
+
+describe("contract tests", () => {
+  it("keep their operation when saved from the editor", () => {
+    const contract = { versionId: "ver_1", method: "GET", path: "/orders/{orderId}" };
+    const d = fromSaved({ method: "GET", url: "{{baseUrl}}/orders/{{orderId}}", contract });
+    expect(toSaved(d).contract).toEqual(contract);
+    expect(toSaved(fromSaved({ method: "GET", url: "/x" })).contract).toBeUndefined();
+  });
+});
