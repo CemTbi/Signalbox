@@ -1,6 +1,6 @@
 module github.com/CemTbi/Signalbox
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.49.0
