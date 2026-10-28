@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -169,6 +171,17 @@ func Ext(format string) string {
 		return "xml"
 	}
 	return format
+}
+
+var unsafeFileChars = regexp.MustCompile(`[^a-z0-9._-]+`)
+
+// Slug turns a run's name into a file name's stem, such as shop-api.
+func Slug(name string) string {
+	slug := strings.Trim(unsafeFileChars.ReplaceAllString(strings.ToLower(name), "-"), "-.")
+	if slug == "" {
+		return "run"
+	}
+	return slug
 }
 
 // Write writes the run in a format.

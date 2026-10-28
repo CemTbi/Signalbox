@@ -397,7 +397,7 @@ func (m *Module) History(ctx context.Context, userID, projectID uuid.UUID, p wor
 		after = p.After
 	}
 	rows, err := m.db.Query(ctx, `
-		SELECT id, project_id, method, url, coalesce(status, 0), coalesce(record->'failure'->>'message', ''), duration_us, sent_at
+		SELECT id, project_id, method, url, coalesce(status, 0), coalesce(record->'failure'->>'message', record->'failure'->>'Message', ''), duration_us, sent_at
 		FROM request_history
 		WHERE project_id = $1 AND user_id = $2 AND ($3::uuid IS NULL OR id < $3) AND sent_at > now() - $4 * interval '1 day'
 		ORDER BY id DESC LIMIT $5`, projectID, userID, after, historyDays, limit+1)

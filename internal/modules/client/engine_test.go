@@ -264,3 +264,35 @@ func TestPlanRun(t *testing.T) {
 		t.Errorf("viewer: %v", err)
 	}
 }
+
+func TestPlanCollection(t *testing.T) {
+	c := convert.Collection{
+		Name:      "Shop API",
+		Variables: []convert.Variable{{Key: "base", Value: "https://api.example.com"}},
+		Scripts:   convert.Scripts{PreRequest: "// collection"},
+		Items: []convert.Item{
+			{Name: "Health", Request: &convert.Request{Method: "GET", URL: "{{base}}/health", Auth: &convert.Auth{Type: client.AuthBearer, Token: "{{token}}"}}},
+			{Name: "Orders", Items: []convert.Item{
+				{Name: "Create", Request: &convert.Request{Method: "POST", URL: "{{base}}/orders", Headers: []convert.Header{{Key: "X-On", Value: "1", Enabled: true}, {Key: "X-Off", Value: "1"}}}},
+				{Name: "Refunds", Items: []convert.Item{{Name: "Refund", Request: &convert.Request{Method: "POST", URL: "{{base}}/refunds"}}}},
+			}},
+		},
+	}
+	p, err := client.PlanCollection(c, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Steps) != 3 || p.Steps[2].Path != "Orders / Refunds" || len(p.Steps[2].Chain) != 4 || p.Variables["base"] == "" {
+		t.Errorf("plan = %+v", p)
+	}
+	if a := p.Steps[0].Auth; a == nil || a.Token != "{{token}}" || len(p.Steps[1].Request.Headers) != 1 {
+		t.Errorf("health auth = %+v, create headers = %v", a, p.Steps[1].Request.Headers)
+	}
+	p, err = client.PlanCollection(c, "Refunds")
+	if err != nil || p.Name != "Refunds" || len(p.Steps) != 1 || p.Steps[0].Path != "Orders / Refunds" || len(p.Steps[0].Chain) != 4 {
+		t.Errorf("folder plan = %+v, %v", p, err)
+	}
+	if _, err := client.PlanCollection(c, "Health"); !errors.Is(err, client.ErrNoFolder) {
+		t.Errorf("a request isn't a folder: %v", err)
+	}
+}
