@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# A GitLab CI job template that runs API test suites with
+# `signalbox test run`, and shows the results in merge requests through
+# its JUnit report. See ci/gitlab/README.md.
+#
+#   include:
+#     - remote: https://raw.githubusercontent.com/CemTbi/Signalbox/v0.2.0/ci/gitlab/signalbox-test.yml
+#
+#   api-tests:
+#     extends: .signalbox-test
+#     variables:
+#       SIGNALBOX_COLLECTION: tests/shop.postman_collection.json
+#       SIGNALBOX_ENVIRONMENT: tests/staging.postman_environment.json
+
+.signalbox-test:
+  image: alpine:3.22
+  variables:
+    # The CLI version to install, such as v0.2.0, or latest.
+    SIGNALBOX_VERSION: latest
+    SIGNALBOX_REPOSITORY: CemTbi/Signalbox
+    # Offline: a Postman collection file, and optionally an environment
+    # file. On a server: SIGNALBOX_COLLECTION_ID, with SIGNALBOX_SERVER and
+    # SIGNALBOX_TOKEN set as masked CI/CD variables, and an environment's
+    # ID, name or slug in SIGNALBOX_ENVIRONMENT.
+    SIGNALBOX_COLLECTION: ""
+    SIGNALBOX_COLLECTION_ID: ""
+    SIGNALBOX_ENVIRONMENT: ""
+    # A CSV or JSON data file, a folder to run alone, and the iterations.
+    SIGNALBOX_DATA: ""
+    SIGNALBOX_FOLDER: ""
+    SIGNALBOX_ITERATIONS: ""
+    # More flags for signalbox test run, such as --bail.
+    SIGNALBOX_ARGS: ""
+    SIGNALBOX_OUT: signalbox-reports
+  before_script:
+    - |
+      set -eu
+      apk add --no-cache curl > /dev/null
+      case "$(uname -m)" in
+        x86_64) arch=amd64 ;;
+        aarch64) arch=arm64 ;;
+        *) echo "Signalbox has no CLI for $(uname -m)." >&2; exit 1 ;;
+      esac
+      tag="$SIGNALBOX_VERSION"
+      if [ "$tag" = latest ]; then
+        tag="$(curl -fsSL "https://api.github.com/repos/$SIGNALBOX_REPOSITORY/releases/latest" | sed -n 's/^  "tag_name": "\(.*\)",$/\1/p')"
+      fi
+      archive="signalbox_${tag#v}_linux_${arch}.tar.gz"
+      dir="$(mktemp -d)"
+      base="https://github.com/$SIGNALBOX_REPOSITORY/releases/download/$tag"
+      curl -fsSL -o "$dir/$archive" "$base/$archive"
+      curl -fsSL -o "$dir/checksums.txt" "$base/checksums.txt"
+      # Only the archive that checksums.txt names, with its checksum.
+      (cd "$dir" && grep -F "  $archive" checksums.txt | sha256sum -c -)
+      tar -xzf "$dir/$archive" -C "$dir"
+      install "$dir/signalbox" /usr/local/bin/signalbox
+      signalbox version
+  script:
+    - |
+      set -- test run --reporter cli,junit --out "$SIGNALBOX_OUT"
+      if [ -n "$SIGNALBOX_COLLECTION" ]; then set -- "$@" "$SIGNALBOX_COLLECTION"; fi
+      if [ -n "$SIGNALBOX_COLLECTION_ID" ]; then set -- "$@" --collection "$SIGNALBOX_COLLECTION_ID"; fi
+      if [ -n "$SIGNALBOX_ENVIRONMENT" ]; then set -- "$@" --environment "$SIGNALBOX_ENVIRONMENT"; fi
+      if [ -n "$SIGNALBOX_DATA" ]; then set -- "$@" --data "$SIGNALBOX_DATA"; fi
+      if [ -n "$SIGNALBOX_FOLDER" ]; then set -- "$@" --folder "$SIGNALBOX_FOLDER"; fi
+      if [ -n "$SIGNALBOX_ITERATIONS" ]; then set -- "$@" --iterations "$SIGNALBOX_ITERATIONS"; fi
+      # SIGNALBOX_ARGS splits on spaces, as flags do.
+      # shellcheck disable=SC2086
+      signalbox "$@" $SIGNALBOX_ARGS
+  artifacts:
+    when: always
+    paths:
+      - $SIGNALBOX_OUT/
+    reports:
+      junit: $SIGNALBOX_OUT/*.xml

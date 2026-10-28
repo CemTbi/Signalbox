@@ -1,0 +1,183 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Runs API test suites with `signalbox test run`, and reports them on the
+# job's page. See actions/test/README.md and docs/adr/0036-ci-templates.md.
+
+name: Signalbox test
+description: Run a collection's requests and tests, offline from a Postman file or on a Signalbox server, with annotations, a job summary and JUnit reports.
+author: Signalbox
+branding:
+  icon: check-circle
+  color: blue
+
+inputs:
+  collection:
+    description: Offline, a Postman collection file (v2.1 or v2.0) to run on the runner. Give this or collection-id.
+    required: false
+  environment:
+    description: Offline, a Postman environment file. On a server, an environment's ID, name or slug.
+    required: false
+  env-vars:
+    description: Offline, environment variables to set, one key=value per line. Use secrets for credentials.
+    required: false
+  data:
+    description: A CSV or JSON data file; the requests run once per row.
+    required: false
+  folder:
+    description: Run only this folder. Offline, its name; on a server, its ID or name.
+    required: false
+  iterations:
+    description: How many times to run the requests. Empty runs them once per data row, or once.
+    required: false
+  delay-request:
+    description: Milliseconds to wait between requests.
+    required: false
+  bail:
+    description: Stop at the first request that fails or has a failing test.
+    required: false
+    default: "false"
+  server:
+    description: The Signalbox server to run a stored collection on.
+    required: false
+  token:
+    description: A Signalbox personal access token for the server. Pass it from a secret.
+    required: false
+  collection-id:
+    description: On a server, the collection to run, such as col_01j9z3w5y7a9c1e3g5j7m9p1r3. Give this or collection.
+    required: false
+  reporters:
+    description: Reporters, comma-separated, from cli, github, junit, json and html.
+    required: false
+    default: cli,github,junit
+  out:
+    description: The directory for report files.
+    required: false
+    default: signalbox-reports
+  upload-reports:
+    description: Upload the report files as an artifact of the run.
+    required: false
+    default: "true"
+  artifact-name:
+    description: The reports artifact's name. Give each job of a matrix its own. Default signalbox-reports-<job>.
+    required: false
+  version:
+    description: The signalbox CLI version to install, such as v0.2.0, or latest.
+    required: false
+    default: latest
+  repository:
+    description: The GitHub repository the CLI is released from.
+    required: false
+    default: CemTbi/Signalbox
+  github-token:
+    description: A token that can read the repository's releases.
+    required: false
+    default: ${{ github.token }}
+  signalbox-path:
+    description: A signalbox binary to use instead of installing one.
+    required: false
+
+outputs:
+  exit-code:
+    description: The exit code of signalbox test run. 0 passed, 1 failed, 2 couldn't run.
+    value: ${{ steps.run.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install the signalbox CLI
+      id: install
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        VERSION: ${{ inputs.version }}
+        REPOSITORY: ${{ inputs.repository }}
+        SIGNALBOX_PATH: ${{ inputs.signalbox-path }}
+      run: |
+        set -euo pipefail
+        if [ -n "$SIGNALBOX_PATH" ]; then
+          echo "bin=$SIGNALBOX_PATH" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        case "$RUNNER_OS" in
+          Linux) os=linux ext=tar.gz ;;
+          macOS) os=darwin ext=tar.gz ;;
+          Windows) os=windows ext=zip ;;
+          *) echo "::error::Signalbox has no CLI for $RUNNER_OS runners." >&2; exit 1 ;;
+        esac
+        case "$RUNNER_ARCH" in
+          X64) arch=amd64 ;;
+          ARM64) arch=arm64 ;;
+          *) echo "::error::Signalbox has no CLI for $RUNNER_ARCH runners." >&2; exit 1 ;;
+        esac
+        tag="$VERSION"
+        if [ "$tag" = latest ]; then
+          tag="$(gh release view --repo "$REPOSITORY" --json tagName --jq .tagName)"
+        fi
+        archive="signalbox_${tag#v}_${os}_${arch}.${ext}"
+        dir="$RUNNER_TEMP/signalbox-$tag"
+        mkdir -p "$dir"
+        cd "$dir"
+        gh release download "$tag" --repo "$REPOSITORY" --pattern "$archive" --pattern checksums.txt --clobber
+        # Only the archive that checksums.txt names, with its checksum.
+        grep -F "  $archive" checksums.txt > archive.sha256
+        if command -v sha256sum > /dev/null; then sha256sum -c archive.sha256; else shasum -a 256 -c archive.sha256; fi
+        if [ "$ext" = zip ]; then unzip -oq "$archive"; else tar -xzf "$archive"; fi
+        bin="$dir/signalbox"
+        if [ "$os" = windows ]; then bin="$bin.exe"; fi
+        echo "bin=$bin" >> "$GITHUB_OUTPUT"
+        "$bin" version
+
+    - name: Run the tests
+      id: run
+      shell: bash
+      env:
+        SIGNALBOX: ${{ steps.install.outputs.bin }}
+        SIGNALBOX_TOKEN: ${{ inputs.token }}
+        COLLECTION: ${{ inputs.collection }}
+        COLLECTION_ID: ${{ inputs.collection-id }}
+        SERVER: ${{ inputs.server }}
+        ENVIRONMENT: ${{ inputs.environment }}
+        ENV_VARS: ${{ inputs.env-vars }}
+        DATA: ${{ inputs.data }}
+        FOLDER: ${{ inputs.folder }}
+        ITERATIONS: ${{ inputs.iterations }}
+        DELAY: ${{ inputs.delay-request }}
+        BAIL: ${{ inputs.bail }}
+        REPORTERS: ${{ inputs.reporters }}
+        OUT: ${{ inputs.out }}
+      run: |
+        set -uo pipefail
+        args=(test run --reporter "$REPORTERS" --out "$OUT")
+        if [ -n "$COLLECTION" ]; then args+=("$COLLECTION"); fi
+        if [ -n "$COLLECTION_ID" ]; then args+=(--collection "$COLLECTION_ID"); fi
+        if [ -n "$SERVER" ]; then args+=(--server "$SERVER"); fi
+        if [ -n "$ENVIRONMENT" ]; then args+=(--environment "$ENVIRONMENT"); fi
+        if [ -n "$DATA" ]; then args+=(--data "$DATA"); fi
+        if [ -n "$FOLDER" ]; then args+=(--folder "$FOLDER"); fi
+        if [ -n "$ITERATIONS" ]; then args+=(--iterations "$ITERATIONS"); fi
+        if [ -n "$DELAY" ]; then args+=(--delay-request "$DELAY"); fi
+        if [ "$BAIL" = true ]; then args+=(--bail); fi
+        while IFS= read -r line; do
+          line="${line%$'\r'}"
+          if [ -n "$line" ]; then args+=(--env-var "$line"); fi
+        done <<< "$ENV_VARS"
+        code=0
+        "$SIGNALBOX" "${args[@]}" || code=$?
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+
+    - name: Upload the reports
+      if: ${{ always() && inputs.upload-reports == 'true' && hashFiles(format('{0}/**', inputs.out)) != '' }}
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ inputs.artifact-name || format('signalbox-reports-{0}', github.job) }}
+        path: ${{ inputs.out }}
+        if-no-files-found: ignore
+
+    - name: Fail when the tests failed
+      if: ${{ steps.run.outputs.exit-code != '0' }}
+      shell: bash
+      env:
+        CODE: ${{ steps.run.outputs.exit-code }}
+      run: |
+        if [ "$CODE" = 1 ]; then echo "::error::Some requests or tests failed. The job summary lists them."; else echo "::error::signalbox test run couldn't run (exit code $CODE). Its output above says why."; fi
+        exit 1

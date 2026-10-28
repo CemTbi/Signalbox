@@ -344,3 +344,47 @@ func runErr(t *testing.T, args ...string) (int, string, string, error) {
 	err := cmd.ExecuteContext(context.Background())
 	return cli.ExitCode(err), out.String(), errOut.String(), err
 }
+
+func TestTestRunGitHubReporter(t *testing.T) {
+	shop := shopAPI(t)
+	dir := t.TempDir()
+	col := writeFile(t, dir, "shop.json", shopCollection(shop.URL))
+	summary := filepath.Join(dir, "summary.md")
+	if err := os.WriteFile(summary, []byte("Earlier step\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, stdout, _ := runEnv(t, map[string]string{"GITHUB_STEP_SUMMARY": summary}, "test", "run", col, "--folder", "Orders", "-r", "github")
+	if code != cli.ExitFindings {
+		t.Fatalf("exit %d\n%s", code, stdout)
+	}
+	// Annotations, without the cli reporter's lines.
+	want := "::error title=GET Orders / List orders::ok: AssertionError: expected response to have status code 200 but got 500\n"
+	if stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+	b, err := os.ReadFile(summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	for _, w := range []string{"Earlier step\n### ❌ Orders: Failed", "| 1 | 1 | 1 | 1 |", "- **GET Orders / List orders** · 500", "  - ✗ ok: AssertionError"} {
+		if !strings.Contains(got, w) {
+			t.Errorf("summary lacks %q:\n%s", w, got)
+		}
+	}
+
+	// Names can't inject Markdown, HTML or workflow commands.
+	hostile := writeFile(t, dir, "hostile.json", map[string]any{
+		"info": map[string]string{"name": "<b>x</b> | y", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+		"item": []map[string]any{{"name": "a::b,\nc", "request": map[string]any{"method": "GET", "url": shop.URL + "/orders"},
+			"event": test(`pm.test("[link](https://evil.test)", () => pm.response.to.be.ok);`)}},
+	})
+	_, stdout, _ = runEnv(t, map[string]string{"GITHUB_STEP_SUMMARY": summary}, "test", "run", hostile, "-r", "github")
+	if !strings.HasPrefix(stdout, "::error title=GET a%3A%3Ab%2C%0Ac::") {
+		t.Errorf("annotation = %q", stdout)
+	}
+	b, _ = os.ReadFile(summary)
+	if strings.Contains(string(b), "<b>") || strings.Contains(string(b), "[link](") || !strings.Contains(string(b), `\[link\]`) {
+		t.Errorf("summary isn't escaped:\n%s", b)
+	}
+}

@@ -9,7 +9,7 @@ Signalbox is an open-source platform for the whole life of an HTTP API. You desi
 - **`signalbox lint`** validates Swagger 2.0 and OpenAPI 3.0, 3.1 and 3.2 documents against the official JSON Schemas, resolves every `$ref`, and checks the recommended and OWASP API Security rules. Each finding has an exact line and column, and the exit code tells CI whether to fail.
 - **`signalbox diff`** compares two versions of an API and reports which changes break clients, such as a removed operation or a parameter that became required, with the operation and line of each.
 - **`signalbox codegen`** generates a TypeScript client on `fetch`, a Go client, or a Go server stub on `net/http` from a document, and warns about the OpenAPI 3.1 features the code can't express.
-- **`signalbox test run`** runs a Postman collection's requests and tests offline, like Newman, or a collection stored on a Signalbox server, there. It writes JUnit, JSON and HTML reports, and its exit code gates CI.
+- **`signalbox test run`** runs a Postman collection's requests and tests offline, like Newman, or a collection stored on a Signalbox server, there. It writes JUnit, JSON and HTML reports, and its exit code gates CI. A [GitHub Action](actions/test) and a [GitLab CI include](ci/gitlab) run it in pull and merge requests.
 - **`signalbox-server`** stores its data in PostgreSQL and migrates the schema at startup. A new installation asks for a setup code from the server log and creates the first admin account. People sign in with a password or through their organization's OpenID Connect provider; workspaces have owners, admins, editors and viewers, who bring others in with invitation links; each project gets development, staging and production environments, a canvas, and services whose OpenAPI specs are checked, kept in revisions, published as versions and served as hosted mocks. Spec checks run in the browser and over the API.
 - **The REST API** in [`api/openapi.yaml`](api/openapi.yaml) covers everything the web app does. Errors are RFC 9457 problem documents, edits use ETags, and lists page with cursors.
 
@@ -57,6 +57,7 @@ To work on Signalbox itself, see [CONTRIBUTING.md](CONTRIBUTING.md). With `make`
 | `web/` | The React web app |
 | `e2e/` | End-to-end tests that drive Signalbox in a browser |
 | `deploy/` | Docker image and Docker Compose files |
+| `actions/test`, `ci/gitlab` | The GitHub Action and GitLab CI include that run test suites |
 | `docs/` | Architecture decisions, RFCs and product requirements |
 
 ## Documentation
