@@ -216,9 +216,6 @@ func (a *api) clientError(w http.ResponseWriter, r *http.Request, what string, e
 	case errors.Is(err, client.ErrForbidden):
 		writeProblem(w, r, http.StatusForbidden, "permission-denied",
 			"Your role in this workspace doesn't allow sending requests. Ask a workspace owner or admin to make you an editor.")
-	case errors.Is(err, client.ErrScriptsUnavailable):
-		writeProblem(w, r, http.StatusServiceUnavailable, "scripts-unavailable",
-			"This server can't run scripts, because it doesn't run the runner role. Run signalbox-server with --roles=all.")
 	case errors.Is(err, client.ErrRunnerUnavailable):
 		writeProblem(w, r, http.StatusServiceUnavailable, "runner-unavailable",
 			"This server doesn't run the runner role, which sends requests. Run signalbox-server with --roles=all.")

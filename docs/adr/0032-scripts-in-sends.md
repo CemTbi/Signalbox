@@ -26,7 +26,7 @@ The request's own scripts are the editor's, so unsaved edits run. Without them, 
 
 **`pm.sendRequest` goes through the runner**, so it reaches only what the egress policy allows ([ADR-0016](0016-runner-egress.md)). It isn't kept in history.
 
-**Where scripts run, and how many.** Scripts run where requests are sent: in the process with the runner role. A pool keeps two sessions warm. At most four sends run scripts at once, because the memory watchdog watches the whole process (ADR-0017), so fewer scripts at once keep it accurate. A process without the runner role answers `scripts-unavailable`.
+**Where scripts run, and how many.** Scripts run where requests are sent: in the process with the runner role. A pool keeps two sessions warm. At most four sends run scripts at once, because the memory watchdog watches the whole process (ADR-0017), so fewer scripts at once keep it accurate. A process without the runner role can't send at all, so it answers `runner-unavailable`, as for any send.
 
 **Editing.** The editor has a Scripts tab with the request's pre-request and test scripts. Saving keeps them with the request (`scripts` on items). The response view has Tests and Console tabs, and shows script errors above them.
 

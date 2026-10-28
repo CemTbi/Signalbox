@@ -238,8 +238,9 @@ type scriptRun struct {
 
 // startScripts takes a session, waiting for a slot. release gives it back.
 func (m *Module) startScripts(ctx context.Context, c chain, vars scripts.Variables) (*scriptRun, func(), error) {
+	// Scripts run beside the runner, which always gets a pool.
 	if m.scripts == nil {
-		return nil, nil, ErrScriptsUnavailable
+		return nil, nil, ErrRunnerUnavailable
 	}
 	select {
 	case m.scriptSlots <- struct{}{}:
@@ -254,9 +255,6 @@ func (m *Module) startScripts(ctx context.Context, c chain, vars scripts.Variabl
 	}
 	return &scriptRun{m: m, session: s, chain: c, vars: vars}, release, nil
 }
-
-// ErrScriptsUnavailable means this server can't run scripts.
-var ErrScriptsUnavailable = errors.New("client: scripts can't run on this server")
 
 func (r *scriptRun) info(event string) scripts.Info {
 	info := scripts.Info{EventName: event, IterationCount: 1, RequestName: r.chain.name}

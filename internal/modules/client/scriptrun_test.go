@@ -141,7 +141,7 @@ func TestPreRequestScriptsCanStopASend(t *testing.T) {
 func TestScriptsNeedAPool(t *testing.T) {
 	f := setup(t)
 	_, err := f.mod.Send(f.ctx, f.owner, f.project, runner.Request{Method: "GET", URL: "https://a.test/"}, client.SendOptions{Scripts: &client.Scripts{Test: "pm.test('x', () => {})"}})
-	if !errors.Is(err, client.ErrScriptsUnavailable) {
+	if !errors.Is(err, client.ErrRunnerUnavailable) {
 		t.Errorf("err = %v", err)
 	}
 	// Empty scripts need none.
