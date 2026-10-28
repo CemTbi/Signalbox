@@ -92,7 +92,7 @@ func writeJUnit(w io.Writer, r Run) error {
 		}
 		// A pre-request script that failed is reported once, as its
 		// script error below, not again as the request's failure.
-		if f := s.Failure; f != nil && !(f.Code == "script" && s.Scripts != nil && len(s.Scripts.Errors) > 0) {
+		if f := s.Failure; f != nil && (f.Code != "script" || s.Scripts == nil || len(s.Scripts.Errors) == 0) {
 			c := junitCase{Name: s.Method + " " + s.URL, Time: seconds(s.Duration)}
 			if f.Code == "skipped" {
 				c.Skipped = &junitProblem{Message: f.Message}
