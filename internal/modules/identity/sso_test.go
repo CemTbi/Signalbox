@@ -37,6 +37,7 @@ func newSSOServiceBeforeSetup(t *testing.T, change func(*identity.SSOConfig)) (*
 	if change != nil {
 		change(&cfg)
 	}
+	idp.RegisterRedirectURI(cfg.RedirectURL)
 	svc, err := identity.New(pool, slog.New(slog.NewTextHandler(io.Discard, nil)),
 		identity.Config{SetupCode: setupCode, Argon2: testArgon2, SSO: cfg})
 	if err != nil {

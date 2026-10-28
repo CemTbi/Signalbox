@@ -131,6 +131,7 @@ func newHarnessWithSSO(t *testing.T, idp *oidctest.Provider) *harness {
 			Issuer: idp.Issuer, ClientID: idp.ClientID, ClientSecret: idp.ClientSecret, Name: "Test IdP",
 			RedirectURL: public.JoinPath("api/v1/sso/callback").String(),
 		}
+		idp.RegisterRedirectURI(cfg.SSO.RedirectURL)
 	})
 }
 

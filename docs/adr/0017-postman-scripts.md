@@ -24,7 +24,7 @@ Spike 4 had to answer: how many real scripts run, what it costs per script, and 
 Library versions follow postman-sandbox 6.7.4. The exceptions:
 - **Security fixes:** crypto-js, ajv, moment and uuid are raised to releases in the same line that fix known advisories.
 - **License:** sax stays at 1.4.1, its last ISC-licensed release.
-- **faker:** `postman-collection` only needs it for `{{$random…}}` variables, which Signalbox resolves before a script runs, so it isn't bundled.
+- **faker:** `postman-collection` only needs it for `{{$random…}}` variables, which Signalbox resolves before a script runs, so it isn't bundled. An npm override puts a stub package in its place, so it isn't installed either.
 
 **How a script runs.** Each library loads the first time a script uses it. A session is one runtime that runs a collection's scripts one after another, as Postman does, so a helper one script stores can be used by the next. A session is never reused across runs or users. A pool keeps a few sessions started and warmed in the background, so a run doesn't wait for the libraries.
 
@@ -67,7 +67,7 @@ Measured on an AMD Ryzen 5 3600.
 
 - Imported collections keep working: 82% of real scripts ran as they are, and nearly all the rest stopped only because of the stand-in response.
 - The import report can name the few unsupported things exactly: `cheerio`, `URL` and modules outside the list above.
-- `npm audit` still lists faker through `postman-collection`'s dependencies. faker isn't in the bundle, so the shipped code isn't affected.
+- faker's advisories don't reach Signalbox: the stub in `sandbox/faker-stub` is all that is installed or bundled. An update of `postman-collection` keeps the stub, whatever faker version it asks for.
 - The memory watchdog is a backstop, not isolation. Scripts from people who don't trust each other must run in runner processes, and on Kubernetes in runner pods with memory limits, as the build plan says.
 - Updating a sandbox library means running `npm run build` in its folder. Renovate opens minor and patch updates only, and CI fails until the bundle is rebuilt.
 - `{{$random…}}` dynamic variables must be resolved in Go before a script runs.
