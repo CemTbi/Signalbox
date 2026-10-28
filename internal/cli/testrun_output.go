@@ -141,25 +141,36 @@ func stoppedWhy(stopped string) string {
 	return ""
 }
 
-// reporters reads --reporter: the cli reporter and the report files.
-func reporters(list string) (cliOut bool, files []string, err error) {
+// reporting is what --reporter asks for.
+type reporting struct {
+	cli, github bool
+	// files are the report files' formats.
+	files []string
+}
+
+// reporters reads --reporter: the cli and github reporters, and the
+// report files.
+func reporters(list string) (reporting, error) {
+	var r reporting
 	seen := map[string]bool{}
-	for _, r := range strings.Split(list, ",") {
-		r = strings.TrimSpace(r)
-		switch r {
+	for _, name := range strings.Split(list, ",") {
+		name = strings.TrimSpace(name)
+		switch name {
 		case "":
 		case "cli":
-			cliOut = true
+			r.cli = true
+		case "github":
+			r.github = true
 		case report.JUnit, report.JSON, report.HTML:
-			if !seen[r] {
-				files = append(files, r)
+			if !seen[name] {
+				r.files = append(r.files, name)
 			}
 		default:
-			return false, nil, fmt.Errorf("unknown reporter %q: use cli, junit, json or html", r)
+			return reporting{}, fmt.Errorf("unknown reporter %q: use cli, github, junit, json or html", name)
 		}
-		seen[r] = true
+		seen[name] = true
 	}
-	return cliOut, files, nil
+	return r, nil
 }
 
 // writeReports writes a report file per format into dir, named after the
@@ -188,4 +199,146 @@ func writeReports(dir, name string, formats []string, write func(w io.Writer, fo
 		paths = append(paths, path)
 	}
 	return paths, nil
+}
+
+// maxAnnotations bounds the annotations a run writes; GitHub shows only
+// the first few of a step anyway.
+const maxAnnotations = 50
+
+// githubReporter writes GitHub Actions annotations for failed requests as
+// they end, and a summary for the job's page.
+type githubReporter struct {
+	w           io.Writer
+	iterations  int
+	annotations int
+}
+
+// step annotates a failed request: why it got no response, and each
+// script error and failed test.
+func (g *githubReporter) step(s report.Step) {
+	if !s.Failed {
+		return
+	}
+	title := stepTitle(s, g.iterations)
+	note := func(msg string) {
+		if g.annotations >= maxAnnotations {
+			return
+		}
+		g.annotations++
+		fmt.Fprintf(g.w, "::error title=%s::%s\n", escapeProperty(title), escapeData(msg))
+	}
+	if f := s.Failure; f != nil && f.Code != "skipped" {
+		note(f.Message)
+	}
+	if sc := s.Scripts; sc != nil {
+		for _, e := range sc.Errors {
+			note(fmt.Sprintf("The %s script of %s stopped: %s: %s", eventName(e.Event), e.From, e.Name, e.Message))
+		}
+		for _, t := range sc.Tests {
+			if !t.Passed && !t.Skipped {
+				msg := t.Name
+				if t.Error != "" {
+					msg += ": " + t.Error
+				}
+				note(msg)
+			}
+		}
+	}
+}
+
+func eventName(event string) string {
+	if event == "prerequest" {
+		return "pre-request"
+	}
+	return "test"
+}
+
+func stepTitle(s report.Step, iterations int) string {
+	name := s.Method + " " + s.Name
+	if s.Path != "" {
+		name = s.Method + " " + s.Path + " / " + s.Name
+	}
+	if iterations > 1 {
+		name += fmt.Sprintf(" (iteration %d)", s.Iteration+1)
+	}
+	return name
+}
+
+// maxSummarySteps bounds the failed requests a summary lists.
+const maxSummarySteps = 50
+
+// githubSummary is the Markdown a run adds to its job's summary: the
+// outcome, the totals, and the failed requests with their failed tests.
+func githubSummary(r report.Run, failed []report.Step) string {
+	var b strings.Builder
+	mark := "✅"
+	if r.Status != report.Passed {
+		mark = "❌"
+	}
+	fmt.Fprintf(&b, "### %s %s: %s\n\n", mark, markdownText(r.Name), statusWord(r.Status))
+	t := r.Totals
+	b.WriteString("| Requests | Failed requests | Tests | Failed tests | Time |\n|---:|---:|---:|---:|---:|\n")
+	fmt.Fprintf(&b, "| %d | %d | %d | %d | %s |\n\n", t.Requests, t.FailedRequests, t.Tests, t.FailedTests, formatDuration(r.Duration))
+	if why := stoppedWhy(r.Stopped); why != "" {
+		b.WriteString(why + "\n\n")
+	}
+	for i, s := range failed {
+		if i == maxSummarySteps {
+			fmt.Fprintf(&b, "…and %d more failed requests.\n", len(failed)-maxSummarySteps)
+			break
+		}
+		fmt.Fprintf(&b, "- **%s**", markdownText(stepTitle(s, r.Iterations)))
+		if s.Response != nil {
+			fmt.Fprintf(&b, " · %d", s.Response.Status)
+		}
+		b.WriteString("\n")
+		if f := s.Failure; f != nil && f.Code != "skipped" {
+			fmt.Fprintf(&b, "  - %s\n", markdownText(f.Message))
+		}
+		if sc := s.Scripts; sc != nil {
+			for _, e := range sc.Errors {
+				fmt.Fprintf(&b, "  - The %s script of %s stopped: %s\n", eventName(e.Event), markdownText(e.From), markdownText(e.Name+": "+e.Message))
+			}
+			for _, x := range sc.Tests {
+				if !x.Passed && !x.Skipped {
+					line := markdownText(x.Name)
+					if x.Error != "" {
+						line += ": " + markdownText(x.Error)
+					}
+					fmt.Fprintf(&b, "  - ✗ %s\n", line)
+				}
+			}
+		}
+	}
+	b.WriteString("\n")
+	return b.String()
+}
+
+var markdownEscaper = strings.NewReplacer(`\`, `\\`, "`", "\\`", `*`, `\*`, `_`, `\_`, `[`, `\[`, `]`, `\]`, `|`, `\|`, "<", "&lt;", ">", "&gt;", "\r", " ", "\n", " ")
+
+// markdownText keeps text from a run, such as a test's name, from being
+// read as Markdown or HTML.
+func markdownText(s string) string {
+	if len(s) > 1000 {
+		s = s[:1000] + "…"
+	}
+	return markdownEscaper.Replace(s)
+}
+
+// appendSummary adds a run's summary to the file GitHub Actions shows on
+// the job's page, when there is one.
+func appendSummary(summary string) error {
+	path := os.Getenv("GITHUB_STEP_SUMMARY")
+	if path == "" {
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) //nolint:gosec // G703: the Actions runner names the file, for us to write.
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(f, summary)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }

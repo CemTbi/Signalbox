@@ -1,0 +1,24 @@
+{
+  "info": {
+    "name": "Status API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [{ "key": "baseUrl", "value": "http://127.0.0.1:8000" }],
+  "item": [
+    {
+      "name": "Status",
+      "request": { "method": "GET", "url": "{{baseUrl}}/api/status.json" },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"is ok\", () => pm.response.to.have.status(200));",
+              "pm.test(\"reports ok\", () => pm.expect(pm.response.json().status).to.eql(pm.environment.get(\"expected\") || \"ok\"));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

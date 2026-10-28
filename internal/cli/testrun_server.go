@@ -129,7 +129,7 @@ type serverStep struct {
 
 // runOnServer runs a collection stored on a Signalbox server, there.
 func runOnServer(ctx context.Context, stdout, stderr io.Writer, opts testRunOptions) error {
-	cliOut, files, err := checkCommon(opts)
+	rep, err := checkCommon(opts)
 	if err != nil {
 		return err
 	}
@@ -197,12 +197,22 @@ func runOnServer(ctx context.Context, stdout, stderr io.Writer, opts testRunOpti
 		return fail("start the run", err)
 	}
 	out := io.Discard
-	if cliOut {
+	if rep.cli {
 		out = stdout
 	}
 	fmt.Fprintf(stderr, "Run %s: %s\n", run.ID, base.JoinPath("runs", run.ID))
 	printer := newStepPrinter(out, run.Name, run.Environment, run.Iterations)
-	if err := follow(ctx, api, &run, printer.step); err != nil {
+	gh := &githubReporter{w: stdout, iterations: run.Iterations}
+	var failed []report.Step
+	if err := follow(ctx, api, &run, func(s report.Step) {
+		printer.step(s)
+		if rep.github {
+			gh.step(s)
+		}
+		if s.Failed {
+			failed = append(failed, s)
+		}
+	}); err != nil {
 		if ctx.Err() != nil {
 			// Ctrl-C cancels the run on the server too.
 			cancelCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
@@ -216,8 +226,15 @@ func runOnServer(ctx context.Context, stdout, stderr io.Writer, opts testRunOpti
 		}
 		return fail("follow the run", err)
 	}
-	printer.summary(report.Run{Status: run.Status, Totals: run.Totals, Duration: time.Duration(run.DurationMs * float64(time.Millisecond))}, stoppedWhy(run.Stopped))
-	paths, werr := writeReports(opts.out, run.Name, files, func(w io.Writer, format string) error {
+	done := report.Run{Name: run.Name, Status: run.Status, Totals: run.Totals, Iterations: run.Iterations, Stopped: run.Stopped,
+		Duration: time.Duration(run.DurationMs * float64(time.Millisecond))}
+	printer.summary(done, stoppedWhy(run.Stopped))
+	if rep.github {
+		if err := appendSummary(githubSummary(done, failed)); err != nil {
+			fmt.Fprintf(stderr, "signalbox: couldn't write the job summary: %v\n", err)
+		}
+	}
+	paths, werr := writeReports(opts.out, run.Name, rep.files, func(w io.Writer, format string) error {
 		resp, err := api.send(ctx, http.MethodGet, "/api/v1/runs/"+url.PathEscape(run.ID)+"/report?format="+format, nil)
 		if err != nil {
 			return err
