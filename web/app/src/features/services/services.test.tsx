@@ -25,6 +25,13 @@ describe("titleOf", () => {
     expect(titleOf(`info:\n  title: ${"x".repeat(101)}\n`)).toBeUndefined();
   });
 
+  it("reads quoted YAML titles up to their closing quote", () => {
+    expect(titleOf('info:\n  title: "Orders" # the public name\n')).toBe("Orders");
+    expect(titleOf("info:\n  title: 'Bob''s API'\n")).toBe("Bob's API");
+    expect(titleOf('info:\n  title: "Say \\"hi\\""\n')).toBe('Say "hi"');
+    expect(titleOf('info:\n  title: "Unclosed\n')).toBeUndefined();
+  });
+
   it("returns at once on input that made the old pattern backtrack", () => {
     const started = performance.now();
     expect(titleOf("info:\n" + "\t\t\n".repeat(50_000))).toBeUndefined();

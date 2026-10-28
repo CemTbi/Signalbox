@@ -180,12 +180,15 @@ function yamlTitle(text: string): string | undefined {
 
 /** A one-line YAML value without its quotes or comment, if it has 1 to 100 characters. */
 function scalar(raw: string): string | undefined {
-  let value = raw.trim();
-  const quote = value[0];
-  if ((quote === "'" || quote === '"') && value.length > 1 && value.endsWith(quote)) {
-    value = value.slice(1, -1);
-  } else if (value.includes(" #")) {
-    value = value.slice(0, value.indexOf(" #")).trimEnd();
+  const text = raw.trim();
+  let value: string | undefined;
+  if (text.startsWith("'")) {
+    // Inside single quotes, '' is a quote.
+    value = /^'((?:[^']|'')*)'/.exec(text)?.[1]?.replaceAll("''", "'");
+  } else if (text.startsWith('"')) {
+    value = /^"((?:[^"\\]|\\.)*)"/.exec(text)?.[1]?.replace(/\\(["\\])/g, "$1");
+  } else {
+    value = text.includes(" #") ? text.slice(0, text.indexOf(" #")).trimEnd() : text;
   }
-  return value.length > 0 && value.length <= 100 ? value : undefined;
+  return value && value.length <= 100 ? value : undefined;
 }
