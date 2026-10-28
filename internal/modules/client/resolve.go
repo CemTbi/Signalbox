@@ -165,7 +165,7 @@ type masker struct{ r *strings.Replacer }
 // newMasker masks the values of the secrets, and the extra values, such as
 // credentials an auth sent.
 func newMasker(values map[string]string, secrets []string, extra ...string) masker {
-	vals := make([]string, 0, len(secrets)+len(extra))
+	var vals []string
 	for _, s := range secrets {
 		if v := values[s]; v != "" {
 			vals = append(vals, v)
@@ -182,7 +182,7 @@ func newMasker(values map[string]string, secrets []string, extra ...string) mask
 	// Longer values first, so a secret inside another doesn't leave the
 	// rest of the longer one behind.
 	slices.SortFunc(vals, func(a, b string) int { return cmp.Compare(len(b), len(a)) })
-	pairs := make([]string, 0, 2*len(vals))
+	var pairs []string
 	for _, v := range vals {
 		pairs = append(pairs, v, redacted)
 	}

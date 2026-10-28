@@ -44,6 +44,7 @@ type Provider struct {
 	jwks   jose.JSONWebKeySet
 
 	mu                  sync.Mutex
+	redirectURI         string
 	next                Identity
 	codes               map[string]grant
 	tokens              map[string]Identity
@@ -88,6 +89,15 @@ func New(tb testing.TB) *Provider {
 	tb.Cleanup(srv.Close)
 	p.Issuer = srv.URL
 	return p
+}
+
+// RegisterRedirectURI registers the client's redirect URI, as registering a
+// client at a real provider does. Authorizations send people back only to
+// that exact address.
+func (p *Provider) RegisterRedirectURI(uri string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.redirectURI = uri
 }
 
 // SignInAs chooses who the next authorizations sign in.
@@ -143,23 +153,25 @@ func (p *Provider) authorize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the openid scope is required", http.StatusBadRequest)
 		return
 	}
-	code := rand.Text()
 	p.mu.Lock()
-	p.codes[code] = grant{identity: p.next, nonce: q.Get("nonce"), challenge: q.Get("code_challenge"), redirectURI: q.Get("redirect_uri")}
+	registered := p.redirectURI
 	p.mu.Unlock()
-
-	// Like a real provider, only send people back to a registered
-	// address: Signalbox's callback path.
-	back, err := url.Parse(q.Get("redirect_uri"))
-	if err != nil || back.Path != "/api/v1/sso/callback" {
+	// Like a real provider, only send people back to the registered
+	// address, compared whole.
+	back, err := url.Parse(registered)
+	if registered == "" || err != nil || q.Get("redirect_uri") != registered {
 		http.Error(w, "unregistered redirect_uri", http.StatusBadRequest)
 		return
 	}
+	code := rand.Text()
+	p.mu.Lock()
+	p.codes[code] = grant{identity: p.next, nonce: q.Get("nonce"), challenge: q.Get("code_challenge"), redirectURI: registered}
+	p.mu.Unlock()
 	v := back.Query()
 	v.Set("code", code)
 	v.Set("state", q.Get("state"))
 	back.RawQuery = v.Encode()
-	http.Redirect(w, r, back.String(), http.StatusFound) //nolint:gosec // G710: the path was checked above.
+	http.Redirect(w, r, back.String(), http.StatusFound)
 }
 
 func (p *Provider) token(w http.ResponseWriter, r *http.Request) {

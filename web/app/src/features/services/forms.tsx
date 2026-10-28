@@ -156,6 +156,39 @@ function describeUnreadable(error: ApiError) {
 export function titleOf(text: string): string | undefined {
   const json = /"info"\s*:\s*\{[^}]*?"title"\s*:\s*"([^"]{1,100})"/s.exec(text);
   if (json) return json[1];
-  const yaml = /^info:\s*\n(?:[ \t]+.*\n)*?[ \t]+title:[ \t]*['"]?([^'"\n]{1,100}?)['"]?[ \t]*$/m.exec(text);
-  return yaml?.[1];
+  return yamlTitle(text);
+}
+
+// Line by line: one regular expression over the whole document can
+// backtrack for minutes on some files.
+function yamlTitle(text: string): string | undefined {
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((line) => /^info:[ \t]*$/.test(line));
+  if (start < 0) return undefined;
+  let indent: number | undefined;
+  for (const line of lines.slice(start + 1)) {
+    const key = line.trimStart();
+    if (key === "" || key.startsWith("#")) continue;
+    const depth = line.length - key.length;
+    if (depth === 0) return undefined; // past the end of info
+    indent ??= depth;
+    // Deeper lines belong to info's own objects, such as contact.
+    if (depth === indent && key.startsWith("title:")) return scalar(key.slice("title:".length));
+  }
+  return undefined;
+}
+
+/** A one-line YAML value without its quotes or comment, if it has 1 to 100 characters. */
+function scalar(raw: string): string | undefined {
+  const text = raw.trim();
+  let value: string | undefined;
+  if (text.startsWith("'")) {
+    // Inside single quotes, '' is a quote.
+    value = /^'((?:[^']|'')*)'/.exec(text)?.[1]?.replaceAll("''", "'");
+  } else if (text.startsWith('"')) {
+    value = /^"((?:[^"\\]|\\.)*)"/.exec(text)?.[1]?.replace(/\\(["\\])/g, "$1");
+  } else {
+    value = text.includes(" #") ? text.slice(0, text.indexOf(" #")).trimEnd() : text;
+  }
+  return value && value.length <= 100 ? value : undefined;
 }

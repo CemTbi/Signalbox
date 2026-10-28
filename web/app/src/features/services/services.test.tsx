@@ -17,6 +17,26 @@ describe("titleOf", () => {
     expect(titleOf('{"openapi":"3.0.3","info":{"version":"1","title":"Payments"},"paths":{}}')).toBe("Payments");
     expect(titleOf("paths: {}\n")).toBeUndefined();
   });
+
+  it("reads YAML's info block line by line", () => {
+    expect(titleOf("info:\r\n  title: Windows Lines\r\n")).toBe("Windows Lines");
+    expect(titleOf("info:\n  x-meta:\n    title: Nested\n\n  # a comment\n  title: Orders # the public name\n")).toBe("Orders");
+    expect(titleOf("info:\n  version: 1.0.0\npaths:\n  title: Not Info\n")).toBeUndefined();
+    expect(titleOf(`info:\n  title: ${"x".repeat(101)}\n`)).toBeUndefined();
+  });
+
+  it("reads quoted YAML titles up to their closing quote", () => {
+    expect(titleOf('info:\n  title: "Orders" # the public name\n')).toBe("Orders");
+    expect(titleOf("info:\n  title: 'Bob''s API'\n")).toBe("Bob's API");
+    expect(titleOf('info:\n  title: "Say \\"hi\\""\n')).toBe('Say "hi"');
+    expect(titleOf('info:\n  title: "Unclosed\n')).toBeUndefined();
+  });
+
+  it("returns at once on input that made the old pattern backtrack", () => {
+    const started = performance.now();
+    expect(titleOf("info:\n" + "\t\t\n".repeat(50_000))).toBeUndefined();
+    expect(performance.now() - started).toBeLessThan(1000);
+  });
 });
 
 describe("ServiceForm", () => {
