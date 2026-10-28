@@ -40,6 +40,9 @@ Also turn on **Automatically delete head branches** under **Settings → General
 - **Dependabot alerts:** on. Renovate opens the fixes, so leave Dependabot security updates off to avoid duplicate pull requests.
 - **Private vulnerability reporting:** on once the repository is public. [SECURITY.md](../../SECURITY.md) tells reporters to use it.
 - **Secret scanning and push protection:** on once the repository is public, where they are free.
+- **Code scanning:** CodeQL's alerts are fixed in code when they are real. A false positive is dismissed as "False positive" with a comment that says why, so the reason stays with the alert. These come back often:
+  - `go/log-injection` on `log/slog` calls. Signalbox logs only through slog's JSON and text handlers (`internal/logging`), which escape line breaks and control characters, so a value can't start a log line of its own. Code that logs another way still needs the alert.
+  - `go/reflected-xss` ending in a response writer wrapper such as the access log's `statusRecorder`. CodeQL sends any `io.Writer.Write` to every wrapper, so the path it shows is never the response it names. Check the real handler's content type instead.
 
 ## Going public
 

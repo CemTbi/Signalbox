@@ -46,3 +46,9 @@ All notable changes to Signalbox are recorded here. The format follows [Keep a C
 
 - `POST /api/v1/spec-checks` now needs a signed-in session.
 - The server now needs PostgreSQL. `make dev-db` starts one for development.
+
+### Security
+
+- go-jose 4.1.6 fixes a denial of service when parsing a JSON Web Key Set with RSA keys (GHSA-mgcc-cww5-fp2q), which an identity provider's keys endpoint could send. golang.org/x/net 0.62.0 fixes two flaws in its HTML parser.
+- Adding a spec no longer freezes the browser tab on YAML whose `info` block holds many blank, indented lines. Finding the title took twice as long with each such line.
+- The script sandbox no longer installs faker, which only `postman-collection` asked for and which was never bundled, so its advisories (GHSA-qxc2-j82w-r537) don't reach Signalbox's dependencies.
