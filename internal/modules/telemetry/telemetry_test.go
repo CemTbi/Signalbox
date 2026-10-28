@@ -25,6 +25,12 @@ func newStore(t *testing.T) clickhouse.Conn {
 	return conn
 }
 
+// recently is a few hours ago, on the hour. Spans older than the 7-day
+// retention are dropped on insert, so tests can't use fixed dates.
+func recently() time.Time {
+	return time.Now().UTC().Truncate(time.Hour).Add(-3 * time.Hour)
+}
+
 // traceID and spanID return IDs whose bytes all equal b.
 func traceID(b byte) (id telemetry.TraceID) {
 	for i := range id {
@@ -82,7 +88,7 @@ func TestWriteAndReadATrace(t *testing.T) {
 	conn := newStore(t)
 	ctx := context.Background()
 	env := uuid.New()
-	start := time.Date(2026, 10, 17, 9, 30, 0, 123456789, time.UTC)
+	start := recently().Add(123456789 * time.Nanosecond)
 	want := checkout(env, start)
 	if err := telemetry.WriteSpans(ctx, conn, want); err != nil {
 		t.Fatal(err)
@@ -134,7 +140,7 @@ func TestSearch(t *testing.T) {
 	conn := newStore(t)
 	ctx := context.Background()
 	env := uuid.New()
-	start := time.Date(2026, 10, 17, 9, 30, 0, 0, time.UTC)
+	start := recently()
 	spans := checkout(env, start)
 	// The same trace again an hour later, with new IDs.
 	later := checkout(env, start.Add(time.Hour))
@@ -200,7 +206,7 @@ func TestOperations(t *testing.T) {
 	conn := newStore(t)
 	ctx := context.Background()
 	env := uuid.New()
-	start := time.Date(2026, 10, 17, 9, 30, 0, 0, time.UTC)
+	start := recently()
 	// 100 calls taking 1 ms to 100 ms, and every tenth one fails.
 	var spans []telemetry.Span
 	for i := 1; i <= 100; i++ {
