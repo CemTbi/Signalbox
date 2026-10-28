@@ -29,6 +29,9 @@ func sample() report.Run {
 			}},
 		{Seq: 3, Iteration: 1, Name: "Down", Method: "GET", URL: "https://down.test/", Failed: true,
 			Failure: &runner.Failure{Code: "connect", Message: "Couldn't connect to down.test."}},
+		{Seq: 5, Iteration: 1, Name: "Script failed", Method: "GET", URL: "https://api.test/s", Failed: true,
+			Failure: &runner.Failure{Code: "script", Message: "The pre-request script of Shop API failed, so the request wasn't sent."},
+			Scripts: &client.ScriptOutcome{Errors: []client.ScriptError{{From: "Shop API", Event: "prerequest", Name: "ReferenceError", Message: "x is not defined"}}}},
 		{Seq: 4, Iteration: 1, Name: "Skipped", Method: "GET", URL: "https://api.test/skip",
 			Failure: &runner.Failure{Code: "skipped", Message: "A pre-request script skipped the request, so it wasn't sent."}},
 	}
@@ -42,7 +45,7 @@ func sample() report.Run {
 
 func TestTotals(t *testing.T) {
 	got := sample().Totals
-	want := report.Totals{Requests: 4, FailedRequests: 2, Tests: 2, FailedTests: 1}
+	want := report.Totals{Requests: 5, FailedRequests: 3, Tests: 2, FailedTests: 1}
 	if got != want {
 		t.Errorf("totals = %+v, want %+v", got, want)
 	}
@@ -71,8 +74,9 @@ func TestJUnit(t *testing.T) {
 		t.Fatalf("invalid XML: %v\n%s", err, buf.String())
 	}
 	// Log in: 2 cases (1 skipped). Create: a script error and a failed
-	// test. Down: an error. Skipped: a skipped case.
-	if doc.Tests != 6 || doc.Failures != 1 || doc.Errors != 2 || doc.Skipped != 2 {
+	// test. Down: an error. Script failed: one error, not two. Skipped: a
+	// skipped case.
+	if doc.Tests != 7 || doc.Failures != 1 || doc.Errors != 3 || doc.Skipped != 2 {
 		t.Errorf("counts = %d tests, %d failures, %d errors, %d skipped", doc.Tests, doc.Failures, doc.Errors, doc.Skipped)
 	}
 	if n := doc.Suites[1].Name; n != "Orders / Create <order> (iteration 1)" {
@@ -119,7 +123,7 @@ func TestJSON(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &doc); err != nil {
 		t.Fatal(err)
 	}
-	if doc.Status != "failed" || doc.DurationMs != 2000 || len(doc.Steps) != 4 || doc.Steps[0].DurationMs != 120 || doc.Totals.Tests != 2 {
+	if doc.Status != "failed" || doc.DurationMs != 2000 || len(doc.Steps) != 5 || doc.Steps[0].DurationMs != 120 || doc.Totals.Tests != 2 {
 		t.Errorf("json = %+v", doc)
 	}
 	if err := report.Write(&buf, "pdf", sample()); err == nil {
