@@ -30,6 +30,7 @@ export type Collection = Schemas["Collection"];
 export type Item = Schemas["Item"];
 export type SavedRequest = Schemas["SavedRequest"];
 export type RequestAuth = Schemas["RequestAuth"];
+export type ContractRef = Schemas["ContractRef"];
 export type Run = Schemas["Run"];
 export type RunStart = Schemas["RunStart"];
 export type RunStep = Schemas["RunStep"];

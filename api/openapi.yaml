@@ -2860,6 +2860,47 @@ paths:
               example: {type: about:blank, title: Not Implemented, status: 501, code: reference-unsupported, detail: This version is a Swagger 2.0 document. Reference docs need OpenAPI 3.0 or later.}
         default: {$ref: '#/components/responses/Error'}
 
+  /api/v1/versions/{versionId}/contract-tests:
+    parameters:
+      - $ref: '#/components/parameters/VersionId'
+    post:
+      operationId: generateContractTests
+      summary: Generate contract tests from a version
+      description: |
+        Makes a collection of contract tests from a published version: a folder per tag, and a request per operation, filled from its examples. Each request checks that its response has a documented status and a body matching the schema, wherever it runs. Path parameters become collection variables, and `baseUrl` is the spec's first server, or the version's hosted mock. Auth uses `{{token}}`, `{{username}}` and `{{password}}`, or `{{apiKey}}`, to set in an environment.
+
+        A spec's contract tests are one collection per project. Generating again, such as for a newer version, replaces the generated requests and folders, and keeps the items people added and the variables' values. Owners, admins and editors may. See ADR-0035.
+      tags: [Test runs]
+      responses:
+        '200':
+          description: The contract tests, generated again.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ContractTests'}
+              example: {collection: {id: col_01j9z3w5y7a9c1e3g5j7m9p1r3, projectId: prj_01j9z3k5m7p9r1t3v5x7z9b1c3, name: Orders API contract tests, variables: [{key: baseUrl, value: 'https://api.example.com'}], contract: {specId: spec_01j9z3s5v7x9z1b3d5f7h9k1m3, versionId: ver_01j9z3v2x4z6b8d0f2h4k6m8p0}, createdAt: '2026-10-28T12:00:00Z', updatedAt: '2026-10-28T12:00:00Z'}, report: {created: false, requests: 12, replaced: 14}}
+        '201':
+          description: The contract tests, in a new collection.
+          headers:
+            Location: {$ref: '#/components/headers/Location'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ContractTests'}
+              example: {collection: {id: col_01j9z3w5y7a9c1e3g5j7m9p1r3, projectId: prj_01j9z3k5m7p9r1t3v5x7z9b1c3, name: Orders API contract tests, variables: [{key: baseUrl, value: 'https://api.example.com'}], contract: {specId: spec_01j9z3s5v7x9z1b3d5f7h9k1m3, versionId: ver_01j9z3v2x4z6b8d0f2h4k6m8p0}, createdAt: '2026-10-28T12:00:00Z', updatedAt: '2026-10-28T12:00:00Z'}, report: {created: true, requests: 12, replaced: 0}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422':
+          description: The version's spec isn't OpenAPI 3 (`not-contract-testable`).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example: {type: about:blank, title: Unprocessable Content, status: 422, code: not-contract-testable, detail: "This version's spec can't make contract tests: only OpenAPI 3.0, 3.1 and 3.2 documents can."}
+        default: {$ref: '#/components/responses/Error'}
   /api/v1/versions/{versionId}/code:
     parameters:
       - $ref: '#/components/parameters/VersionId'
@@ -3522,8 +3563,38 @@ components:
           items: {$ref: '#/components/schemas/CollectionVariable'}
           examples: [[{key: baseUrl, value: 'https://api.example.com'}]]
         scripts: {$ref: '#/components/schemas/Scripts'}
+        contract: {$ref: '#/components/schemas/CollectionContract'}
         createdAt: {$ref: '#/components/schemas/Timestamp'}
         updatedAt: {$ref: '#/components/schemas/Timestamp'}
+    CollectionContract:
+      type: object
+      description: The spec whose contract tests the collection holds, and the version they were generated from last.
+      required: [specId]
+      properties:
+        specId: {$ref: '#/components/schemas/SpecId'}
+        versionId: {$ref: '#/components/schemas/VersionId'}
+    ContractRef:
+      type: object
+      description: The operation of a published version a request calls. Its responses are checked against the operation, as tests from `Contract`.
+      required: [versionId, method, path]
+      properties:
+        versionId: {$ref: '#/components/schemas/VersionId'}
+        method: {type: string, maxLength: 32, description: The operation's method., examples: [GET]}
+        path: {type: string, maxLength: 8192, description: 'The operation''s path template.', examples: ['/orders/{orderId}']}
+    ContractTests:
+      type: object
+      description: What generating contract tests made.
+      required: [collection, report]
+      properties:
+        collection: {$ref: '#/components/schemas/Collection'}
+        report:
+          type: object
+          description: What generating did.
+          required: [created, requests, replaced]
+          properties:
+            created: {type: boolean, description: Whether the collection is new., examples: [true]}
+            requests: {type: integer, minimum: 0, description: 'The requests generated, one per operation.', examples: [12]}
+            replaced: {type: integer, minimum: 0, description: The generated items the new ones replaced., examples: [0]}
     CollectionVariable:
       type: object
       description: One of a collection's variables.
@@ -3832,6 +3903,7 @@ components:
           examples: [[{key: Accept, value: application/json, enabled: true}]]
         body: {type: string, maxLength: 10485760, description: The saved body, as text., examples: ['{"sku":"A-1"}']}
         auth: {$ref: '#/components/schemas/RequestAuth'}
+        contract: {$ref: '#/components/schemas/ContractRef'}
     RequestAuth:
       type: object
       description: |

@@ -40,3 +40,4 @@ Write a new ADR by copying [template.md](template.md) to the next number. Propos
 | [0032](0032-scripts-in-sends.md) | Running scripts when a request is sent | Accepted |
 | [0033](0033-collection-runs.md) | Running collections as test suites | Accepted |
 | [0034](0034-cli-test-run.md) | `signalbox test run` | Accepted |
+| [0035](0035-contract-tests.md) | Contract tests from published versions | Accepted |

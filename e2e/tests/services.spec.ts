@@ -107,6 +107,17 @@ test("a service's spec is checked, edited, kept in revisions and published", asy
   expect((await download).suggestedFilename()).toBe("orders-typescript-client-1.0.1.zip");
   await expect(code.getByRole("status")).toContainText("Downloaded orders-typescript-client-1.0.1.zip.");
 
+  // Contract tests for the published version, generated again in place.
+  const contracts = page.getByRole("region", { name: "Contract tests" });
+  await contracts.getByRole("button", { name: "Generate contract tests" }).click();
+  await expect(contracts.getByRole("status")).toContainText(/Made Orders API contract tests with \d+ requests?\./);
+  await contracts.getByRole("button", { name: "Generate contract tests" }).click();
+  await expect(contracts.getByRole("status")).toContainText("Updated Orders API contract tests");
+  await expectAccessible(page);
+  await contracts.getByRole("link", { name: "Run them" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Runs of Orders API contract tests" })).toBeVisible();
+  await page.goBack();
+
   // The service page lists the spec.
   await page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Orders API" }).click();
   await expect(page.getByRole("link", { name: /Orders API/ })).toBeVisible();

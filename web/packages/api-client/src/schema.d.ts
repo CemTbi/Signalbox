@@ -1410,6 +1410,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/versions/{versionId}/contract-tests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The version's ID. */
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generate contract tests from a version
+         * @description Makes a collection of contract tests from a published version: a folder per tag, and a request per operation, filled from its examples. Each request checks that its response has a documented status and a body matching the schema, wherever it runs. Path parameters become collection variables, and `baseUrl` is the spec's first server, or the version's hosted mock. Auth uses `{{token}}`, `{{username}}` and `{{password}}`, or `{{apiKey}}`, to set in an environment.
+         *
+         *     A spec's contract tests are one collection per project. Generating again, such as for a newer version, replaces the generated requests and folders, and keeps the items people added and the variables' values. Owners, admins and editors may. See ADR-0035.
+         */
+        post: operations["generateContractTests"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/versions/{versionId}/code": {
         parameters: {
             query?: never;
@@ -1860,8 +1885,50 @@ export interface components {
              */
             variables?: components["schemas"]["CollectionVariable"][];
             scripts?: components["schemas"]["Scripts"];
+            contract?: components["schemas"]["CollectionContract"];
             createdAt: components["schemas"]["Timestamp"];
             updatedAt: components["schemas"]["Timestamp"];
+        };
+        /** @description The spec whose contract tests the collection holds, and the version they were generated from last. */
+        CollectionContract: {
+            specId: components["schemas"]["SpecId"];
+            versionId?: components["schemas"]["VersionId"];
+        };
+        /** @description The operation of a published version a request calls. Its responses are checked against the operation, as tests from `Contract`. */
+        ContractRef: {
+            versionId: components["schemas"]["VersionId"];
+            /**
+             * @description The operation's method.
+             * @example GET
+             */
+            method: string;
+            /**
+             * @description The operation's path template.
+             * @example /orders/{orderId}
+             */
+            path: string;
+        };
+        /** @description What generating contract tests made. */
+        ContractTests: {
+            collection: components["schemas"]["Collection"];
+            /** @description What generating did. */
+            report: {
+                /**
+                 * @description Whether the collection is new.
+                 * @example true
+                 */
+                created: boolean;
+                /**
+                 * @description The requests generated, one per operation.
+                 * @example 12
+                 */
+                requests: number;
+                /**
+                 * @description The generated items the new ones replaced.
+                 * @example 0
+                 */
+                replaced: number;
+            };
         };
         /** @description One of a collection's variables. */
         CollectionVariable: {
@@ -2497,6 +2564,7 @@ export interface components {
              */
             body?: string;
             auth?: components["schemas"]["RequestAuth"];
+            contract?: components["schemas"]["ContractRef"];
         };
         /**
          * @description How a request authenticates; absent or `none` for no auth. Its fields may hold `{{variables}}`, filled in before it is applied, so a password or token can be a secret.
@@ -9150,6 +9218,116 @@ export interface operations {
                      *       "status": 501,
                      *       "code": "reference-unsupported",
                      *       "detail": "This version is a Swagger 2.0 document. Reference docs need OpenAPI 3.0 or later."
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    generateContractTests: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The version's ID. */
+                versionId: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The contract tests, generated again. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "collection": {
+                     *         "id": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *         "projectId": "prj_01j9z3k5m7p9r1t3v5x7z9b1c3",
+                     *         "name": "Orders API contract tests",
+                     *         "variables": [
+                     *           {
+                     *             "key": "baseUrl",
+                     *             "value": "https://api.example.com"
+                     *           }
+                     *         ],
+                     *         "contract": {
+                     *           "specId": "spec_01j9z3s5v7x9z1b3d5f7h9k1m3",
+                     *           "versionId": "ver_01j9z3v2x4z6b8d0f2h4k6m8p0"
+                     *         },
+                     *         "createdAt": "2026-10-28T12:00:00Z",
+                     *         "updatedAt": "2026-10-28T12:00:00Z"
+                     *       },
+                     *       "report": {
+                     *         "created": false,
+                     *         "requests": 12,
+                     *         "replaced": 14
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ContractTests"];
+                };
+            };
+            /** @description The contract tests, in a new collection. */
+            201: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "collection": {
+                     *         "id": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *         "projectId": "prj_01j9z3k5m7p9r1t3v5x7z9b1c3",
+                     *         "name": "Orders API contract tests",
+                     *         "variables": [
+                     *           {
+                     *             "key": "baseUrl",
+                     *             "value": "https://api.example.com"
+                     *           }
+                     *         ],
+                     *         "contract": {
+                     *           "specId": "spec_01j9z3s5v7x9z1b3d5f7h9k1m3",
+                     *           "versionId": "ver_01j9z3v2x4z6b8d0f2h4k6m8p0"
+                     *         },
+                     *         "createdAt": "2026-10-28T12:00:00Z",
+                     *         "updatedAt": "2026-10-28T12:00:00Z"
+                     *       },
+                     *       "report": {
+                     *         "created": true,
+                     *         "requests": 12,
+                     *         "replaced": 0
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ContractTests"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The version's spec isn't OpenAPI 3 (`not-contract-testable`). */
+            422: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Unprocessable Content",
+                     *       "status": 422,
+                     *       "code": "not-contract-testable",
+                     *       "detail": "This version's spec can't make contract tests: only OpenAPI 3.0, 3.1 and 3.2 documents can."
                      *     }
                      */
                     "application/problem+json": components["schemas"]["Problem"];

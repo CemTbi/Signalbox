@@ -214,6 +214,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 		}
 		mods := apis.New(db, logger, s.workspaces)
 		s.client = client.New(db, logger, s.workspaces, run)
+		s.client.UseContracts(mods, mods)
 		// Scripts run where requests are sent: in this process, for now.
 		if run != nil {
 			s.client.UseScripts(scripts.NewPool(2, scripts.Options{Send: s.client.ScriptSender()}))
@@ -240,6 +241,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 			Variables:      s.client,
 			Imports:        s.client,
 			Runs:           s.runs,
+			Contracts:      s.client,
 			PublicURL:      publicURL,
 			TrustedProxies: trusted,
 		})

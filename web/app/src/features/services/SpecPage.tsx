@@ -20,6 +20,7 @@ import {
 } from "../../queries";
 import { summarize } from "../spec-check/lines";
 import { CodeDownload } from "./CodeDownload";
+import { ContractTests } from "./ContractTests";
 import { SpecEditor } from "./SpecEditor";
 import { type PublishValues, Versions } from "./Versions";
 
@@ -126,6 +127,7 @@ export function SpecPage() {
         onPublish={(v) => publish.mutate(v)}
       />
       <CodeDownload client={api} versions={published} />
+      {service.data ? <ContractTests versions={published} projectId={service.data.projectId} canEdit={canEdit} /> : null}
       <section aria-labelledby="history">
         <h2 id="history" className="section-title">
           History

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { HistoryEntry, HttpHeader, Item, RequestAuth, SavedRequest, SendRequest } from "@signalbox/api-client";
+import type { ContractRef, HistoryEntry, HttpHeader, Item, RequestAuth, SavedRequest, SendRequest } from "@signalbox/api-client";
 
 export const methods = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
 
@@ -40,6 +40,8 @@ export interface Draft {
   body: string;
   auth: AuthDraft;
   scripts: ScriptsDraft;
+  /** The spec operation a generated request is checked against; kept as it is. */
+  contract?: ContractRef;
 }
 
 export function noScripts(): ScriptsDraft {
@@ -193,6 +195,7 @@ export function fromSaved(r: SavedRequest, scripts?: { prerequest?: string; test
     body: r.body ?? "",
     auth: fromAuth(r.auth),
     scripts: { prerequest: scripts?.prerequest ?? "", test: scripts?.test ?? "" },
+    ...(r.contract ? { contract: r.contract } : {}),
   };
 }
 
@@ -204,6 +207,7 @@ export function toSaved(d: Draft): SavedRequest {
     headers: d.headers.filter((h) => h.key.trim() !== "").map((h) => ({ key: h.key.trim(), value: h.value, enabled: h.enabled })),
     body: d.body,
     ...(toAuth(d.auth) ? { auth: toAuth(d.auth) } : {}),
+    ...(d.contract ? { contract: d.contract } : {}),
   };
 }
 

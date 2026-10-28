@@ -285,6 +285,11 @@ export function RequestsPage() {
               {conflict ? "Someone changed this request since you opened it. Open it again from Collections, then make your change." : describeError(save.error)}
             </p>
           ) : null}
+          {draft.contract ? (
+            <p className="field-hint">
+              A contract test: each response is checked against {draft.contract.method} {draft.contract.path} in the spec it was generated from.
+            </p>
+          ) : null}
           <RequestEditor draft={draft} onChange={setDraft} onSend={() => send.mutate(draft)} sending={send.isPending} canSend={canSend} />
           {[send, openEntry, openSaved].map((m, i) =>
             m.isError ? (

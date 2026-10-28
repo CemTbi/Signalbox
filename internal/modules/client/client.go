@@ -79,6 +79,10 @@ type Module struct {
 	// scripts runs pre-request and test scripts; nil when they can't run.
 	scripts     ScriptPool
 	scriptSlots chan struct{}
+	// contracts checks responses against spec versions, and gives their
+	// documents for generating contract tests; nil without them.
+	contracts ContractChecker
+	versions  ContractVersions
 }
 
 // New returns the module. run may be nil, when this process can't send
@@ -246,7 +250,7 @@ func (m *Module) Send(ctx context.Context, userID, projectID uuid.UUID, req runn
 	}
 	st := &state{
 		vars:       scripts.Variables{Collection: anyMap(collectionValues), Environment: anyMap(envValues)},
-		iterations: 1, secrets: secrets, stored: map[string]string{},
+		iterations: 1, secrets: secrets, stored: map[string]string{}, project: projectID,
 	}
 	for _, k := range secrets {
 		st.stored[k] = envValues[k]
