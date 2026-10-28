@@ -233,3 +233,21 @@ export function folders(items: Item[]): { item: Item; depth: number }[] {
   walk("", 0);
   return out;
 }
+
+/** The environment someone last sent with in a project, kept in their browser. */
+export function rememberedEnvironment(projectId: string): string {
+  try {
+    return localStorage.getItem(`signalbox.environment.${projectId}`) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** Remembers the environment chosen in a project, for the next visit. */
+export function rememberEnvironment(projectId: string, environmentId: string) {
+  try {
+    localStorage.setItem(`signalbox.environment.${projectId}`, environmentId);
+  } catch {
+    // Remembering is a convenience; without storage the choice lasts the visit.
+  }
+}

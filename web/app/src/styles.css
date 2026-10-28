@@ -2145,22 +2145,22 @@ pre.code {
   font-size: 14px;
 }
 
+/* Neutral text, with the outcome in the colored edge, as for statuses. */
 .test-mark {
   min-width: 4.5rem;
+  padding-left: 6px;
   font-size: 12px;
   font-weight: 600;
+  color: var(--ink);
+  border-left: 3px solid var(--rule-strong);
 }
 
 .test-passed .test-mark {
-  color: var(--ok);
+  border-left-color: var(--ok);
 }
 
 .test-failed .test-mark {
-  color: var(--bad);
-}
-
-.test-skipped .test-mark {
-  color: var(--ink-2);
+  border-left-color: var(--bad);
 }
 
 .test-error {
@@ -2182,4 +2182,141 @@ pre.code {
 .console-warn,
 .console-error {
   color: var(--bad);
+}
+
+/* Test runs. A run's or a step's state: neutral text, its meaning in the colored edge, as for statuses. */
+.run-status {
+  display: inline-block;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--rule-strong);
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.run-passed {
+  border-left-color: var(--ok);
+}
+
+.run-failed,
+.run-interrupted {
+  border-left-color: var(--bad);
+}
+
+.run-canceled,
+.run-skipped {
+  border-left-color: var(--warn);
+}
+
+.run-queued,
+.run-running {
+  border-left-color: var(--info);
+}
+
+.run-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+
+.run-totals div {
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.run-totals dt {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.run-totals dd {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-totals .total-bad {
+  border-color: var(--bad);
+}
+
+.run-totals .total-bad dd {
+  color: var(--bad);
+}
+
+.steps-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+
+.steps .step + .step {
+  border-top: 1px solid var(--rule);
+}
+
+.step-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  width: 100%;
+  padding: 10px 14px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.step-row:hover {
+  background: var(--surface-2);
+}
+
+.step-name {
+  flex: 1 1 200px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.step-meta {
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.step-detail {
+  padding: 4px 14px 14px;
+  border-top: 1px dashed var(--rule);
+}
+
+.step-url {
+  margin: 8px 0 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }

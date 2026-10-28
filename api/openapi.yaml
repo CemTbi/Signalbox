@@ -60,6 +60,8 @@ tags:
     description: OpenAPI documents of a service and their revisions.
   - name: Client
     description: Sending requests from a project, and each person's history of them.
+  - name: Test runs
+    description: Running a collection, or a folder of it, as a test suite, and its reports.
 
 paths:
   /livez:
@@ -1902,6 +1904,205 @@ paths:
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
         default: {$ref: '#/components/responses/Error'}
+  /api/v1/collections/{collectionId}/runs:
+    parameters:
+      - $ref: '#/components/parameters/CollectionId'
+    get:
+      operationId: listRuns
+      summary: List a collection's runs
+      description: Lists the collection's test runs, newest first. Runs are kept 90 days, and at most the newest 100 of a collection. Every member of the project may.
+      tags: [Test runs]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of runs.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunPage'}
+              example: {data: [{id: run_01j9z3w5y7a9c1e3g5j7m9p1r3, projectId: prj_01j9z3k5m7p9r1t3v5x7z9b1c3, collectionId: col_01j9z3w5y7a9c1e3g5j7m9p1r3, name: Shop API, environment: Staging, status: failed, iterations: 2, dataRows: 2, delayMs: 0, bail: false, totals: {requests: 6, failedRequests: 1, tests: 12, failedTests: 1}, createdAt: '2026-10-28T12:00:00Z', startedAt: '2026-10-28T12:00:00Z', finishedAt: '2026-10-28T12:00:02Z', durationMs: 1834.2}]}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: startRun
+      summary: Run a collection as a test suite
+      description: |
+        Starts a run of the collection, or of one folder of it: its requests in order, with the scripts of the collection and folders around each, any number of iterations, optionally once per row of a data file. Values scripts set carry from one request to the next, and aren't saved. The run waits for a free slot, then runs in the background; follow it with `getRun` and `listRunSteps`. A run sends at most 10,000 requests and lasts at most an hour. Owners, admins and editors may. See ADR-0033.
+      tags: [Test runs]
+      requestBody:
+        description: How to run it. An empty object runs the whole collection once, without an environment.
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RunStart'}
+            example: {environmentId: env_01j9z3n5q7s9v1w3y5a7c9e1g3, data: {format: csv, content: "user\nada\nbob\n"}, bail: true}
+      responses:
+        '202':
+          description: The run, queued.
+          headers:
+            Location: {$ref: '#/components/headers/Location'}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Run'}
+              example: {id: run_01j9z3w5y7a9c1e3g5j7m9p1r3, projectId: prj_01j9z3k5m7p9r1t3v5x7z9b1c3, collectionId: col_01j9z3w5y7a9c1e3g5j7m9p1r3, name: Shop API, status: queued, iterations: 2, dataRows: 2, delayMs: 0, bail: true, totals: {requests: 0, failedRequests: 0, tests: 0, failedTests: 0}, createdAt: '2026-10-28T12:00:00Z', durationMs: 0}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '413': {$ref: '#/components/responses/ContentTooLarge'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503':
+          description: This server doesn't run the runner role (`runner-unavailable`), or can't read the environment's secrets (`secrets-unavailable`, `secret-key-changed`).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example: {type: about:blank, title: Service Unavailable, status: 503, code: runner-unavailable, detail: "This server doesn't run the runner role, which sends requests. Run signalbox-server with --roles=all."}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/runs/{runId}:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    get:
+      operationId: getRun
+      summary: Get a run
+      description: Returns a run with its totals so far. Every member of the project may.
+      tags: [Test runs]
+      responses:
+        '200':
+          description: The run.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Run'}
+              example: {id: run_01j9z3w5y7a9c1e3g5j7m9p1r3, projectId: prj_01j9z3k5m7p9r1t3v5x7z9b1c3, collectionId: col_01j9z3w5y7a9c1e3g5j7m9p1r3, name: Shop API, environment: Staging, status: failed, iterations: 2, dataRows: 2, delayMs: 0, bail: false, totals: {requests: 6, failedRequests: 1, tests: 12, failedTests: 1}, createdAt: '2026-10-28T12:00:00Z', startedAt: '2026-10-28T12:00:00Z', finishedAt: '2026-10-28T12:00:02Z', durationMs: 1834.2}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/runs/{runId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    post:
+      operationId: cancelRun
+      summary: Cancel a run
+      description: Cancels a run. A queued run ends at once; a running one stops after the request it's on. Cancelling a finished run changes nothing. Owners, admins and editors may.
+      tags: [Test runs]
+      responses:
+        '200':
+          description: The run.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Run'}
+              example: {id: run_01j9z3w5y7a9c1e3g5j7m9p1r3, projectId: prj_01j9z3k5m7p9r1t3v5x7z9b1c3, collectionId: col_01j9z3w5y7a9c1e3g5j7m9p1r3, name: Shop API, environment: Staging, status: failed, iterations: 2, dataRows: 2, delayMs: 0, bail: false, totals: {requests: 6, failedRequests: 1, tests: 12, failedTests: 1}, createdAt: '2026-10-28T12:00:00Z', startedAt: '2026-10-28T12:00:00Z', finishedAt: '2026-10-28T12:00:02Z', durationMs: 1834.2}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/runs/{runId}/steps:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    get:
+      operationId: listRunSteps
+      summary: List a run's steps
+      description: Lists a run's steps in order, after `after`. To follow a run, ask again with the last `seq` you saw until the run has finished and `more` is false. Steps here leave out headers, console output, variable changes and response bodies; `getRunStep` has them.
+      tags: [Test runs]
+      parameters:
+        - name: after
+          in: query
+          required: false
+          description: The last `seq` you saw; 0 or absent starts at the first step.
+          schema: {type: integer, minimum: 0}
+          example: 20
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of steps to return.
+          schema: {type: integer, minimum: 1, maximum: 500, default: 500}
+          example: 100
+      responses:
+        '200':
+          description: A page of steps.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunStepPage'}
+              example: {data: [{seq: 2, iteration: 0, itemId: item_01j9z3w5y7a9c1e3g5j7m9p1r3, name: Create an order, path: Orders, method: POST, url: 'https://api.example.com/orders', failed: true, durationMs: 83.5, response: {status: 500, statusText: Internal Server Error, size: 24}, scripts: {tests: [{from: Create an order, name: is created, passed: false, error: 'AssertionError: expected 500 to equal 201'}], logs: [], errors: [], changes: [], skipped: false}}], more: false}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/runs/{runId}/steps/{seq}:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+      - name: seq
+        in: path
+        required: true
+        description: The step's place in the run, from 1.
+        schema: {type: integer, minimum: 1}
+        example: 3
+    get:
+      operationId: getRunStep
+      summary: Get a step of a run
+      description: Returns one step in full, with headers, console output, variable changes, and the start of the response body when the step failed.
+      tags: [Test runs]
+      responses:
+        '200':
+          description: The step.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/RunStep'}
+              example: {seq: 2, iteration: 0, itemId: item_01j9z3w5y7a9c1e3g5j7m9p1r3, name: Create an order, path: Orders, method: POST, url: 'https://api.example.com/orders', failed: true, durationMs: 83.5, response: {status: 500, statusText: Internal Server Error, size: 24}, scripts: {tests: [{from: Create an order, name: is created, passed: false, error: 'AssertionError: expected 500 to equal 201'}], logs: [], errors: [], changes: [], skipped: false}}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/runs/{runId}/report:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    get:
+      operationId: getRunReport
+      summary: Download a run's report
+      description: Returns the run as a JUnit XML file for CI, a JSON file with every step, or a self-contained HTML page that runs no scripts. Secrets are shown as •••.
+      tags: [Test runs]
+      parameters:
+        - name: format
+          in: query
+          required: false
+          description: The report's format.
+          schema: {type: string, enum: [junit, json, html], default: json}
+          example: junit
+      responses:
+        '200':
+          description: The report, as a file to save.
+          headers:
+            Content-Disposition:
+              description: 'Names the file, such as `shop-api-run_01j9z3w5y7a9c1e3g5j7m9p1r3.xml`.'
+              schema: {type: string}
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/xml:
+              schema: {description: 'A JUnit XML document: a testsuite per request per iteration, a testcase per test.'}
+              example: '<?xml version="1.0" encoding="UTF-8"?><testsuites name="Shop API" tests="1" failures="0" errors="0" skipped="0" time="0.084"></testsuites>'
+            application/json:
+              schema: {type: object}
+              example: {id: run_01j9z3w5y7a9c1e3g5j7m9p1r3, name: Shop API, status: passed, iterations: 1, totals: {requests: 1, failedRequests: 0, tests: 1, failedTests: 0}, startedAt: '2026-10-28T12:00:00Z', durationMs: 84, steps: []}
+            text/html:
+              schema: {type: string}
+              example: '<!doctype html><html lang="en">…</html>'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
   /api/v1/items/{itemId}:
     parameters:
       - $ref: '#/components/parameters/ItemId'
@@ -2749,6 +2950,12 @@ components:
       required: true
       description: The collection's ID.
       schema: {$ref: '#/components/schemas/CollectionId'}
+    RunId:
+      name: runId
+      in: path
+      required: true
+      description: The run's ID.
+      schema: {$ref: '#/components/schemas/RunId'}
     ItemId:
       name: itemId
       in: path
@@ -3232,7 +3439,7 @@ components:
       description: Why a request got no response.
       required: [code, message]
       properties:
-        code: {type: string, enum: [invalid-request, blocked, dns, connect, tls, timeout, network, script, skipped], description: 'The kind of failure. `script`: a pre-request script failed, so the request wasn''t sent. `skipped`: a pre-request script skipped it.', examples: [timeout]}
+        code: {type: string, enum: [invalid-request, blocked, dns, connect, tls, timeout, network, script, skipped, too-large], description: 'The kind of failure. `script`: a pre-request script failed, so the request wasn''t sent. `skipped`: a pre-request script skipped it. `too-large`: in a run, the request was too large once its variables were filled in.', examples: [timeout]}
         message: {type: string, description: What went wrong, in words a person can act on., examples: ["The server didn't answer in time."]}
     RunnerTimings:
       type: object
@@ -3333,7 +3540,7 @@ components:
         test: {type: string, maxLength: 262144, description: The test script., examples: ["pm.test('ok', () => pm.response.to.have.status(200));"]}
     ScriptOutcome:
       type: object
-      description: What a send's scripts did. Variables they changed last for the send; they aren't saved.
+      description: What a send's or a run step's scripts did. Variables they changed last for the send or the run; they aren't saved.
       required: [tests, logs, errors, changes, skipped]
       properties:
         tests:
@@ -3391,6 +3598,127 @@ components:
               key: {type: string, description: The variable., examples: [orderId]}
           examples: [[{from: Get an order, scope: environment, op: set, key: orderId}]]
         skipped: {type: boolean, description: Whether a pre-request script skipped the request., examples: [false]}
+    RunId:
+      type: string
+      description: A test run's ID.
+      pattern: '^run_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [run_01j9z3w5y7a9c1e3g5j7m9p1r3]
+    RunStart:
+      type: object
+      description: How to run a collection.
+      additionalProperties: false
+      properties:
+        folderId: {$ref: '#/components/schemas/ItemId'}
+        environmentId: {$ref: '#/components/schemas/EnvironmentId'}
+        iterations: {type: integer, minimum: 0, maximum: 1000, description: 'How many times the requests run. 0 or absent runs them once per data row, or once. Iterations past the last data row reuse it.', examples: [3]}
+        data:
+          type: object
+          description: A data file whose rows fill `pm.iterationData` and `{{name}}`, one row per iteration.
+          required: [format, content]
+          additionalProperties: false
+          properties:
+            format: {type: string, enum: [csv, json], description: 'CSV with a header row, or a JSON array of objects.', examples: [csv]}
+            content: {type: string, maxLength: 5242880, description: 'The file, at most 5 MiB and 1,000 rows.', examples: ["user\nada\nbob\n"]}
+        delayMs: {type: integer, minimum: 0, maximum: 60000, description: How long to wait between requests., examples: [0]}
+        bail: {type: boolean, description: Stop at the first request that fails or has a failing test., examples: [false]}
+    RunTotals:
+      type: object
+      description: What a run counted so far.
+      required: [requests, failedRequests, tests, failedTests]
+      properties:
+        requests: {type: integer, minimum: 0, description: Requests run., examples: [12]}
+        failedRequests: {type: integer, minimum: 0, description: 'Requests that failed: no response, a failed script or a failed test.', examples: [1]}
+        tests: {type: integer, minimum: 0, description: 'Tests run, not counting skipped ones.', examples: [30]}
+        failedTests: {type: integer, minimum: 0, description: Tests that failed., examples: [1]}
+    Run:
+      type: object
+      description: A test run, without its steps.
+      required: [id, projectId, collectionId, name, status, iterations, dataRows, delayMs, bail, totals, createdAt, durationMs]
+      properties:
+        id: {$ref: '#/components/schemas/RunId'}
+        projectId: {$ref: '#/components/schemas/ProjectId'}
+        collectionId: {$ref: '#/components/schemas/CollectionId'}
+        folderId: {$ref: '#/components/schemas/ItemId'}
+        environmentId: {$ref: '#/components/schemas/EnvironmentId'}
+        startedBy: {$ref: '#/components/schemas/UserId'}
+        name: {type: string, description: The collection's or folder's name when the run started., examples: [Shop API]}
+        environment: {type: string, description: The environment's name when the run started., examples: [Staging]}
+        status: {type: string, enum: [queued, running, passed, failed, canceled, interrupted], description: '`passed`: every request got a response, every test passed and no script failed. `interrupted`: the server stopped during the run.', examples: [passed]}
+        stopped: {type: string, enum: [bail, steps, time, error, restart], description: 'Why the run ended before its last request: `bail` at a failure, `steps` at 10,000 requests, `time` at an hour, `error` on a server error, `restart` when the server stopped.', examples: [bail]}
+        iterations: {type: integer, minimum: 1, description: How many times the requests run., examples: [2]}
+        dataRows: {type: integer, minimum: 0, description: The data file's rows., examples: [2]}
+        delayMs: {type: integer, minimum: 0, description: The wait between requests., examples: [0]}
+        bail: {type: boolean, description: Whether the run stops at the first failure., examples: [false]}
+        totals: {$ref: '#/components/schemas/RunTotals'}
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+        startedAt: {$ref: '#/components/schemas/Timestamp'}
+        finishedAt: {$ref: '#/components/schemas/Timestamp'}
+        durationMs: {type: number, minimum: 0, description: 'From start to finish, or so far.', examples: [1834.2]}
+    RunPage:
+      type: object
+      description: One page of runs, newest first, with a cursor for the next page.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The runs on this page.
+          maxItems: 200
+          items: {$ref: '#/components/schemas/Run'}
+          examples: [[{id: run_01j9z3w5y7a9c1e3g5j7m9p1r3, projectId: prj_01j9z3k5m7p9r1t3v5x7z9b1c3, collectionId: col_01j9z3w5y7a9c1e3g5j7m9p1r3, name: Shop API, environment: Staging, status: failed, iterations: 2, dataRows: 2, delayMs: 0, bail: false, totals: {requests: 6, failedRequests: 1, tests: 12, failedTests: 1}, createdAt: '2026-10-28T12:00:00Z', startedAt: '2026-10-28T12:00:00Z', finishedAt: '2026-10-28T12:00:02Z', durationMs: 1834.2}]]
+        nextCursor: {$ref: '#/components/schemas/NextCursor'}
+    RunStep:
+      type: object
+      description: One request of a run. It has `response` or `failure`. Secrets are •••.
+      required: [seq, iteration, name, method, url, failed, durationMs]
+      properties:
+        seq: {type: integer, minimum: 1, description: The step's place in the run., examples: [3]}
+        iteration: {type: integer, minimum: 0, description: 'The iteration, from 0.', examples: [0]}
+        itemId: {$ref: '#/components/schemas/ItemId'}
+        name: {type: string, description: The request's name., examples: [Create an order]}
+        path: {type: string, description: 'The folders it''s in, joined by " / ".', examples: [Orders]}
+        method: {type: string, description: The method sent., examples: [POST]}
+        url: {type: string, description: The URL sent., examples: ['https://api.example.com/orders']}
+        failed: {type: boolean, description: 'Whether the step counts against the run: no response (other than skipped), a failed script or a failed test.', examples: [false]}
+        durationMs: {type: number, minimum: 0, description: How long the request took., examples: [83.5]}
+        headers:
+          type: array
+          description: The headers sent, with credentials as •••. Only in `getRunStep`.
+          items: {$ref: '#/components/schemas/HttpHeader'}
+          examples: [[{key: Authorization, value: •••}]]
+        unresolved:
+          type: array
+          description: The `{{names}}` that had no value.
+          items: {type: string}
+          examples: [[orderId]]
+        failure: {$ref: '#/components/schemas/RunnerFailure'}
+        response:
+          type: object
+          description: What came back.
+          required: [status, size]
+          properties:
+            status: {type: integer, minimum: 100, maximum: 999, description: The status code., examples: [201]}
+            statusText: {type: string, description: The reason phrase., examples: [Created]}
+            headers:
+              type: array
+              description: The response headers. Only in `getRunStep`.
+              items: {$ref: '#/components/schemas/HttpHeader'}
+              examples: [[{key: Content-Type, value: application/json}]]
+            size: {type: integer, minimum: 0, description: The body's size in bytes., examples: [42]}
+            body: {type: string, description: 'The body''s first 16 KiB, kept when the step failed. Only in `getRunStep`.', examples: ['{"error":"out of stock"}']}
+        scripts: {$ref: '#/components/schemas/ScriptOutcome'}
+        note: {type: string, description: 'Why the run went on differently, such as a setNextRequest that named no request.', examples: ["setNextRequest named \"Pay\", which isn't in this run, so the iteration ended."]}
+    RunStepPage:
+      type: object
+      description: A page of a run's steps, in order.
+      required: [data, more]
+      properties:
+        data:
+          type: array
+          description: The steps.
+          maxItems: 500
+          items: {$ref: '#/components/schemas/RunStep'}
+          examples: [[{seq: 2, iteration: 0, itemId: item_01j9z3w5y7a9c1e3g5j7m9p1r3, name: Create an order, path: Orders, method: POST, url: 'https://api.example.com/orders', failed: true, durationMs: 83.5, response: {status: 500, statusText: Internal Server Error, size: 24}, scripts: {tests: [{from: Create an order, name: is created, passed: false, error: 'AssertionError: expected 500 to equal 201'}], logs: [], errors: [], changes: [], skipped: false}}]]
+        more: {type: boolean, description: Whether there are steps after the last one., examples: [false]}
     ImportReport:
       type: object
       description: What an import found. It is clean when nothing was left out and nothing will run differently than in Postman or curl.

@@ -188,6 +188,29 @@ test("services are placed on the canvas by hand and stay where they are put", as
   await expect(response.getByRole("tab", { name: "Tests (1/1)" })).toBeVisible();
   await expect(response.getByText("meta has a version")).toBeVisible();
 
+  // Saved, its folder runs as a test suite.
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+  // A row's actions show when it's hovered or focused.
+  await page.getByRole("button", { name: "Health", exact: true }).hover();
+  await page.getByRole("link", { name: "Run Health" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Runs of Imported shop" })).toBeVisible();
+  await expect(page.getByLabel("What to run")).toHaveValue(/^item_/);
+  await expectAccessible(page);
+  await page.getByRole("button", { name: "Start run" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Health" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Run status" })).toHaveText("Run status: Passed", { timeout: 30_000 });
+  const totals = page.getByLabel("Totals");
+  await expect(totals.getByText("Requests", { exact: true }).locator("xpath=following-sibling::dd")).toHaveText("2");
+  await expect(totals.getByText("Tests", { exact: true }).locator("xpath=following-sibling::dd")).toHaveText("1");
+  await page.getByRole("button", { name: /Meta/ }).click();
+  await expect(page.getByText("meta has a version")).toBeVisible();
+  await expect(page.getByRole("link", { name: "JUnit" })).toHaveAttribute("href", /\/api\/v1\/runs\/run_.+\/report\?format=junit$/);
+  await expectAccessible(page);
+  const junit = await page.request.get(await page.getByRole("link", { name: "JUnit" }).getAttribute("href") ?? "");
+  expect(await junit.text()).toContain('<testcase name="meta has a version"');
+  await page.goto(`${projectURL}/requests`);
+
   // A curl command fills in the editor.
   await page.getByRole("button", { name: "Import cURL" }).click();
   await page.getByLabel("curl command", { exact: true }).fill("curl 'http://signalbox:8080/livez' -H 'accept: application/json' --insecure");

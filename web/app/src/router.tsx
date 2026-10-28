@@ -24,6 +24,8 @@ import { InvitePage } from "./features/invitations/InvitePage";
 import { WorkspaceMembers } from "./features/members/MembersPage";
 import { ProjectPage } from "./features/projects/ProjectPage";
 import { RequestsPage } from "./features/requests/RequestsPage";
+import { RunPage } from "./features/runs/RunPage";
+import { RunSetupPage } from "./features/runs/RunSetupPage";
 import { ServicePage } from "./features/services/ServicePage";
 import { SpecPage } from "./features/services/SpecPage";
 import { SpecCheck } from "./features/spec-check/SpecCheck";
@@ -143,6 +145,20 @@ const requestsRoute = createRoute({
   component: RequestsPage,
 });
 
+const runSetupRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/collections/$collectionId/runs",
+  validateSearch: (search: Record<string, unknown>): { folder?: string } =>
+    typeof search.folder === "string" && search.folder !== "" ? { folder: search.folder } : {},
+  component: RunSetupPage,
+});
+
+const runRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/runs/$runId",
+  component: RunPage,
+});
+
 const serviceRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/services/$serviceId",
@@ -193,6 +209,8 @@ const routeTree = rootRoute.addChildren([
     workspaceRoute.addChildren([workspaceProjectsRoute, workspaceMembersRoute]),
     projectRoute,
     requestsRoute,
+    runSetupRoute,
+    runRoute,
     serviceRoute,
     specRoute,
     docsRoute,

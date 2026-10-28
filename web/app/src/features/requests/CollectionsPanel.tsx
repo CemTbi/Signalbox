@@ -2,6 +2,7 @@
 
 import type { Collection, Item } from "@signalbox/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { type FormEvent, useId, useState } from "react";
 import { api, describeError, unwrap } from "../../api";
 import { LoadError } from "../../components/Page";
@@ -111,6 +112,9 @@ function CollectionNode({
         </button>
         {open ? (
           <span className="tree-actions">
+            <Link className="button ghost small" to="/collections/$collectionId/runs" params={{ collectionId: c.id }} aria-label={canEdit ? `Run ${c.name}` : `Runs of ${c.name}`}>
+              {canEdit ? "Run" : "Runs"}
+            </Link>
             <a className="button ghost small" href={`/api/v1/collections/${c.id}/export`} download aria-label={`Export ${c.name} for Postman`}>
               Export
             </a>
@@ -208,9 +212,14 @@ function ItemNode({ item: it, ...props }: Parameters<typeof Branch>[0] & { item:
   const actions = props.canEdit ? (
     <span className="tree-actions">
       {it.kind === "folder" ? (
-        <button type="button" className="button ghost small" onClick={() => props.onAddFolder(it.id)}>
-          New folder
-        </button>
+        <>
+          <Link className="button ghost small" to="/collections/$collectionId/runs" params={{ collectionId: props.collectionId }} search={{ folder: it.id }} aria-label={`Run ${it.name}`}>
+            Run
+          </Link>
+          <button type="button" className="button ghost small" onClick={() => props.onAddFolder(it.id)}>
+            New folder
+          </button>
+        </>
       ) : null}
       <button type="button" className="button ghost small" onClick={() => setRenaming(true)} aria-label={`Rename ${it.name}`}>
         Rename
