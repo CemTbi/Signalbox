@@ -190,21 +190,22 @@ func (m *Module) Send(ctx context.Context, userID, projectID uuid.UUID, req runn
 	if m.runner == nil {
 		return Entry{}, ErrRunnerUnavailable
 	}
-	var c chain
+	step := Step{Name: "Request", Request: req, Auth: auth}
 	if opts.ItemID != uuid.Nil || opts.Scripts != nil {
 		if opts.ItemID != uuid.Nil {
 			if err := m.authorizeFor(ctx, userID, projectOfItem, opts.ItemID, read); err != nil {
 				return Entry{}, err
 			}
 		}
-		var collectionID uuid.UUID
-		var err error
-		if c, collectionID, err = m.scriptChain(ctx, opts.ItemID, opts.Scripts); err != nil {
+		chained, collectionID, err := m.scriptChain(ctx, opts.ItemID, opts.Scripts)
+		if err != nil {
 			if errors.Is(err, ErrNotFound) {
 				return Entry{}, err
 			}
 			return Entry{}, fmt.Errorf("read scripts: %w", err)
 		}
+		chained.Request, chained.Auth = req, auth
+		step = chained
 		if collectionID != uuid.Nil {
 			opts.CollectionID = collectionID
 		}
@@ -243,93 +244,21 @@ func (m *Module) Send(ctx context.Context, userID, projectID uuid.UUID, req runn
 			return Entry{}, err
 		}
 	}
-	values := map[string]string{}
-	for k, v := range collectionValues {
-		values[k] = v
+	st := &state{
+		vars:       scripts.Variables{Collection: anyMap(collectionValues), Environment: anyMap(envValues)},
+		iterations: 1, secrets: secrets, stored: map[string]string{},
 	}
-	// The environment's win: it's narrower, as in Postman.
-	for k, v := range envValues {
-		values[k] = v
-	}
-	// The secrets' stored values, which history masks even after a script
-	// changes them.
-	stored := map[string]string{}
 	for _, k := range secrets {
-		stored[k] = values[k]
+		st.stored[k] = envValues[k]
 	}
-
-	var run *scriptRun
-	send := true
-	if !c.empty() {
-		var release func()
-		var err error
-		if run, release, err = m.startScripts(ctx, c, scripts.Variables{Collection: anyMap(collectionValues), Environment: anyMap(envValues)}); err != nil {
-			return Entry{}, err
-		}
-		defer release()
-		send = run.pre(ctx, &req)
-		values = run.values()
-	}
-	res := newResolver(values, secrets, time.Now())
-	req, err := res.request(req)
+	out, err := m.Engine().step(ctx, st, step)
 	if err != nil {
 		return Entry{}, err
 	}
-	auth = auth.resolve(res)
-	if res.budget < 0 {
-		return Entry{}, ErrResolvedTooLarge
-	}
-	credentials := auth.apply(&req)
-	var result runner.Result
-	switch {
-	case send:
-		result = m.runner.Run(ctx, req)
-		if run != nil && result.Response != nil {
-			run.test(ctx, req, result.Response, result.Timings.Total.Milliseconds())
-		}
-	case run.outcome.Skipped:
-		result.Failure = &runner.Failure{Code: "skipped", Message: "A pre-request script skipped the request, so it wasn't sent."}
-	default:
-		last := run.outcome.Errors[len(run.outcome.Errors)-1]
-		result.Failure = &runner.Failure{Code: "script",
-			Message: fmt.Sprintf("The pre-request script of %s failed, so the request wasn't sent. %s: %s", last.From, last.Name, last.Message)}
-	}
-	e := Entry{
-		ID: id.New(), ProjectID: projectID, UserID: userID, EnvironmentID: environmentID, Unresolved: res.Unresolved(), Auth: auth.kept(),
-		Method: strings.ToUpper(strings.TrimSpace(req.Method)), URL: strings.TrimSpace(req.URL),
-		Headers: redact(req.Headers), Body: req.Body, Result: result,
-	}
-	if run != nil {
-		e.Scripts = &run.outcome
-	}
-	// What comes back is whole; what history keeps doesn't hold secrets:
-	// their stored values, their values now, and what auth sent.
-	hidden := credentials
-	for _, k := range secrets {
-		hidden = append(hidden, values[k])
-	}
-	kept := e
-	mask := newMasker(stored, secrets, hidden...)
-	kept.Scripts = e.Scripts.mask(mask)
-	kept.URL, kept.Headers, kept.Body = mask.string(kept.URL), mask.headers(kept.Headers), mask.bytes(kept.Body)
-	if a := kept.Auth; a != nil {
-		masked := *a
-		masked.Username = mask.string(a.Username)
-		kept.Auth = &masked
-	}
-	if f := result.Failure; f != nil {
-		// Failure messages can name the host, which a secret may fill in.
-		masked := *f
-		masked.Message = mask.string(f.Message)
-		kept.Result.Failure = &masked
-	}
-	if r := result.Response; r != nil {
-		masked := *r
-		// Masked before save cuts it, so the cut can't leave part of a
-		// secret.
-		masked.Headers, masked.URL, masked.Body = mask.headers(r.Headers), mask.string(r.URL), mask.bytes(r.Body)
-		kept.Result.Response = &masked
-	}
+	e := out.entry()
+	e.ID, e.ProjectID, e.UserID, e.EnvironmentID = id.New(), projectID, userID, environmentID
+	// What comes back is whole; what history keeps doesn't hold secrets.
+	kept := e.masked(out.mask(st))
 	if len(kept.Body) > maxStoredRequestRaw {
 		// Cut on a character boundary, so a text body stays text.
 		n := maxStoredRequestRaw

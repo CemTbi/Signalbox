@@ -210,6 +210,25 @@ pm.sendRequest({
 	}
 }
 
+func TestNextRequest(t *testing.T) {
+	s := session(t, scripts.Options{})
+	for _, tt := range []struct {
+		source string
+		want   *string
+	}{
+		{`pm.test("none", () => {});`, nil},
+		{`pm.execution.setNextRequest("Pay");`, ptr("Pay")},
+		{`postman.setNextRequest(null);`, ptr("")},
+	} {
+		res := run(t, s, scripts.Input{Event: "test", Source: tt.source, Response: orderResponse})
+		if (res.NextRequest == nil) != (tt.want == nil) || res.NextRequest != nil && *res.NextRequest != *tt.want {
+			t.Errorf("%s: next request = %v", tt.source, res.NextRequest)
+		}
+	}
+}
+
+func ptr(s string) *string { return &s }
+
 func TestTimersAndDone(t *testing.T) {
 	res := run(t, session(t, scripts.Options{}), scripts.Input{Event: "test", Source: `
 pm.test("later", function (done) {

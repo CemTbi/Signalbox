@@ -274,3 +274,44 @@ export function variablesQuery(client: ApiClient, environmentId: string) {
     queryFn: () => unwrapTagged(client.GET("/api/v1/environments/{environmentId}/variables", { params: { path: { environmentId } } })),
   });
 }
+
+export const runsKey = (collectionId: string) => ["collections", collectionId, "runs"] as const;
+
+/** A collection's test runs, newest first. */
+export function runsQuery(client: ApiClient, collectionId: string) {
+  return infiniteQueryOptions({
+    queryKey: runsKey(collectionId),
+    queryFn: ({ pageParam }) =>
+      unwrap(
+        client.GET("/api/v1/collections/{collectionId}/runs", {
+          params: { path: { collectionId }, query: { limit: PAGE_SIZE, cursor: pageParam } },
+        }),
+      ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor,
+  });
+}
+
+export const runKey = (runId: string) => ["runs", runId] as const;
+
+/** A test run and its totals. Until it finishes, it's asked for again every second. */
+export function runQuery(client: ApiClient, runId: string) {
+  return queryOptions({
+    queryKey: runKey(runId),
+    queryFn: () => unwrap(client.GET("/api/v1/runs/{runId}", { params: { path: { runId } } })),
+    refetchInterval: (q) => (q.state.data && !running(q.state.data.status) ? false : 1000),
+  });
+}
+
+/** Whether a run's status means it may still change. */
+export function running(status: string): boolean {
+  return status === "queued" || status === "running";
+}
+
+/** A collection, for pages about it. */
+export function collectionQuery(client: ApiClient, collectionId: string) {
+  return queryOptions({
+    queryKey: ["collections", collectionId],
+    queryFn: () => unwrap(client.GET("/api/v1/collections/{collectionId}", { params: { path: { collectionId } } })),
+  });
+}

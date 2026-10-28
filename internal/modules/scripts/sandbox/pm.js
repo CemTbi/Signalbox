@@ -243,7 +243,8 @@ globalThis.__execute = function (ctx, compiled) {
       });
     },
     execution: {
-      setNextRequest: (name) => (out.nextRequest = name === null ? null : String(name)),
+      // null stops the run; it travels as "", which no request is named.
+      setNextRequest: (name) => (out.nextRequest = name === null ? "" : String(name)),
       skipRequest: () => (out.skipRequest = true),
     },
     require: requireModule,

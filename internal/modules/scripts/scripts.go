@@ -151,8 +151,8 @@ type Result struct {
 	// Request is pm.request after the script, which a pre-request script
 	// may have changed.
 	Request *Request `json:"request,omitempty"`
-	// NextRequest is set by setNextRequest; a nil string pointer inside
-	// means it wasn't called, and "" with Stop means stop the run.
+	// NextRequest is what setNextRequest named: nil when it wasn't
+	// called, and "" for null, which stops the run.
 	NextRequest *string `json:"nextRequest,omitempty"`
 	SkipRequest bool    `json:"skipRequest"`
 	// Error is an uncaught error, which ends the script. Tests that ran

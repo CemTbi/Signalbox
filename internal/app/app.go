@@ -29,6 +29,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
 	"github.com/CemTbi/Signalbox/internal/modules/runner"
 	"github.com/CemTbi/Signalbox/internal/modules/scripts"
+	"github.com/CemTbi/Signalbox/internal/modules/testruns"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/egress"
 	"github.com/CemTbi/Signalbox/internal/platform/postgres"
@@ -112,7 +113,8 @@ type Server struct {
 	db         *pgxpool.Pool
 	identity   *identity.Service
 	workspaces *workspaces.Service
-	client     *client.Module // nil when the api role isn't running
+	client     *client.Module   // nil when the api role isn't running
+	runs       *testruns.Module // nil when the api role isn't running
 
 	ops *endpoint
 	api *endpoint // nil when the api role isn't running
@@ -216,6 +218,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 		if run != nil {
 			s.client.UseScripts(scripts.NewPool(2, scripts.Options{Send: s.client.ScriptSender()}))
 		}
+		s.runs = testruns.New(db, logger, s.workspaces, s.client)
 		if kek != nil {
 			s.client.UseSecretKey(kek)
 		} else {
@@ -236,6 +239,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 			Collections:    s.client,
 			Variables:      s.client,
 			Imports:        s.client,
+			Runs:           s.runs,
 			PublicURL:      publicURL,
 			TrustedProxies: trusted,
 		})
@@ -328,6 +332,12 @@ func (s *Server) Run(ctx context.Context) error {
 	if s.client != nil {
 		g.Go(func() error {
 			s.client.Run(gctx)
+			return nil
+		})
+	}
+	if s.runs != nil {
+		g.Go(func() error {
+			s.runs.Run(gctx)
 			return nil
 		})
 	}
@@ -424,6 +434,10 @@ func (s *Server) shutdown() error {
 		}
 		// Shutdown doesn't close a listener that never started serving.
 		_ = e.ln.Close()
+	}
+	// Runs in progress stop, and are marked interrupted.
+	if s.runs != nil {
+		s.runs.Close()
 	}
 	if err := errors.Join(errs...); err != nil {
 		return fmt.Errorf("shutdown: %w", err)

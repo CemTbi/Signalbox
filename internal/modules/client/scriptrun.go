@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"mime/multipart"
 	"net/url"
 	"strings"
@@ -70,12 +69,11 @@ func (c *chain) add(from string, s Scripts) {
 
 // scriptChain gathers the scripts of a saved request's collection and
 // folders, and the request's own: own, when the editor sends them, or the
-// saved ones.
-func (m *Module) scriptChain(ctx context.Context, itemID uuid.UUID, own *Scripts) (chain, uuid.UUID, error) {
-	c := chain{name: "Request"}
+// saved ones. It returns the step to send, without its request.
+func (m *Module) scriptChain(ctx context.Context, itemID uuid.UUID, own *Scripts) (Step, uuid.UUID, error) {
+	c := Step{Name: "Request", ItemID: itemID}
 	var collectionID uuid.UUID
 	if itemID != uuid.Nil {
-		c.itemID = itemID
 		var cs Collection
 		rows, err := m.db.Query(ctx, `
 			WITH RECURSIVE up AS (
@@ -86,7 +84,7 @@ func (m *Module) scriptChain(ctx context.Context, itemID uuid.UUID, own *Scripts
 			)
 			SELECT collection_id, kind, name, scripts FROM up ORDER BY depth DESC`, itemID)
 		if err != nil {
-			return chain{}, uuid.Nil, err
+			return Step{}, uuid.Nil, err
 		}
 		type link struct {
 			collection uuid.UUID
@@ -99,27 +97,29 @@ func (m *Module) scriptChain(ctx context.Context, itemID uuid.UUID, own *Scripts
 			return l, err
 		})
 		if err != nil {
-			return chain{}, uuid.Nil, err
+			return Step{}, uuid.Nil, err
 		}
 		if len(links) == 0 || links[len(links)-1].kind != KindRequest {
-			return chain{}, uuid.Nil, ErrNotFound
+			return Step{}, uuid.Nil, ErrNotFound
 		}
 		collectionID = links[0].collection
 		if cs, err = readCollection(m.db.QueryRow(ctx, `SELECT `+collectionColumns+` FROM collections WHERE id = $1`, collectionID)); err != nil {
-			return chain{}, uuid.Nil, err
+			return Step{}, uuid.Nil, err
 		}
-		c.add(cs.Name, cs.Scripts)
+		c.Chain = append(c.Chain, Link{From: cs.Name, Scripts: cs.Scripts})
+		var path []string
 		for _, l := range links[:len(links)-1] {
-			c.add(l.name, l.scripts)
+			c.Chain = append(c.Chain, Link{From: l.name, Scripts: l.scripts})
+			path = append(path, l.name)
 		}
 		last := links[len(links)-1]
-		c.name = last.name
+		c.Name, c.Path = last.name, strings.Join(path, " / ")
 		if own == nil {
 			own = &last.scripts
 		}
 	}
 	if own != nil {
-		c.add(c.name, *own)
+		c.Chain = append(c.Chain, Link{From: c.Name, Scripts: *own})
 	}
 	return c, collectionID, nil
 }
@@ -227,37 +227,30 @@ func (o *ScriptOutcome) mask(m masker) *ScriptOutcome {
 	return &out
 }
 
-// scriptRun runs a send's scripts in one session.
+// scriptRun runs a step's scripts in the run's session.
 type scriptRun struct {
-	m       *Module
-	session *scripts.Session
-	chain   chain
-	vars    scripts.Variables
-	outcome ScriptOutcome
+	e                     *Engine
+	session               *scripts.Session
+	chain                 chain
+	vars                  scripts.Variables
+	iteration, iterations int
+	outcome               ScriptOutcome
+	// next is what setNextRequest last named.
+	next *string
 }
 
-// startScripts takes a session, waiting for a slot. release gives it back.
-func (m *Module) startScripts(ctx context.Context, c chain, vars scripts.Variables) (*scriptRun, func(), error) {
-	// Scripts run beside the runner, which always gets a pool.
-	if m.scripts == nil {
-		return nil, nil, ErrRunnerUnavailable
-	}
+// slot waits for one of the engine's script slots; release gives it back.
+func (r *scriptRun) slot(ctx context.Context) (release func(), err error) {
 	select {
-	case m.scriptSlots <- struct{}{}:
+	case r.e.slots <- struct{}{}:
+		return func() { <-r.e.slots }, nil
 	case <-ctx.Done():
-		return nil, nil, ctx.Err()
+		return nil, ctx.Err()
 	}
-	release := func() { <-m.scriptSlots }
-	s, err := m.scripts.Session()
-	if err != nil {
-		release()
-		return nil, nil, fmt.Errorf("start a script session: %w", err)
-	}
-	return &scriptRun{m: m, session: s, chain: c, vars: vars}, release, nil
 }
 
 func (r *scriptRun) info(event string) scripts.Info {
-	info := scripts.Info{EventName: event, IterationCount: 1, RequestName: r.chain.name}
+	info := scripts.Info{EventName: event, Iteration: r.iteration, IterationCount: max(r.iterations, 1), RequestName: r.chain.name}
 	if r.chain.itemID != uuid.Nil {
 		info.RequestID = id.Format(id.Item, r.chain.itemID)
 	}
@@ -267,31 +260,53 @@ func (r *scriptRun) info(event string) scripts.Info {
 // pre runs the pre-request scripts, which may change the request and the
 // variables. It returns false when the request mustn't be sent: a script
 // failed, or skipped it.
-func (r *scriptRun) pre(ctx context.Context, req *runner.Request) bool {
+func (r *scriptRun) pre(ctx context.Context, req *runner.Request) (bool, error) {
+	if len(r.chain.pre) == 0 {
+		return true, nil
+	}
+	release, err := r.slot(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer release()
 	for _, s := range r.chain.pre {
 		res, err := r.session.Run(ctx, scripts.Input{Event: "prerequest", Source: s.Source, Request: toScriptRequest(*req), Variables: r.vars, Info: r.info("prerequest")})
 		if err != nil {
+			if ctx.Err() != nil {
+				return false, ctx.Err()
+			}
 			r.outcome.Errors = append(r.outcome.Errors, ScriptError{From: s.From, Event: "prerequest", Name: "Error", Message: runError(err)})
-			return false
+			return false, nil
 		}
 		r.outcome.record(s.From, "prerequest", res)
 		r.vars = res.Variables
+		if res.NextRequest != nil {
+			r.next = res.NextRequest
+		}
 		if res.Request != nil {
 			fromScriptRequest(req, *res.Request)
 		}
 		if res.Error != nil {
-			return false
+			return false, nil
 		}
 		if res.SkipRequest {
 			r.outcome.Skipped = true
-			return false
+			return false, nil
 		}
 	}
-	return true
+	return true, nil
 }
 
 // test runs the test scripts against the response.
-func (r *scriptRun) test(ctx context.Context, req runner.Request, resp *runner.Response, total int64) {
+func (r *scriptRun) test(ctx context.Context, req runner.Request, resp *runner.Response, total int64) error {
+	if len(r.chain.test) == 0 {
+		return nil
+	}
+	release, err := r.slot(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
 	sr := &scripts.Response{Code: resp.Status, Status: resp.StatusText, Body: string(resp.Body), ResponseTime: total}
 	for _, h := range resp.Headers {
 		sr.Header = append(sr.Header, scripts.Header{Key: h.Key, Value: h.Value})
@@ -299,12 +314,19 @@ func (r *scriptRun) test(ctx context.Context, req runner.Request, resp *runner.R
 	for _, s := range r.chain.test {
 		res, err := r.session.Run(ctx, scripts.Input{Event: "test", Source: s.Source, Request: toScriptRequest(req), Response: sr, Variables: r.vars, Info: r.info("test")})
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			r.outcome.Errors = append(r.outcome.Errors, ScriptError{From: s.From, Event: "test", Name: "Error", Message: runError(err)})
 			continue
 		}
 		r.outcome.record(s.From, "test", res)
 		r.vars = res.Variables
+		if res.NextRequest != nil {
+			r.next = res.NextRequest
+		}
 	}
+	return nil
 }
 
 func runError(err error) string {
@@ -412,13 +434,23 @@ func setHeader(req *runner.Request, name, value string) {
 // where the egress policy allows and nowhere else. Give it to the script
 // pool.
 func (m *Module) ScriptSender() scripts.Sender {
+	return sender(m.runner)
+}
+
+// ScriptSender handles pm.sendRequest through the engine's runner. Give
+// it to the script pool.
+func (e *Engine) ScriptSender() scripts.Sender {
+	return sender(e.runner)
+}
+
+func sender(run Runner) scripts.Sender {
 	return func(ctx context.Context, sr scripts.Request) (*scripts.Response, error) {
-		if m.runner == nil {
+		if run == nil {
 			return nil, ErrRunnerUnavailable
 		}
 		var req runner.Request
 		fromScriptRequest(&req, sr)
-		res := m.runner.Run(ctx, req)
+		res := run.Run(ctx, req)
 		if res.Failure != nil {
 			return nil, errors.New(res.Failure.Message)
 		}

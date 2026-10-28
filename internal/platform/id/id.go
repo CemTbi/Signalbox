@@ -37,6 +37,7 @@ const (
 	History     Prefix = "hist"
 	Collection  Prefix = "col"
 	Item        Prefix = "item"
+	Run         Prefix = "run"
 )
 
 // ErrInvalid means a string isn't an ID of the expected type.

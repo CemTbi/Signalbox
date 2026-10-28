@@ -935,6 +935,153 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/collections/{collectionId}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The collection's ID. */
+                collectionId: components["parameters"]["CollectionId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List a collection's runs
+         * @description Lists the collection's test runs, newest first. Runs are kept 90 days, and at most the newest 100 of a collection. Every member of the project may.
+         */
+        get: operations["listRuns"];
+        put?: never;
+        /**
+         * Run a collection as a test suite
+         * @description Starts a run of the collection, or of one folder of it: its requests in order, with the scripts of the collection and folders around each, any number of iterations, optionally once per row of a data file. Values scripts set carry from one request to the next, and aren't saved. The run waits for a free slot, then runs in the background; follow it with `getRun` and `listRunSteps`. A run sends at most 10,000 requests and lasts at most an hour. Owners, admins and editors may. See ADR-0033.
+         */
+        post: operations["startRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{runId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The run's ID. */
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a run
+         * @description Returns a run with its totals so far. Every member of the project may.
+         */
+        get: operations["getRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{runId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The run's ID. */
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a run
+         * @description Cancels a run. A queued run ends at once; a running one stops after the request it's on. Cancelling a finished run changes nothing. Owners, admins and editors may.
+         */
+        post: operations["cancelRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{runId}/steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The run's ID. */
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List a run's steps
+         * @description Lists a run's steps in order, after `after`. To follow a run, ask again with the last `seq` you saw until the run has finished and `more` is false. Steps here leave out headers, console output, variable changes and response bodies; `getRunStep` has them.
+         */
+        get: operations["listRunSteps"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{runId}/steps/{seq}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The run's ID. */
+                runId: components["parameters"]["RunId"];
+                /**
+                 * @description The step's place in the run, from 1.
+                 * @example 3
+                 */
+                seq: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a step of a run
+         * @description Returns one step in full, with headers, console output, variable changes, and the start of the response body when the step failed.
+         */
+        get: operations["getRunStep"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{runId}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The run's ID. */
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Download a run's report
+         * @description Returns the run as a JUnit XML file for CI, a JSON file with every step, or a self-contained HTML page that runs no scripts. Secrets are shown as •••.
+         */
+        get: operations["getRunReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/items/{itemId}": {
         parameters: {
             query?: never;
@@ -1558,11 +1705,11 @@ export interface components {
         /** @description Why a request got no response. */
         RunnerFailure: {
             /**
-             * @description The kind of failure. `script`: a pre-request script failed, so the request wasn't sent. `skipped`: a pre-request script skipped it.
+             * @description The kind of failure. `script`: a pre-request script failed, so the request wasn't sent. `skipped`: a pre-request script skipped it. `too-large`: in a run, the request was too large once its variables were filled in.
              * @example timeout
              * @enum {string}
              */
-            code: "invalid-request" | "blocked" | "dns" | "connect" | "tls" | "timeout" | "network" | "script" | "skipped";
+            code: "invalid-request" | "blocked" | "dns" | "connect" | "tls" | "timeout" | "network" | "script" | "skipped" | "too-large";
             /**
              * @description What went wrong
              * @example The server didn't answer in time.
@@ -1738,7 +1885,7 @@ export interface components {
              */
             test?: string;
         };
-        /** @description What a send's scripts did. Variables they changed last for the send; they aren't saved. */
+        /** @description What a send's or a run step's scripts did. Variables they changed last for the send or the run; they aren't saved. */
         ScriptOutcome: {
             /**
              * @description The tests the scripts ran, in order.
@@ -1869,6 +2016,307 @@ export interface components {
              * @example false
              */
             skipped: boolean;
+        };
+        /**
+         * @description A test run's ID.
+         * @example run_01j9z3w5y7a9c1e3g5j7m9p1r3
+         */
+        RunId: string;
+        /** @description How to run a collection. */
+        RunStart: {
+            folderId?: components["schemas"]["ItemId"];
+            environmentId?: components["schemas"]["EnvironmentId"];
+            /**
+             * @description How many times the requests run. 0 or absent runs them once per data row, or once. Iterations past the last data row reuse it.
+             * @example 3
+             */
+            iterations?: number;
+            /** @description A data file whose rows fill `pm.iterationData` and `{{name}}`, one row per iteration. */
+            data?: {
+                /**
+                 * @description CSV with a header row, or a JSON array of objects.
+                 * @example csv
+                 * @enum {string}
+                 */
+                format: "csv" | "json";
+                /**
+                 * @description The file, at most 5 MiB and 1,000 rows.
+                 * @example user
+                 *     ada
+                 *     bob
+                 */
+                content: string;
+            };
+            /**
+             * @description How long to wait between requests.
+             * @example 0
+             */
+            delayMs?: number;
+            /**
+             * @description Stop at the first request that fails or has a failing test.
+             * @example false
+             */
+            bail?: boolean;
+        };
+        /** @description What a run counted so far. */
+        RunTotals: {
+            /**
+             * @description Requests run.
+             * @example 12
+             */
+            requests: number;
+            /**
+             * @description Requests that failed: no response, a failed script or a failed test.
+             * @example 1
+             */
+            failedRequests: number;
+            /**
+             * @description Tests run, not counting skipped ones.
+             * @example 30
+             */
+            tests: number;
+            /**
+             * @description Tests that failed.
+             * @example 1
+             */
+            failedTests: number;
+        };
+        /** @description A test run, without its steps. */
+        Run: {
+            id: components["schemas"]["RunId"];
+            projectId: components["schemas"]["ProjectId"];
+            collectionId: components["schemas"]["CollectionId"];
+            folderId?: components["schemas"]["ItemId"];
+            environmentId?: components["schemas"]["EnvironmentId"];
+            startedBy?: components["schemas"]["UserId"];
+            /**
+             * @description The collection's or folder's name when the run started.
+             * @example Shop API
+             */
+            name: string;
+            /**
+             * @description The environment's name when the run started.
+             * @example Staging
+             */
+            environment?: string;
+            /**
+             * @description `passed`: every request got a response, every test passed and no script failed. `interrupted`: the server stopped during the run.
+             * @example passed
+             * @enum {string}
+             */
+            status: "queued" | "running" | "passed" | "failed" | "canceled" | "interrupted";
+            /**
+             * @description Why the run ended before its last request: `bail` at a failure, `steps` at 10,000 requests, `time` at an hour, `error` on a server error, `restart` when the server stopped.
+             * @example bail
+             * @enum {string}
+             */
+            stopped?: "bail" | "steps" | "time" | "error" | "restart";
+            /**
+             * @description How many times the requests run.
+             * @example 2
+             */
+            iterations: number;
+            /**
+             * @description The data file's rows.
+             * @example 2
+             */
+            dataRows: number;
+            /**
+             * @description The wait between requests.
+             * @example 0
+             */
+            delayMs: number;
+            /**
+             * @description Whether the run stops at the first failure.
+             * @example false
+             */
+            bail: boolean;
+            totals: components["schemas"]["RunTotals"];
+            createdAt: components["schemas"]["Timestamp"];
+            startedAt?: components["schemas"]["Timestamp"];
+            finishedAt?: components["schemas"]["Timestamp"];
+            /**
+             * @description From start to finish, or so far.
+             * @example 1834.2
+             */
+            durationMs: number;
+        };
+        /** @description One page of runs, newest first, with a cursor for the next page. */
+        RunPage: {
+            /**
+             * @description The runs on this page.
+             * @example [
+             *       {
+             *         "id": "run_01j9z3w5y7a9c1e3g5j7m9p1r3",
+             *         "projectId": "prj_01j9z3k5m7p9r1t3v5x7z9b1c3",
+             *         "collectionId": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+             *         "name": "Shop API",
+             *         "environment": "Staging",
+             *         "status": "failed",
+             *         "iterations": 2,
+             *         "dataRows": 2,
+             *         "delayMs": 0,
+             *         "bail": false,
+             *         "totals": {
+             *           "requests": 6,
+             *           "failedRequests": 1,
+             *           "tests": 12,
+             *           "failedTests": 1
+             *         },
+             *         "createdAt": "2026-10-28T12:00:00Z",
+             *         "startedAt": "2026-10-28T12:00:00Z",
+             *         "finishedAt": "2026-10-28T12:00:02Z",
+             *         "durationMs": 1834.2
+             *       }
+             *     ]
+             */
+            data: components["schemas"]["Run"][];
+            nextCursor?: components["schemas"]["NextCursor"];
+        };
+        /** @description One request of a run. It has `response` or `failure`. Secrets are •••. */
+        RunStep: {
+            /**
+             * @description The step's place in the run.
+             * @example 3
+             */
+            seq: number;
+            /**
+             * @description The iteration, from 0.
+             * @example 0
+             */
+            iteration: number;
+            itemId?: components["schemas"]["ItemId"];
+            /**
+             * @description The request's name.
+             * @example Create an order
+             */
+            name: string;
+            /**
+             * @description The folders it's in, joined by " / ".
+             * @example Orders
+             */
+            path?: string;
+            /**
+             * @description The method sent.
+             * @example POST
+             */
+            method: string;
+            /**
+             * @description The URL sent.
+             * @example https://api.example.com/orders
+             */
+            url: string;
+            /**
+             * @description Whether the step counts against the run: no response (other than skipped), a failed script or a failed test.
+             * @example false
+             */
+            failed: boolean;
+            /**
+             * @description How long the request took.
+             * @example 83.5
+             */
+            durationMs: number;
+            /**
+             * @description The headers sent, with credentials as •••. Only in `getRunStep`.
+             * @example [
+             *       {
+             *         "key": "Authorization",
+             *         "value": "•••"
+             *       }
+             *     ]
+             */
+            headers?: components["schemas"]["HttpHeader"][];
+            /**
+             * @description The `{{names}}` that had no value.
+             * @example [
+             *       "orderId"
+             *     ]
+             */
+            unresolved?: string[];
+            failure?: components["schemas"]["RunnerFailure"];
+            /** @description What came back. */
+            response?: {
+                /**
+                 * @description The status code.
+                 * @example 201
+                 */
+                status: number;
+                /**
+                 * @description The reason phrase.
+                 * @example Created
+                 */
+                statusText?: string;
+                /**
+                 * @description The response headers. Only in `getRunStep`.
+                 * @example [
+                 *       {
+                 *         "key": "Content-Type",
+                 *         "value": "application/json"
+                 *       }
+                 *     ]
+                 */
+                headers?: components["schemas"]["HttpHeader"][];
+                /**
+                 * @description The body's size in bytes.
+                 * @example 42
+                 */
+                size: number;
+                /**
+                 * @description The body's first 16 KiB, kept when the step failed. Only in `getRunStep`.
+                 * @example {"error":"out of stock"}
+                 */
+                body?: string;
+            };
+            scripts?: components["schemas"]["ScriptOutcome"];
+            /**
+             * @description Why the run went on differently, such as a setNextRequest that named no request.
+             * @example setNextRequest named "Pay", which isn't in this run, so the iteration ended.
+             */
+            note?: string;
+        };
+        /** @description A page of a run's steps, in order. */
+        RunStepPage: {
+            /**
+             * @description The steps.
+             * @example [
+             *       {
+             *         "seq": 2,
+             *         "iteration": 0,
+             *         "itemId": "item_01j9z3w5y7a9c1e3g5j7m9p1r3",
+             *         "name": "Create an order",
+             *         "path": "Orders",
+             *         "method": "POST",
+             *         "url": "https://api.example.com/orders",
+             *         "failed": true,
+             *         "durationMs": 83.5,
+             *         "response": {
+             *           "status": 500,
+             *           "statusText": "Internal Server Error",
+             *           "size": 24
+             *         },
+             *         "scripts": {
+             *           "tests": [
+             *             {
+             *               "from": "Create an order",
+             *               "name": "is created",
+             *               "passed": false,
+             *               "error": "AssertionError: expected 500 to equal 201"
+             *             }
+             *           ],
+             *           "logs": [],
+             *           "errors": [],
+             *           "changes": [],
+             *           "skipped": false
+             *         }
+             *       }
+             *     ]
+             */
+            data: components["schemas"]["RunStep"][];
+            /**
+             * @description Whether there are steps after the last one.
+             * @example false
+             */
+            more: boolean;
         };
         /** @description What an import found. It is clean when nothing was left out and nothing will run differently than in Postman or curl. */
         ImportReport: {
@@ -4009,6 +4457,8 @@ export interface components {
     parameters: {
         /** @description The collection's ID. */
         CollectionId: components["schemas"]["CollectionId"];
+        /** @description The run's ID. */
+        RunId: components["schemas"]["RunId"];
         /** @description The item's ID. */
         ItemId: components["schemas"]["ItemId"];
         /** @description The workspace's ID. */
@@ -7036,6 +7486,459 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listRuns: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Maximum number of items to return.
+                 * @example 50
+                 */
+                limit?: components["parameters"]["Limit"];
+                /**
+                 * @description The `nextCursor` value from the previous page.
+                 * @example eyJpZCI6IndzXzAxajl6M2txNG04cjJ0NnYweDV3N3k5YTFiIn0
+                 */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description The collection's ID. */
+                collectionId: components["parameters"]["CollectionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of runs. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "id": "run_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *           "projectId": "prj_01j9z3k5m7p9r1t3v5x7z9b1c3",
+                     *           "collectionId": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *           "name": "Shop API",
+                     *           "environment": "Staging",
+                     *           "status": "failed",
+                     *           "iterations": 2,
+                     *           "dataRows": 2,
+                     *           "delayMs": 0,
+                     *           "bail": false,
+                     *           "totals": {
+                     *             "requests": 6,
+                     *             "failedRequests": 1,
+                     *             "tests": 12,
+                     *             "failedTests": 1
+                     *           },
+                     *           "createdAt": "2026-10-28T12:00:00Z",
+                     *           "startedAt": "2026-10-28T12:00:00Z",
+                     *           "finishedAt": "2026-10-28T12:00:02Z",
+                     *           "durationMs": 1834.2
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["RunPage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    startRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The collection's ID. */
+                collectionId: components["parameters"]["CollectionId"];
+            };
+            cookie?: never;
+        };
+        /** @description How to run it. An empty object runs the whole collection once, without an environment. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "environmentId": "env_01j9z3n5q7s9v1w3y5a7c9e1g3",
+                 *       "data": {
+                 *         "format": "csv",
+                 *         "content": "user\nada\nbob\n"
+                 *       },
+                 *       "bail": true
+                 *     }
+                 */
+                "application/json": components["schemas"]["RunStart"];
+            };
+        };
+        responses: {
+            /** @description The run, queued. */
+            202: {
+                headers: {
+                    Location: components["headers"]["Location"];
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "run_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "projectId": "prj_01j9z3k5m7p9r1t3v5x7z9b1c3",
+                     *       "collectionId": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "name": "Shop API",
+                     *       "status": "queued",
+                     *       "iterations": 2,
+                     *       "dataRows": 2,
+                     *       "delayMs": 0,
+                     *       "bail": true,
+                     *       "totals": {
+                     *         "requests": 0,
+                     *         "failedRequests": 0,
+                     *         "tests": 0,
+                     *         "failedTests": 0
+                     *       },
+                     *       "createdAt": "2026-10-28T12:00:00Z",
+                     *       "durationMs": 0
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["ContentTooLarge"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description This server doesn't run the runner role (`runner-unavailable`), or can't read the environment's secrets (`secrets-unavailable`, `secret-key-changed`). */
+            503: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Service Unavailable",
+                     *       "status": 503,
+                     *       "code": "runner-unavailable",
+                     *       "detail": "This server doesn't run the runner role, which sends requests. Run signalbox-server with --roles=all."
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    getRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The run's ID. */
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The run. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "run_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "projectId": "prj_01j9z3k5m7p9r1t3v5x7z9b1c3",
+                     *       "collectionId": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "name": "Shop API",
+                     *       "environment": "Staging",
+                     *       "status": "failed",
+                     *       "iterations": 2,
+                     *       "dataRows": 2,
+                     *       "delayMs": 0,
+                     *       "bail": false,
+                     *       "totals": {
+                     *         "requests": 6,
+                     *         "failedRequests": 1,
+                     *         "tests": 12,
+                     *         "failedTests": 1
+                     *       },
+                     *       "createdAt": "2026-10-28T12:00:00Z",
+                     *       "startedAt": "2026-10-28T12:00:00Z",
+                     *       "finishedAt": "2026-10-28T12:00:02Z",
+                     *       "durationMs": 1834.2
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    cancelRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The run's ID. */
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The run. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "run_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "projectId": "prj_01j9z3k5m7p9r1t3v5x7z9b1c3",
+                     *       "collectionId": "col_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "name": "Shop API",
+                     *       "environment": "Staging",
+                     *       "status": "failed",
+                     *       "iterations": 2,
+                     *       "dataRows": 2,
+                     *       "delayMs": 0,
+                     *       "bail": false,
+                     *       "totals": {
+                     *         "requests": 6,
+                     *         "failedRequests": 1,
+                     *         "tests": 12,
+                     *         "failedTests": 1
+                     *       },
+                     *       "createdAt": "2026-10-28T12:00:00Z",
+                     *       "startedAt": "2026-10-28T12:00:00Z",
+                     *       "finishedAt": "2026-10-28T12:00:02Z",
+                     *       "durationMs": 1834.2
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listRunSteps: {
+        parameters: {
+            query?: {
+                /**
+                 * @description The last `seq` you saw; 0 or absent starts at the first step.
+                 * @example 20
+                 */
+                after?: number;
+                /**
+                 * @description Maximum number of steps to return.
+                 * @example 100
+                 */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The run's ID. */
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of steps. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "seq": 2,
+                     *           "iteration": 0,
+                     *           "itemId": "item_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *           "name": "Create an order",
+                     *           "path": "Orders",
+                     *           "method": "POST",
+                     *           "url": "https://api.example.com/orders",
+                     *           "failed": true,
+                     *           "durationMs": 83.5,
+                     *           "response": {
+                     *             "status": 500,
+                     *             "statusText": "Internal Server Error",
+                     *             "size": 24
+                     *           },
+                     *           "scripts": {
+                     *             "tests": [
+                     *               {
+                     *                 "from": "Create an order",
+                     *                 "name": "is created",
+                     *                 "passed": false,
+                     *                 "error": "AssertionError: expected 500 to equal 201"
+                     *               }
+                     *             ],
+                     *             "logs": [],
+                     *             "errors": [],
+                     *             "changes": [],
+                     *             "skipped": false
+                     *           }
+                     *         }
+                     *       ],
+                     *       "more": false
+                     *     }
+                     */
+                    "application/json": components["schemas"]["RunStepPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getRunStep: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The run's ID. */
+                runId: components["parameters"]["RunId"];
+                /**
+                 * @description The step's place in the run, from 1.
+                 * @example 3
+                 */
+                seq: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The step. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "seq": 2,
+                     *       "iteration": 0,
+                     *       "itemId": "item_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "name": "Create an order",
+                     *       "path": "Orders",
+                     *       "method": "POST",
+                     *       "url": "https://api.example.com/orders",
+                     *       "failed": true,
+                     *       "durationMs": 83.5,
+                     *       "response": {
+                     *         "status": 500,
+                     *         "statusText": "Internal Server Error",
+                     *         "size": 24
+                     *       },
+                     *       "scripts": {
+                     *         "tests": [
+                     *           {
+                     *             "from": "Create an order",
+                     *             "name": "is created",
+                     *             "passed": false,
+                     *             "error": "AssertionError: expected 500 to equal 201"
+                     *           }
+                     *         ],
+                     *         "logs": [],
+                     *         "errors": [],
+                     *         "changes": [],
+                     *         "skipped": false
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["RunStep"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getRunReport: {
+        parameters: {
+            query?: {
+                /**
+                 * @description The report's format.
+                 * @example junit
+                 */
+                format?: "junit" | "json" | "html";
+            };
+            header?: never;
+            path: {
+                /** @description The run's ID. */
+                runId: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The report, as a file to save. */
+            200: {
+                headers: {
+                    /** @description Names the file, such as `shop-api-run_01j9z3w5y7a9c1e3g5j7m9p1r3.xml`. */
+                    "Content-Disposition"?: string;
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /** @example <?xml version="1.0" encoding="UTF-8"?><testsuites name="Shop API" tests="1" failures="0" errors="0" skipped="0" time="0.084"></testsuites> */
+                    "application/xml": unknown;
+                    /**
+                     * @example {
+                     *       "id": "run_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "name": "Shop API",
+                     *       "status": "passed",
+                     *       "iterations": 1,
+                     *       "totals": {
+                     *         "requests": 1,
+                     *         "failedRequests": 0,
+                     *         "tests": 1,
+                     *         "failedTests": 0
+                     *       },
+                     *       "startedAt": "2026-10-28T12:00:00Z",
+                     *       "durationMs": 84,
+                     *       "steps": []
+                     *     }
+                     */
+                    "application/json": Record<string, never>;
+                    /** @example <!doctype html><html lang="en">…</html> */
+                    "text/html": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             default: components["responses"]["Error"];
         };

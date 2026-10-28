@@ -10,7 +10,7 @@ import { environmentsQuery, historyKey, historyQuery, itemsKey, projectQuery, wo
 import { CollectionsPanel } from "./CollectionsPanel";
 import { CurlImport } from "./CurlImport";
 import { ImportReport, type Report } from "./ImportReport";
-import { type Draft, emptyDraft, formatMs, fromEntry, fromSaved, hadCredentials, toSaved, toScripts, toSend } from "./model";
+import { type Draft, emptyDraft, formatMs, fromEntry, fromSaved, hadCredentials, rememberedEnvironment, rememberEnvironment, toSaved, toScripts, toSend } from "./model";
 import { RequestEditor } from "./RequestEditor";
 import { ResponseView } from "./ResponseView";
 import { type SaveTarget, SaveForm } from "./SaveForm";
@@ -26,23 +26,6 @@ interface OpenItem {
   collectionId: string;
   name: string;
   etag: string;
-}
-
-/** The environment someone last sent with in a project, kept in their browser. */
-function rememberedEnvironment(projectId: string): string {
-  try {
-    return localStorage.getItem(`signalbox.environment.${projectId}`) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function rememberEnvironment(projectId: string, environmentId: string) {
-  try {
-    localStorage.setItem(`signalbox.environment.${projectId}`, environmentId);
-  } catch {
-    // Remembering is a convenience; without storage the choice lasts the visit.
-  }
 }
 
 /** A project's API client: saved requests, sending, and history. */

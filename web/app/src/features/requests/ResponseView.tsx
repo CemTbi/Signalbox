@@ -98,7 +98,7 @@ export function ResponseView({ entry }: { entry: HistoryEntry }) {
   );
 }
 
-type Outcome = NonNullable<HistoryEntry["scripts"]>;
+export type Outcome = NonNullable<HistoryEntry["scripts"]>;
 
 /** What the scripts did when there was no response to show beside it. */
 function ScriptsView({ scripts }: { scripts: Outcome }) {
@@ -111,7 +111,7 @@ function ScriptsView({ scripts }: { scripts: Outcome }) {
   );
 }
 
-function ScriptErrors({ errors }: { errors: Outcome["errors"] }) {
+export function ScriptErrors({ errors }: { errors: Outcome["errors"] }) {
   return (
     <ul className="script-errors" role="alert">
       {errors.map((e, i) => (
@@ -123,23 +123,25 @@ function ScriptErrors({ errors }: { errors: Outcome["errors"] }) {
   );
 }
 
-function TestList({ scripts }: { scripts: Outcome }) {
+export function TestList({ scripts }: { scripts: Outcome }) {
   if (scripts.tests.length === 0) return <p className="field-hint" role="tabpanel">The scripts ran no tests. Add some with pm.test.</p>;
   return (
-    <ul className="test-list" role="tabpanel" aria-label="Tests">
-      {scripts.tests.map((x, i) => (
-        <li key={i} className={x.skipped ? "test-skipped" : x.passed ? "test-passed" : "test-failed"}>
-          <span className="test-mark">{x.skipped ? "Skipped" : x.passed ? "Passed" : "Failed"}</span>
-          <span>{x.name}</span>
-          <span className="muted"> · {x.from}</span>
-          {x.error ? <span className="test-error mono">{x.error}</span> : null}
-        </li>
-      ))}
-    </ul>
+    <div role="tabpanel">
+      <ul className="test-list" aria-label="Tests">
+        {scripts.tests.map((x, i) => (
+          <li key={i} className={x.skipped ? "test-skipped" : x.passed ? "test-passed" : "test-failed"}>
+            <span className="test-mark">{x.skipped ? "Skipped" : x.passed ? "Passed" : "Failed"}</span>
+            <span>{x.name}</span>
+            <span className="muted"> · {x.from}</span>
+            {x.error ? <span className="test-error mono">{x.error}</span> : null}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
-function ConsoleList({ scripts }: { scripts: Outcome }) {
+export function ConsoleList({ scripts }: { scripts: Outcome }) {
   return (
     <div role="tabpanel">
       {scripts.logs.length === 0 ? (

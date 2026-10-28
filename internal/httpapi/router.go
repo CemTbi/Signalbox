@@ -96,6 +96,8 @@ type Deps struct {
 	// Imports reads Postman files and curl commands, and exports
 	// collections.
 	Imports Imports
+	// Runs runs collections as test suites; nil leaves the routes out.
+	Runs Runs
 	// PublicURL is the address people open Signalbox at. It decides the
 	// session cookie's name and flags, and the origin that unsafe requests
 	// must come from. Default http://localhost:8080.
@@ -237,6 +239,17 @@ func NewHandler(d Deps) http.Handler {
 		http.MethodGet:  a.authenticated(a.listItems),
 		http.MethodPost: a.authenticated(a.createItem),
 	})
+	if a.Runs != nil {
+		mux.Handle("/api/v1/collections/{collectionId}/runs", methods{
+			http.MethodGet:  a.authenticated(a.listRuns),
+			http.MethodPost: a.authenticated(a.startRun),
+		})
+		mux.Handle("/api/v1/runs/{runId}", methods{http.MethodGet: a.authenticated(a.getRun)})
+		mux.Handle("/api/v1/runs/{runId}/cancel", methods{http.MethodPost: a.authenticated(a.cancelRun)})
+		mux.Handle("/api/v1/runs/{runId}/steps", methods{http.MethodGet: a.authenticated(a.listRunSteps)})
+		mux.Handle("/api/v1/runs/{runId}/steps/{seq}", methods{http.MethodGet: a.authenticated(a.getRunStep)})
+		mux.Handle("/api/v1/runs/{runId}/report", methods{http.MethodGet: a.authenticated(a.getRunReport)})
+	}
 	mux.Handle("/api/v1/items/{itemId}", methods{
 		http.MethodGet:    a.authenticated(a.getItem),
 		http.MethodPatch:  a.authenticated(a.updateItem),
