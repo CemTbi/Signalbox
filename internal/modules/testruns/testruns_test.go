@@ -379,14 +379,16 @@ func TestCancelQueueAndShutdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for f.running(t) < 2 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	// A third waits for a slot, and cancelling it ends it at once. It
+	// starts only now: runs take free slots in whatever order their
+	// goroutines get to them.
 	c, err := f.runs.Start(f.ctx, f.owner, col, testruns.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for f.running(t) < 2 {
-		time.Sleep(10 * time.Millisecond)
-	}
-	// The third waits, and cancelling it ends it at once.
 	if got, err := f.runs.Cancel(f.ctx, f.owner, c.ID); err != nil || got.Status != report.Canceled {
 		t.Errorf("cancel queued = %s, %v", got.Status, err)
 	}
