@@ -284,6 +284,26 @@ func TestTestRunOnServer(t *testing.T) {
 		t.Errorf("report = %q, %v", b, err)
 	}
 
+	// The github reporter annotates and summarizes a server's run too.
+	summary := filepath.Join(dir, "summary.md")
+	code, stdout, stderr = runEnv(t, map[string]string{"SIGNALBOX_SERVER": api.URL, "SIGNALBOX_TOKEN": "sbx_pat_test", "GITHUB_STEP_SUMMARY": summary},
+		"test", "run", "--collection", "col_1", "-r", "github")
+	if code != cli.ExitFindings {
+		t.Fatalf("github: exit %d\n%s\n%s", code, stdout, stderr)
+	}
+	if want := "::error title=GET Orders / List orders::ok: expected 500 to equal 200\n"; stdout != want {
+		t.Errorf("annotations = %q, want %q", stdout, want)
+	}
+	b, err := os.ReadFile(summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []string{"### ❌ Shop API: Failed", "| 2 | 1 | 2 | 1 | 1.5 s |", "- **GET Orders / List orders** · 500", "  - ✗ ok: expected 500 to equal 200"} {
+		if !strings.Contains(string(b), w) {
+			t.Errorf("summary lacks %q:\n%s", w, b)
+		}
+	}
+
 	// What the server refuses says why.
 	for _, tt := range []struct {
 		args []string
