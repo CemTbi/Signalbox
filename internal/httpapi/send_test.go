@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/CemTbi/Signalbox/internal/httpapi"
 )
@@ -15,6 +16,8 @@ import (
 func TestSendingRequests(t *testing.T) {
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
+		// Long enough to measure: Windows' clock can tick every 15.6 ms.
+		time.Sleep(20 * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Seen", r.Method+" "+r.Header.Get("Authorization"))
 		w.WriteHeader(http.StatusCreated)

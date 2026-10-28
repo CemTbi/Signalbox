@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/CemTbi/Signalbox/internal/modules/client/convert"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/id"
 	"github.com/CemTbi/Signalbox/internal/platform/validate"
@@ -39,9 +40,27 @@ type Collection struct {
 	ProjectID   uuid.UUID
 	Name        string
 	Description string
-	Version     int64
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// Variables fill in {{name}} in the collection's requests; an
+	// environment's variables win over them.
+	Variables []CollectionVariable
+	Scripts   Scripts
+	Version   int64
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// CollectionVariable is one of a collection's variables. They aren't
+// secret: keep secrets in environments.
+type CollectionVariable struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+// Scripts are the JavaScript a collection, folder or request runs before
+// a request and after its response, as Postman has them.
+type Scripts struct {
+	PreRequest string `json:"prerequest,omitempty"`
+	Test       string `json:"test,omitempty"`
 }
 
 // SavedHeader is a header of a saved request. Unticked headers are kept
@@ -80,7 +99,9 @@ type Item struct {
 	Name        string
 	Description string
 	// Request is set for requests. Lists carry only its method and URL.
-	Request   *SavedRequest
+	Request *SavedRequest
+	// Scripts are empty in lists.
+	Scripts   Scripts
 	Version   int64
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -115,6 +136,7 @@ type ItemPatch struct {
 type CollectionPatch struct {
 	Name        *string
 	Description *string
+	Variables   *[]CollectionVariable
 }
 
 const (
@@ -227,12 +249,43 @@ func checkRequest(errs *validate.Errors, r *SavedRequest) {
 	r.Auth = checkAuth(errs, "/request/auth", r.Auth)
 }
 
-const collectionColumns = `id, project_id, name, description, version, created_at, updated_at`
+const collectionColumns = `id, project_id, name, description, variables, scripts, version, created_at, updated_at`
 
 func readCollection(row pgx.Row) (Collection, error) {
 	var c Collection
-	err := row.Scan(&c.ID, &c.ProjectID, &c.Name, &c.Description, &c.Version, &c.CreatedAt, &c.UpdatedAt)
+	err := row.Scan(&c.ID, &c.ProjectID, &c.Name, &c.Description, &c.Variables, &c.Scripts, &c.Version, &c.CreatedAt, &c.UpdatedAt)
+	if c.Variables == nil {
+		c.Variables = []CollectionVariable{}
+	}
 	return c, err
+}
+
+// checkCollectionVariables validates a collection's variables: names a
+// {{name}} can use, once each, and values of at most 64 KiB.
+func checkCollectionVariables(errs *validate.Errors, vs []CollectionVariable) {
+	if len(vs) > maxVariables {
+		errs.Add("/variables", "maxItems", fmt.Sprintf("Keep at most %d variables in a collection.", maxVariables))
+		return
+	}
+	seen := map[string]bool{}
+	size := 0
+	for i, v := range vs {
+		size += len(v.Key) + len(v.Value)
+		at := fmt.Sprintf("/variables/%d", i)
+		switch {
+		case !validKey(v.Key) || utf8.RuneCountInString(v.Key) > maxVariableKey:
+			errs.Add(at+"/key", "pattern", "Use a name without spaces or braces that doesn't start with $, such as baseUrl.")
+		case seen[v.Key]:
+			errs.Add(at+"/key", "unique", "Another variable has this name. Give each variable its own.")
+		}
+		seen[v.Key] = true
+		if utf8.RuneCountInString(v.Value) > maxVariableValue {
+			errs.Add(at+"/value", "maxLength", "Use a value of at most 65,536 characters.")
+		}
+	}
+	if size > convert.MaxCollectionVariables {
+		errs.Add("/variables", "maxLength", "A collection's variables may hold at most 2 MiB together. Move large values elsewhere.")
+	}
 }
 
 // ListCollections lists a project's collections by name. Every member may.
@@ -313,6 +366,14 @@ func (m *Module) UpdateCollection(ctx context.Context, userID, collectionID uuid
 	if patch.Description != nil {
 		*patch.Description = description(&errs, *patch.Description, 2000)
 	}
+	var variables []byte
+	if patch.Variables != nil {
+		checkCollectionVariables(&errs, *patch.Variables)
+		if *patch.Variables == nil {
+			*patch.Variables = []CollectionVariable{}
+		}
+		variables, _ = json.Marshal(*patch.Variables)
+	}
 	if err := errs.Err(); err != nil {
 		return Collection{}, err
 	}
@@ -327,8 +388,8 @@ func (m *Module) UpdateCollection(ctx context.Context, userID, collectionID uuid
 		var err error
 		c, err = readCollection(tx.QueryRow(ctx, `
 			UPDATE collections SET name = coalesce($2, name), description = coalesce($3, description),
-				version = version + 1, updated_at = now()
-			WHERE id = $1 RETURNING `+collectionColumns, collectionID, patch.Name, patch.Description))
+				variables = coalesce($4, variables), version = version + 1, updated_at = now()
+			WHERE id = $1 RETURNING `+collectionColumns, collectionID, patch.Name, patch.Description, variables))
 		return err
 	})
 	if isModuleError(err) {
@@ -363,12 +424,12 @@ func (m *Module) DeleteCollection(ctx context.Context, userID, collectionID uuid
 	return nil
 }
 
-const itemColumns = `id, collection_id, coalesce(parent_id, '00000000-0000-0000-0000-000000000000'), rank, kind, name, description, request, version, created_at, updated_at`
+const itemColumns = `id, collection_id, coalesce(parent_id, '00000000-0000-0000-0000-000000000000'), rank, kind, name, description, request, scripts, version, created_at, updated_at`
 
 func readItem(row pgx.Row) (Item, error) {
 	var it Item
 	var req []byte
-	err := row.Scan(&it.ID, &it.CollectionID, &it.ParentID, &it.Rank, &it.Kind, &it.Name, &it.Description, &req, &it.Version, &it.CreatedAt, &it.UpdatedAt)
+	err := row.Scan(&it.ID, &it.CollectionID, &it.ParentID, &it.Rank, &it.Kind, &it.Name, &it.Description, &req, &it.Scripts, &it.Version, &it.CreatedAt, &it.UpdatedAt)
 	if err != nil {
 		return it, err
 	}
@@ -390,7 +451,7 @@ func (m *Module) Items(ctx context.Context, userID, collectionID uuid.UUID) ([]I
 	rows, err := m.db.Query(ctx, `
 		SELECT id, collection_id, coalesce(parent_id, '00000000-0000-0000-0000-000000000000'), rank, kind, name, description,
 			CASE WHEN request IS NULL THEN NULL ELSE jsonb_build_object('method', request->'method', 'url', request->'url') END,
-			version, created_at, updated_at
+			'{}'::jsonb, version, created_at, updated_at
 		FROM collection_items WHERE collection_id = $1
 		ORDER BY parent_id NULLS FIRST, rank`, collectionID)
 	if err != nil {

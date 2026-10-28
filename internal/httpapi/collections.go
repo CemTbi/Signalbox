@@ -34,12 +34,34 @@ type Collections interface {
 
 // CollectionJSON is a collection in API responses.
 type CollectionJSON struct {
-	ID          string `json:"id"`
-	ProjectID   string `json:"projectId"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	CreatedAt   string `json:"createdAt"`
-	UpdatedAt   string `json:"updatedAt"`
+	ID          string                   `json:"id"`
+	ProjectID   string                   `json:"projectId"`
+	Name        string                   `json:"name"`
+	Description string                   `json:"description,omitempty"`
+	Variables   []CollectionVariableJSON `json:"variables"`
+	Scripts     *ScriptsJSON             `json:"scripts,omitempty"`
+	CreatedAt   string                   `json:"createdAt"`
+	UpdatedAt   string                   `json:"updatedAt"`
+}
+
+// CollectionVariableJSON is a collection variable.
+type CollectionVariableJSON struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+// ScriptsJSON are a collection's, folder's or request's scripts.
+type ScriptsJSON struct {
+	PreRequest string `json:"prerequest,omitempty"`
+	Test       string `json:"test,omitempty"`
+}
+
+func scriptsJSON(s client.Scripts) *ScriptsJSON {
+	if s == (client.Scripts{}) {
+		return nil
+	}
+	out := ScriptsJSON(s)
+	return &out
 }
 
 // SavedHeaderJSON is a saved request's header.
@@ -68,21 +90,27 @@ type ItemJSON struct {
 	Name         string            `json:"name"`
 	Description  string            `json:"description,omitempty"`
 	Request      *SavedRequestJSON `json:"request,omitempty"`
+	Scripts      *ScriptsJSON      `json:"scripts,omitempty"`
 	CreatedAt    string            `json:"createdAt"`
 	UpdatedAt    string            `json:"updatedAt"`
 }
 
 func collectionJSON(c client.Collection) CollectionJSON {
-	return CollectionJSON{
+	out := CollectionJSON{
 		ID: id.Format(id.Collection, c.ID), ProjectID: id.Format(id.Project, c.ProjectID), Name: c.Name, Description: c.Description,
+		Variables: make([]CollectionVariableJSON, len(c.Variables)), Scripts: scriptsJSON(c.Scripts),
 		CreatedAt: timestamp(c.CreatedAt), UpdatedAt: timestamp(c.UpdatedAt),
 	}
+	for i, v := range c.Variables {
+		out.Variables[i] = CollectionVariableJSON(v)
+	}
+	return out
 }
 
 func itemJSON(it client.Item) ItemJSON {
 	out := ItemJSON{
 		ID: id.Format(id.Item, it.ID), CollectionID: id.Format(id.Collection, it.CollectionID), Kind: it.Kind, Name: it.Name,
-		Description: it.Description, CreatedAt: timestamp(it.CreatedAt), UpdatedAt: timestamp(it.UpdatedAt),
+		Description: it.Description, Scripts: scriptsJSON(it.Scripts), CreatedAt: timestamp(it.CreatedAt), UpdatedAt: timestamp(it.UpdatedAt),
 	}
 	if it.ParentID != uuid.Nil {
 		out.ParentID = id.Format(id.Item, it.ParentID)
@@ -190,12 +218,28 @@ func (a *api) updateCollection(w http.ResponseWriter, r *http.Request, s *identi
 	if !ok {
 		return
 	}
-	patch, ok := decodeMergePatch(w, r, "name", "description")
+	patch, ok := decodeMergePatch(w, r, "name", "description", "variables")
 	if !ok {
 		return
 	}
 	var fields validate.Errors
 	change := client.CollectionPatch{Name: patch.str(&fields, "name", false), Description: patch.str(&fields, "description", true)}
+	if raw, ok := patch["variables"]; ok {
+		var vs []client.CollectionVariable
+		if string(raw) != "null" {
+			var in []CollectionVariableJSON
+			if err := json.Unmarshal(raw, &in); err != nil {
+				fields.Add("/variables", "type", "Send the variables as a list of keys and values.")
+			}
+			for _, v := range in {
+				vs = append(vs, client.CollectionVariable(v))
+			}
+		}
+		if vs == nil {
+			vs = []client.CollectionVariable{}
+		}
+		change.Variables = &vs
+	}
 	if len(fields) > 0 {
 		writeInvalid(w, r, fields)
 		return

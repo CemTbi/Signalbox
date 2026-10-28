@@ -6,6 +6,7 @@ import { type FormEvent, useId, useState } from "react";
 import { api, describeError, unwrap } from "../../api";
 import { LoadError } from "../../components/Page";
 import { collectionsKey, collectionsQuery, itemsKey, itemsQuery } from "../../queries";
+import { ImportCollection } from "./ImportCollection";
 import { tree } from "./model";
 
 /**
@@ -26,6 +27,7 @@ export function CollectionsPanel({
   const queryClient = useQueryClient();
   const collections = useQuery(collectionsQuery(api, projectId));
   const [adding, setAdding] = useState(false);
+  const [importing, setImporting] = useState(false);
   const create = useMutation({
     mutationFn: (name: string) => unwrap(api.POST("/api/v1/projects/{projectId}/collections", { params: { path: { projectId } }, body: { name } })),
     onSuccess: async () => {
@@ -48,10 +50,17 @@ export function CollectionsPanel({
       {canEdit ? (
         adding ? (
           <NameForm label="Collection name" submitLabel="Add collection" pending={create.isPending} error={create.error} onSubmit={(n) => create.mutate(n)} onCancel={() => setAdding(false)} />
+        ) : importing ? (
+          <ImportCollection projectId={projectId} onDone={() => setImporting(false)} />
         ) : (
-          <button type="button" className="button secondary small" onClick={() => setAdding(true)}>
-            New collection
-          </button>
+          <div className="row-actions">
+            <button type="button" className="button secondary small" onClick={() => setAdding(true)}>
+              New collection
+            </button>
+            <button type="button" className="button ghost small" onClick={() => setImporting(true)}>
+              Import from Postman
+            </button>
+          </div>
         )
       ) : null}
     </div>
@@ -100,21 +109,28 @@ function CollectionNode({
         <button type="button" className="tree-toggle" onClick={() => setOpen(!open)} aria-label={`${open ? "Close" : "Open"} ${c.name}`}>
           <span aria-hidden="true">{open ? "▾" : "▸"}</span> <strong>{c.name}</strong>
         </button>
-        {canEdit && open ? (
+        {open ? (
           <span className="tree-actions">
-            <button type="button" className="button ghost small" onClick={() => setAdding("")}>
-              New folder
-            </button>
-            <button
-              type="button"
-              className="button ghost small"
-              disabled={remove.isPending}
-              onClick={() => {
-                if (window.confirm(`Delete ${c.name} and everything in it?`)) remove.mutate();
-              }}
-            >
-              Delete
-            </button>
+            <a className="button ghost small" href={`/api/v1/collections/${c.id}/export`} download aria-label={`Export ${c.name} for Postman`}>
+              Export
+            </a>
+            {canEdit ? (
+              <>
+                <button type="button" className="button ghost small" onClick={() => setAdding("")}>
+                  New folder
+                </button>
+                <button
+                  type="button"
+                  className="button ghost small"
+                  disabled={remove.isPending}
+                  onClick={() => {
+                    if (window.confirm(`Delete ${c.name} and everything in it?`)) remove.mutate();
+                  }}
+                >
+                  Delete
+                </button>
+              </>
+            ) : null}
           </span>
         ) : null}
       </div>

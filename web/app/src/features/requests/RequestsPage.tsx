@@ -8,6 +8,8 @@ import { api, ApiError, describeError, unwrap, unwrapTagged } from "../../api";
 import { LoadError, Loading, PageHeader } from "../../components/Page";
 import { environmentsQuery, historyKey, historyQuery, itemsKey, projectQuery, workspaceQuery } from "../../queries";
 import { CollectionsPanel } from "./CollectionsPanel";
+import { CurlImport } from "./CurlImport";
+import { ImportReport, type Report } from "./ImportReport";
 import { type Draft, emptyDraft, formatMs, fromEntry, fromSaved, hadCredentials, toSaved, toSend } from "./model";
 import { RequestEditor } from "./RequestEditor";
 import { ResponseView } from "./ResponseView";
@@ -65,13 +67,16 @@ export function RequestsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [openItem, setOpenItem] = useState<OpenItem | null>(null);
   const [saving, setSaving] = useState(false);
+  const [curling, setCurling] = useState(false);
+  const [curlReport, setCurlReport] = useState<Report | null>(null);
 
   const send = useMutation({
     mutationFn: (d: Draft) =>
       unwrap(
         api.POST("/api/v1/projects/{projectId}/send", {
           params: { path: { projectId } },
-          body: { ...toSend(d), ...(environment ? { environmentId: environment.id } : {}) },
+          // A saved request uses its collection's variables, and the environment's win.
+          body: { ...toSend(d), ...(environment ? { environmentId: environment.id } : {}), ...(openItem ? { collectionId: openItem.collectionId } : {}) },
         }),
       ),
     onSuccess: async (entry) => {
@@ -156,6 +161,9 @@ export function RequestsPage() {
               ) : null}
               <button type="button" className="button ghost" onClick={() => setSaving(true)}>
                 Save as…
+              </button>
+              <button type="button" className="button ghost" onClick={() => setCurling(true)}>
+                Import cURL
               </button>
               {openItem ? (
                 <button
@@ -256,6 +264,27 @@ export function RequestsPage() {
               typed: {shown.unresolved.map((n) => `{{${n}}}`).join(", ")}.
               {environment ? ` Add ${shown.unresolved.length === 1 ? "it" : "them"} under ${environment.name} variables.` : " Choose an environment that has them."}
             </p>
+          ) : null}
+          {curling ? (
+            <CurlImport
+              onLoad={(request, report) => {
+                setDraft(fromSaved(request));
+                setOpenItem(null);
+                setShown(null);
+                setNotice(null);
+                setCurling(false);
+                setCurlReport(report.notes.length ? report : null);
+              }}
+              onCancel={() => setCurling(false)}
+            />
+          ) : null}
+          {curlReport ? (
+            <div className="stack">
+              <ImportReport report={curlReport} what="command" />
+              <button type="button" className="button ghost small" onClick={() => setCurlReport(null)}>
+                Dismiss
+              </button>
+            </div>
           ) : null}
           {saving ? (
             <SaveForm

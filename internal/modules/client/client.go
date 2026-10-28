@@ -136,14 +136,27 @@ func (m *Module) authorize(ctx context.Context, userID, projectID uuid.UUID, may
 	return nil
 }
 
+// SendOptions are what a request is sent with besides itself.
+type SendOptions struct {
+	// EnvironmentID is an environment of the project whose variables
+	// fill in {{name}}, or uuid.Nil.
+	EnvironmentID uuid.UUID
+	// CollectionID is a collection of the project whose variables fill in
+	// {{name}} where the environment has none, or uuid.Nil.
+	CollectionID uuid.UUID
+	// Auth is applied after the variables; nil for none.
+	Auth *Auth
+}
+
 // Send sends a request from a project and keeps it in the sender's
 // history. Owners, admins and editors may: the server sends it on their
-// behalf, to whatever their environments point at. With an environment of
-// the project, its variables fill in {{name}} first, then auth is applied.
-// The result comes back whole; history keeps the first megabyte of the
-// response body, and masks the environment's secrets and the credentials
-// auth sent.
-func (m *Module) Send(ctx context.Context, userID, projectID, environmentID uuid.UUID, req runner.Request, auth *Auth) (Entry, error) {
+// behalf, to whatever their environments point at. The environment's and
+// then the collection's variables fill in {{name}} first, then auth is
+// applied. The result comes back whole; history keeps the first megabyte
+// of the response body, and masks the environment's secrets and the
+// credentials auth sent.
+func (m *Module) Send(ctx context.Context, userID, projectID uuid.UUID, req runner.Request, opts SendOptions) (Entry, error) {
+	environmentID, auth := opts.EnvironmentID, opts.Auth
 	var errs validate.Errors
 	if auth = checkAuth(&errs, "/auth", auth); len(errs) > 0 {
 		return Entry{}, errs
@@ -154,10 +167,27 @@ func (m *Module) Send(ctx context.Context, userID, projectID, environmentID uuid
 	if m.runner == nil {
 		return Entry{}, ErrRunnerUnavailable
 	}
-	var (
-		values  map[string]string
-		secrets []string
-	)
+	values := map[string]string{}
+	var secrets []string
+	if opts.CollectionID != uuid.Nil {
+		var c Collection
+		var err error
+		if err := m.authorizeFor(ctx, userID, projectOfCollection, opts.CollectionID, read); err != nil {
+			return Entry{}, err
+		}
+		if c, err = readCollection(m.db.QueryRow(ctx, `SELECT `+collectionColumns+` FROM collections WHERE id = $1`, opts.CollectionID)); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return Entry{}, ErrNotFound
+			}
+			return Entry{}, fmt.Errorf("get collection: %w", err)
+		}
+		if c.ProjectID != projectID {
+			return Entry{}, ErrNotFound
+		}
+		for _, v := range c.Variables {
+			values[v.Key] = v.Value
+		}
+	}
 	if environmentID != uuid.Nil {
 		env, err := m.environment(ctx, userID, environmentID, read)
 		if err != nil {
@@ -166,9 +196,15 @@ func (m *Module) Send(ctx context.Context, userID, projectID, environmentID uuid
 		if env.ProjectID != projectID {
 			return Entry{}, ErrNotFound
 		}
-		if values, secrets, err = m.environmentValues(ctx, env); err != nil {
+		envValues, envSecrets, err := m.environmentValues(ctx, env)
+		if err != nil {
 			return Entry{}, err
 		}
+		// The environment's win: it's narrower, as in Postman.
+		for k, v := range envValues {
+			values[k] = v
+		}
+		secrets = envSecrets
 	}
 	res := newResolver(values, secrets, time.Now())
 	req, err := res.request(req)

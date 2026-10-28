@@ -148,6 +148,46 @@ test("services are placed on the canvas by hand and stay where they are put", as
   await expect(page.getByLabel("Environment")).toHaveValue(/^env_/);
   await page.getByRole("tab", { name: "History" }).click();
   await expect(page.getByRole("tabpanel", { name: "Your history" }).getByText("http://signalbox:8080/api/v1/meta?{{missing}}")).toBeVisible();
+
+  // A Postman collection imports with a report, and exports again.
+  const postman = {
+    info: { name: "Imported shop", schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+    variable: [{ key: "host", value: "http://signalbox:8080" }],
+    item: [
+      {
+        name: "Health",
+        item: [
+          { name: "Meta", request: { method: "GET", url: "{{host}}/api/v1/meta" } },
+          { name: "Upload", request: { method: "POST", url: "{{host}}/x", body: { mode: "file", file: { src: "a.bin" } } } },
+        ],
+      },
+    ],
+  };
+  await page.getByRole("tab", { name: "Collections" }).click();
+  await page.getByRole("button", { name: "Import from Postman" }).click();
+  await page.getByLabel("Postman collection", { exact: true }).setInputFiles({ name: "shop.postman_collection.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(postman)) });
+  const importReport = page.getByRole("group", { name: "Import report" });
+  await expect(importReport).toContainText("1 folder, 2 requests, 1 variable.");
+  await expect(importReport).toContainText("The file body wasn't imported");
+  await expectAccessible(page);
+  await page.getByRole("button", { name: "Import shop.postman_collection.json" }).click();
+  await expect(page.getByText("Imported Imported shop.")).toBeVisible();
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("button", { name: "Open Imported shop" }).click();
+  await expect(page.getByRole("link", { name: "Export Imported shop for Postman" })).toHaveAttribute("href", /\/api\/v1\/collections\/col_.+\/export$/);
+  await page.getByRole("button", { name: /GET Meta/ }).click();
+  await expect(page.getByLabel("URL", { exact: true })).toHaveValue("{{host}}/api/v1/meta");
+  // The collection's variables fill in {{host}}.
+  await page.getByLabel("Environment").selectOption("");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(response.getByText("200", { exact: true })).toBeVisible();
+
+  // A curl command fills in the editor.
+  await page.getByRole("button", { name: "Import cURL" }).click();
+  await page.getByLabel("curl command", { exact: true }).fill("curl 'http://signalbox:8080/livez' -H 'accept: application/json' --insecure");
+  await page.getByRole("button", { name: "Read command" }).click();
+  await expect(page.getByLabel("URL", { exact: true })).toHaveValue("http://signalbox:8080/livez");
+  await expect(page.getByRole("group", { name: "Import report" })).toContainText("curl's --insecure option isn't supported");
   await page.goto(projectURL);
 
   // Double-clicking opens the service.

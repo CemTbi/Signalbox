@@ -78,10 +78,10 @@ func TestVariablesAndSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	e, err := f.mod.Send(f.ctx, f.owner, f.project, staging, runner.Request{
+	e, err := f.mod.Send(f.ctx, f.owner, f.project, runner.Request{
 		Method: "GET", URL: "{{baseUrl}}/orders?key={{token}}",
 		Headers: []runner.Header{{Key: "X-Api-Key", Value: "{{token}}"}, {Key: "X-Missing", Value: "{{nope}}"}},
-	}, nil)
+	}, client.SendOptions{EnvironmentID: staging})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,7 +110,7 @@ func TestVariablesAndSecrets(t *testing.T) {
 	f.run.fail = func(req runner.Request) *runner.Failure {
 		return &runner.Failure{Code: "dns", Message: "There's no host called " + strings.TrimPrefix(req.URL, "https://") + "."}
 	}
-	failed, err := f.mod.Send(f.ctx, f.owner, f.project, staging, runner.Request{Method: "GET", URL: "https://{{token}}.example.com"}, nil)
+	failed, err := f.mod.Send(f.ctx, f.owner, f.project, runner.Request{Method: "GET", URL: "https://{{token}}.example.com"}, client.SendOptions{EnvironmentID: staging})
 	if err != nil || !strings.Contains(failed.Result.Failure.Message, "tok-123456") {
 		t.Fatalf("failed send = %+v, %v", failed.Result.Failure, err)
 	}
@@ -127,7 +127,7 @@ func TestVariablesAndSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.mod.Send(f.ctx, f.owner, other.ID, staging, runner.Request{Method: "GET", URL: "https://example.com/"}, nil); !errors.Is(err, client.ErrNotFound) {
+	if _, err := f.mod.Send(f.ctx, f.owner, other.ID, runner.Request{Method: "GET", URL: "https://example.com/"}, client.SendOptions{EnvironmentID: staging}); !errors.Is(err, client.ErrNotFound) {
 		t.Errorf("send with another project's environment: %v", err)
 	}
 }
@@ -201,7 +201,7 @@ func TestChangedSecretKey(t *testing.T) {
 	}
 	// Another key can't read the workspace's secrets, and says why.
 	withKey(t, f)
-	if _, err := f.mod.Send(f.ctx, f.owner, f.project, prod, runner.Request{Method: "GET", URL: "https://example.com/{{token}}"}, nil); !errors.Is(err, client.ErrSecretKeyChanged) {
+	if _, err := f.mod.Send(f.ctx, f.owner, f.project, runner.Request{Method: "GET", URL: "https://example.com/{{token}}"}, client.SendOptions{EnvironmentID: prod}); !errors.Is(err, client.ErrSecretKeyChanged) {
 		t.Errorf("send: %v", err)
 	}
 	// Plain variables still read.

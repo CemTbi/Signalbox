@@ -2,10 +2,12 @@
 
 import type { Environment, EnvironmentVariables } from "@signalbox/api-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { type ChangeEvent, type FormEvent, useId, useState } from "react";
 import { api, ApiError, describeError, unwrapTagged } from "../../api";
 import { LoadError, Loading } from "../../components/Page";
 import { variablesKey, variablesQuery } from "../../queries";
+import { readJSONFile } from "./ImportCollection";
+import { ImportReport } from "./ImportReport";
 
 /** A variable row in the editor. */
 interface VariableRow {
@@ -47,6 +49,7 @@ export function VariablesEditor({ environment, canEdit, onClose }: { environment
           Close
         </button>
       </div>
+      {canEdit ? <EnvironmentImport environment={environment} /> : null}
       {variables.isPending ? <Loading label="Loading variables…" /> : null}
       {variables.isError ? <LoadError message={describeError(variables.error)} onRetry={() => void variables.refetch()} /> : null}
       {variables.isSuccess ? (
@@ -191,5 +194,50 @@ function VariablesForm({
         <p className="field-hint">Viewers can see variables but not change them.</p>
       )}
     </form>
+  );
+}
+
+/** Adds a Postman environment file's variables to the environment. */
+function EnvironmentImport({ environment }: { environment: Environment }) {
+  const queryClient = useQueryClient();
+  const field = useId();
+  const [readError, setReadError] = useState<string | null>(null);
+  const run = useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const call = api.POST("/api/v1/environments/{environmentId}/variable-imports", { params: { path: { environmentId: environment.id } }, body: data });
+      return unwrapTagged(call);
+    },
+    onSuccess: ({ data, etag }) => {
+      if (data.variables) queryClient.setQueryData(variablesKey(environment.id), { data: data.variables, etag });
+    },
+  });
+
+  async function choose(e: ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    setReadError(null);
+    run.reset();
+    if (!f) return;
+    try {
+      run.mutate(await readJSONFile(f));
+    } catch (err) {
+      setReadError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  return (
+    <div className="environment-import">
+      <div className="field">
+        <label htmlFor={field}>Import a Postman environment</label>
+        <input id={field} type="file" accept=".json,application/json" disabled={run.isPending} onChange={(e) => void choose(e)} />
+        <p className="field-hint">Its variables join these; one with the same name replaces it. Postman's secrets stay secret.</p>
+      </div>
+      {readError || run.isError ? (
+        <p className="form-alert" role="alert">
+          {readError ?? describeError(run.error)}
+        </p>
+      ) : null}
+      {run.data ? <ImportReport report={run.data.data.report} what="environment" /> : null}
+    </div>
   );
 }

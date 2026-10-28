@@ -230,6 +230,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 			Client:         s.client,
 			Collections:    s.client,
 			Variables:      s.client,
+			Imports:        s.client,
 			PublicURL:      publicURL,
 			TrustedProxies: trusted,
 		})
