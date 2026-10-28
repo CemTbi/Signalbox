@@ -1,9 +1,11 @@
 name: CodeQL
 
 # Code scanning needs a public repository, or GitHub Code Security on a
-# private one, so the job skips itself if the repository is made private.
-# The weekly run finds alerts that new CodeQL queries add to code nobody
-# changed. See docs/maintainers/repository-setup.md.
+# private one. If the repository is made private, push and pull request
+# runs skip themselves, but scheduled runs carry no repository details to
+# check, so remove the schedule then. The weekly run finds alerts that new
+# CodeQL queries add to code nobody changed. See
+# docs/maintainers/repository-setup.md.
 on:
   push:
     branches: [main]
