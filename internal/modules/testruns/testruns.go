@@ -67,7 +67,7 @@ type Access interface {
 type Client interface {
 	PlanRun(ctx context.Context, userID, collectionID, folderID uuid.UUID) (client.Collection, client.Plan, error)
 	RunEnvironment(ctx context.Context, userID, projectID, environmentID uuid.UUID) (client.RunEnvironment, error)
-	Engine() *client.Engine
+	EngineFor(ctx context.Context, userID, agentID uuid.UUID) (*client.Engine, error)
 }
 
 // Module starts runs, runs them in the background, and keeps them.
@@ -142,6 +142,9 @@ type Options struct {
 	FolderID uuid.UUID
 	// EnvironmentID is an environment of the project, or uuid.Nil.
 	EnvironmentID uuid.UUID
+	// AgentID is one of the user's agents to send the requests through,
+	// or uuid.Nil to send them from the server.
+	AgentID uuid.UUID
 	// Iterations is how many times the requests run: 0 runs them once per
 	// data row, or once.
 	Iterations int
@@ -169,14 +172,18 @@ type Run struct {
 	StartedBy       uuid.UUID
 	Name            string
 	EnvironmentName string
-	Status          string
-	Stopped         string
-	Iterations      int
-	DataRows        int
-	Delay           time.Duration
-	Bail            bool
-	Totals          report.Totals
-	CreatedAt       time.Time
+	// AgentID and AgentName are the agent the requests went through, or
+	// uuid.Nil and "" for the server.
+	AgentID    uuid.UUID
+	AgentName  string
+	Status     string
+	Stopped    string
+	Iterations int
+	DataRows   int
+	Delay      time.Duration
+	Bail       bool
+	Totals     report.Totals
+	CreatedAt  time.Time
 	// StartedAt and FinishedAt are zero until then.
 	StartedAt  time.Time
 	FinishedAt time.Time
@@ -230,7 +237,10 @@ func (m *Module) Start(ctx context.Context, userID, collectionID uuid.UUID, opts
 	if err != nil {
 		return Run{}, clientError(err)
 	}
-	engine := m.client.Engine()
+	engine, err := m.client.EngineFor(ctx, userID, opts.AgentID)
+	if err != nil {
+		return Run{}, clientError(err)
+	}
 	if !engine.CanSend() {
 		return Run{}, ErrRunnerUnavailable
 	}
@@ -256,7 +266,7 @@ func (m *Module) Start(ctx context.Context, userID, collectionID uuid.UUID, opts
 	}
 	r := Run{
 		ID: id.New(), ProjectID: col.ProjectID, CollectionID: col.ID, FolderID: opts.FolderID, EnvironmentID: opts.EnvironmentID,
-		StartedBy: userID, Name: plan.Name, EnvironmentName: env.Name, Status: report.Queued,
+		StartedBy: userID, Name: plan.Name, EnvironmentName: env.Name, Status: report.Queued, AgentID: opts.AgentID, AgentName: engine.Via(),
 		Iterations: iterations, DataRows: len(opts.Data), Delay: opts.Delay, Bail: opts.Bail,
 	}
 	stored, err := json.Marshal(storedOptions{Iterations: iterations, DataRows: r.DataRows, DelayMs: r.Delay.Milliseconds(), Bail: r.Bail})
@@ -265,9 +275,10 @@ func (m *Module) Start(ctx context.Context, userID, collectionID uuid.UUID, opts
 	}
 	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO test_runs (id, project_id, collection_id, folder_id, environment_id, started_by, name, environment_name, status, options)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING created_at`,
+			INSERT INTO test_runs (id, project_id, collection_id, folder_id, environment_id, started_by, name, environment_name, status, options, agent_id, agent_name)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING created_at`,
 			r.ID, r.ProjectID, r.CollectionID, nullID(r.FolderID), nullID(r.EnvironmentID), userID, r.Name, r.EnvironmentName, r.Status, stored,
+			nullID(r.AgentID), r.AgentName,
 		).Scan(&r.CreatedAt); err != nil {
 			return err
 		}
@@ -452,7 +463,8 @@ func (m *Module) Cancel(ctx context.Context, userID, runID uuid.UUID) (Run, erro
 
 const runColumns = `id, project_id, collection_id, coalesce(folder_id, '00000000-0000-0000-0000-000000000000'),
 	coalesce(environment_id, '00000000-0000-0000-0000-000000000000'), coalesce(started_by, '00000000-0000-0000-0000-000000000000'),
-	name, environment_name, status, stopped, options, requests, failed_requests, tests, failed_tests, created_at, started_at, finished_at`
+	name, environment_name, status, stopped, options, requests, failed_requests, tests, failed_tests, created_at, started_at, finished_at,
+	coalesce(agent_id, '00000000-0000-0000-0000-000000000000'), agent_name`
 
 func readRun(row pgx.Row) (Run, error) {
 	var (
@@ -462,7 +474,7 @@ func readRun(row pgx.Row) (Run, error) {
 	)
 	err := row.Scan(&r.ID, &r.ProjectID, &r.CollectionID, &r.FolderID, &r.EnvironmentID, &r.StartedBy, &r.Name, &r.EnvironmentName,
 		&r.Status, &r.Stopped, &opts, &r.Totals.Requests, &r.Totals.FailedRequests, &r.Totals.Tests, &r.Totals.FailedTests,
-		&r.CreatedAt, &started, &finished)
+		&r.CreatedAt, &started, &finished, &r.AgentID, &r.AgentName)
 	if err != nil {
 		return Run{}, err
 	}

@@ -83,6 +83,9 @@ type Module struct {
 	// documents for generating contract tests; nil without them.
 	contracts ContractChecker
 	versions  ContractVersions
+	// agents send people's requests from their machines; nil without
+	// them.
+	agents Agents
 }
 
 // New returns the module. run may be nil, when this process can't send
@@ -151,6 +154,9 @@ type SendOptions struct {
 	// EnvironmentID is an environment of the project whose variables
 	// fill in {{name}}, or uuid.Nil.
 	EnvironmentID uuid.UUID
+	// AgentID is one of the sender's agents to send it through, from
+	// their machine, or uuid.Nil to send from the server.
+	AgentID uuid.UUID
 	// CollectionID is a collection of the project whose variables fill in
 	// {{name}} where the environment has none, or uuid.Nil. ItemID sets
 	// it to the item's.
@@ -255,7 +261,11 @@ func (m *Module) Send(ctx context.Context, userID, projectID uuid.UUID, req runn
 	for _, k := range secrets {
 		st.stored[k] = envValues[k]
 	}
-	out, err := m.Engine().step(ctx, st, step)
+	engine, err := m.EngineFor(ctx, userID, opts.AgentID)
+	if err != nil {
+		return Entry{}, err
+	}
+	out, err := engine.step(ctx, st, step)
 	if err != nil {
 		return Entry{}, err
 	}

@@ -38,6 +38,8 @@ const (
 	Collection  Prefix = "col"
 	Item        Prefix = "item"
 	Run         Prefix = "run"
+	Agent       Prefix = "agt"
+	Job         Prefix = "job"
 )
 
 // ErrInvalid means a string isn't an ID of the expected type.

@@ -100,6 +100,9 @@ type Deps struct {
 	Runs Runs
 	// Contracts generates contract tests; nil leaves the route out.
 	Contracts Contracts
+	// Agents hands people's requests to their agents; nil leaves the
+	// routes out.
+	Agents Agents
 	// PublicURL is the address people open Signalbox at. It decides the
 	// session cookie's name and flags, and the origin that unsafe requests
 	// must come from. Default http://localhost:8080.
@@ -241,6 +244,15 @@ func NewHandler(d Deps) http.Handler {
 		http.MethodGet:  a.authenticated(a.listItems),
 		http.MethodPost: a.authenticated(a.createItem),
 	})
+	if a.Agents != nil {
+		mux.Handle("/api/v1/agents", methods{
+			http.MethodGet:  a.authenticated(a.listAgents),
+			http.MethodPost: a.authenticated(a.connectAgent),
+		})
+		mux.Handle("/api/v1/agents/{agentId}", methods{http.MethodDelete: a.authenticated(a.deleteAgent)})
+		mux.Handle("/api/v1/agents/{agentId}/jobs/next", methods{http.MethodPost: a.authenticated(a.nextAgentJob)})
+		mux.Handle("/api/v1/agents/{agentId}/jobs/{jobId}", methods{http.MethodPut: a.authenticated(a.completeAgentJob)})
+	}
 	if a.Contracts != nil {
 		mux.Handle("/api/v1/versions/{versionId}/contract-tests", methods{http.MethodPost: a.authenticated(a.generateContractTests)})
 	}

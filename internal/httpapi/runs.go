@@ -36,25 +36,29 @@ const startRunLimit = 12 << 20
 
 // RunJSON is a test run, without its steps.
 type RunJSON struct {
-	ID            string        `json:"id"`
-	ProjectID     string        `json:"projectId"`
-	CollectionID  string        `json:"collectionId"`
-	FolderID      string        `json:"folderId,omitempty"`
-	EnvironmentID string        `json:"environmentId,omitempty"`
-	StartedBy     string        `json:"startedBy,omitempty"`
-	Name          string        `json:"name"`
-	Environment   string        `json:"environment,omitempty"`
-	Status        string        `json:"status"`
-	Stopped       string        `json:"stopped,omitempty"`
-	Iterations    int           `json:"iterations"`
-	DataRows      int           `json:"dataRows"`
-	DelayMs       int64         `json:"delayMs"`
-	Bail          bool          `json:"bail"`
-	Totals        report.Totals `json:"totals"`
-	CreatedAt     string        `json:"createdAt"`
-	StartedAt     string        `json:"startedAt,omitempty"`
-	FinishedAt    string        `json:"finishedAt,omitempty"`
-	DurationMs    float64       `json:"durationMs"`
+	ID            string `json:"id"`
+	ProjectID     string `json:"projectId"`
+	CollectionID  string `json:"collectionId"`
+	FolderID      string `json:"folderId,omitempty"`
+	EnvironmentID string `json:"environmentId,omitempty"`
+	StartedBy     string `json:"startedBy,omitempty"`
+	// AgentID and Agent are the agent the requests went through; absent
+	// when they went from the server.
+	AgentID     string        `json:"agentId,omitempty"`
+	Agent       string        `json:"agent,omitempty"`
+	Name        string        `json:"name"`
+	Environment string        `json:"environment,omitempty"`
+	Status      string        `json:"status"`
+	Stopped     string        `json:"stopped,omitempty"`
+	Iterations  int           `json:"iterations"`
+	DataRows    int           `json:"dataRows"`
+	DelayMs     int64         `json:"delayMs"`
+	Bail        bool          `json:"bail"`
+	Totals      report.Totals `json:"totals"`
+	CreatedAt   string        `json:"createdAt"`
+	StartedAt   string        `json:"startedAt,omitempty"`
+	FinishedAt  string        `json:"finishedAt,omitempty"`
+	DurationMs  float64       `json:"durationMs"`
 }
 
 func runJSON(r testruns.Run) RunJSON {
@@ -72,6 +76,10 @@ func runJSON(r testruns.Run) RunJSON {
 	if r.StartedBy != uuid.Nil {
 		out.StartedBy = id.Format(id.User, r.StartedBy)
 	}
+	if r.AgentID != uuid.Nil {
+		out.AgentID = id.Format(id.Agent, r.AgentID)
+	}
+	out.Agent = r.AgentName
 	if !r.StartedAt.IsZero() {
 		out.StartedAt = timestamp(r.StartedAt)
 		end := r.FinishedAt
@@ -169,6 +177,7 @@ func (a *api) startRun(w http.ResponseWriter, r *http.Request, s *identity.Sessi
 	var body struct {
 		FolderID      string `json:"folderId"`
 		EnvironmentID string `json:"environmentId"`
+		AgentID       string `json:"agentId"`
 		Iterations    int    `json:"iterations"`
 		Data          *struct {
 			Format  string `json:"format"`
@@ -194,6 +203,12 @@ func (a *api) startRun(w http.ResponseWriter, r *http.Request, s *identity.Sessi
 			fields.Add("/environmentId", "pattern", "Use an environment ID, such as env_01j9z3n5q7s9v1w3y5a7c9e1g3.")
 		}
 	}
+	if body.AgentID != "" {
+		var err error
+		if opts.AgentID, err = id.Parse(id.Agent, body.AgentID); err != nil {
+			fields.Add("/agentId", "pattern", "Use one of your agents' IDs, such as agt_01j9z3w5y7a9c1e3g5j7m9p1r3.")
+		}
+	}
 	if body.DelayMs < 0 || body.DelayMs > 60_000 {
 		fields.Add("/delayMs", "range", "Wait from 0 to 60,000 milliseconds between requests.")
 	}
@@ -214,7 +229,7 @@ func (a *api) startRun(w http.ResponseWriter, r *http.Request, s *identity.Sessi
 	}
 	run, err := a.Runs.Start(r.Context(), s.User.ID, collectionID, opts)
 	if err != nil {
-		a.runsError(w, r, "collection, folder or environment", err)
+		a.runsError(w, r, "collection, folder, environment or agent", err)
 		return
 	}
 	out := runJSON(run)

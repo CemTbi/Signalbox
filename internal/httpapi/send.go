@@ -235,6 +235,7 @@ func (a *api) sendRequest(w http.ResponseWriter, r *http.Request, s *identity.Se
 	}
 	var body struct {
 		EnvironmentID string       `json:"environmentId"`
+		AgentID       string       `json:"agentId"`
 		CollectionID  string       `json:"collectionId"`
 		ItemID        string       `json:"itemId"`
 		Scripts       *ScriptsJSON `json:"scripts"`
@@ -261,6 +262,13 @@ func (a *api) sendRequest(w http.ResponseWriter, r *http.Request, s *identity.Se
 		var err error
 		if environmentID, err = id.Parse(id.Environment, body.EnvironmentID); err != nil {
 			fields.Add("/environmentId", "pattern", "Use an environment ID, such as env_01j9z3n5q7s9v1w3y5a7c9e1g3.")
+		}
+	}
+	var agentID uuid.UUID
+	if body.AgentID != "" {
+		var err error
+		if agentID, err = id.Parse(id.Agent, body.AgentID); err != nil {
+			fields.Add("/agentId", "pattern", "Use one of your agents' IDs, such as agt_01j9z3w5y7a9c1e3g5j7m9p1r3.")
 		}
 	}
 	var itemID uuid.UUID
@@ -306,10 +314,10 @@ func (a *api) sendRequest(w http.ResponseWriter, r *http.Request, s *identity.Se
 		req.Headers = append(req.Headers, runner.Header(h))
 	}
 	e, err := a.Client.Send(r.Context(), s.User.ID, projectID, req, client.SendOptions{
-		EnvironmentID: environmentID, CollectionID: collectionID, ItemID: itemID, Scripts: scriptsIn(body.Scripts), Auth: authIn(body.Auth),
+		EnvironmentID: environmentID, AgentID: agentID, CollectionID: collectionID, ItemID: itemID, Scripts: scriptsIn(body.Scripts), Auth: authIn(body.Auth),
 	})
 	if err != nil {
-		a.secretsError(w, r, "project or environment", err)
+		a.secretsError(w, r, "project, environment or agent", err)
 		return
 	}
 	w.Header().Set("Location", "/api/v1/history/"+id.Format(id.History, e.ID))

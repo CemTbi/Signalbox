@@ -24,6 +24,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/buildinfo"
 	"github.com/CemTbi/Signalbox/internal/health"
 	"github.com/CemTbi/Signalbox/internal/httpapi"
+	"github.com/CemTbi/Signalbox/internal/modules/agents"
 	"github.com/CemTbi/Signalbox/internal/modules/apis"
 	"github.com/CemTbi/Signalbox/internal/modules/client"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
@@ -215,6 +216,8 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 		mods := apis.New(db, logger, s.workspaces)
 		s.client = client.New(db, logger, s.workspaces, run)
 		s.client.UseContracts(mods, mods)
+		ag := agents.New(db, logger)
+		s.client.UseAgents(ag)
 		// Scripts run where requests are sent: in this process, for now.
 		if run != nil {
 			s.client.UseScripts(scripts.NewPool(2, scripts.Options{Send: s.client.ScriptSender()}))
@@ -242,6 +245,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 			Imports:        s.client,
 			Runs:           s.runs,
 			Contracts:      s.client,
+			Agents:         ag,
 			PublicURL:      publicURL,
 			TrustedProxies: trusted,
 		})
