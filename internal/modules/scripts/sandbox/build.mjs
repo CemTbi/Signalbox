@@ -35,7 +35,7 @@ const result = await build({
       // Every import of faker, including its locales, gets the stub.
       name: "no-faker",
       setup(b) {
-        b.onResolve({ filter: /^@faker-js\/faker(\/|$)/ }, () => ({ path: path.resolve("faker-stub/index.js") }));
+        b.onResolve({ filter: /^@faker-js\/faker(\/|$)/ }, () => ({ path: path.resolve("faker-stub.js") }));
         // Node's built-in modules, for libraries written for Node.
         const builtins = { timers: "timers-browserify", stream: "stream-browserify" };
         b.onResolve({ filter: /^(timers|stream)$/ }, (args) => ({ path: require.resolve(builtins[args.path]) }));

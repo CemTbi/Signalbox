@@ -1,7 +1,7 @@
 {
   "name": "signalbox-script-sandbox",
   "private": true,
-  "description": "The libraries Postman scripts expect, bundled into sandbox.js for the Sobek runtime. Versions follow postman-sandbox 6.7.4, raised where a newer release in the same line fixes a known vulnerability (ajv, moment, uuid, crypto-js). sax stays at 1.4.1, its last ISC release (ADR-0008). faker is replaced by the stub in faker-stub, so it is neither installed nor bundled (ADR-0017).",
+  "description": "The libraries Postman scripts expect, bundled into sandbox.js for the Sobek runtime. Versions follow postman-sandbox 6.7.4, raised where a newer release in the same line fixes a known vulnerability (ajv, moment, uuid, crypto-js). sax stays at 1.4.1, its last ISC release (ADR-0008). faker isn't bundled: faker-stub.js stands in for it. It is installed only because postman-collection depends on it, overridden to a current release so the lockfile carries no faker advisories (ADR-0017).",
   "license": "Apache-2.0",
   "scripts": {
     "build": "node build.mjs"
@@ -25,11 +25,10 @@
     "xml2js": "0.6.2"
   },
   "devDependencies": {
-    "@faker-js/faker": "file:faker-stub",
     "esbuild": "0.25.10"
   },
   "overrides": {
-    "@faker-js/faker": "$@faker-js/faker",
+    "@faker-js/faker": "10.6.0",
     "sax": "1.4.1",
     "uuid": "$uuid"
   }

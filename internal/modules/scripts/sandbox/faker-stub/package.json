@@ -1,8 +1,0 @@
-{
-  "name": "@faker-js/faker",
-  "version": "0.0.0-signalbox-stub",
-  "private": true,
-  "description": "Stands in for faker, which postman-collection depends on but Signalbox doesn't bundle. See index.js.",
-  "license": "Apache-2.0",
-  "main": "index.js"
-}
