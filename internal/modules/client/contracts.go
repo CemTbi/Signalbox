@@ -119,6 +119,9 @@ func (m *Module) GenerateContractTests(ctx context.Context, userID, versionID uu
 	report := ContractReport{Requests: gen.requests}
 	var c Collection
 	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		// The generated tag folders kept from before, by name, with the
+		// rank of their last item.
+		kept := map[string]keptFolder{}
 		existing, err := readCollection(tx.QueryRow(ctx, `SELECT `+collectionColumns+` FROM collections WHERE project_id = $1 AND contract_spec_id = $2 FOR UPDATE`, v.ProjectID, v.SpecID))
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
@@ -156,11 +159,34 @@ func (m *Module) GenerateContractTests(ctx context.Context, userID, versionID uu
 				WHERE id = $1 RETURNING `+collectionColumns, existing.ID, v.VersionID, gen.description, variables)); err != nil {
 				return err
 			}
-			tag, err := tx.Exec(ctx, `DELETE FROM collection_items WHERE collection_id = $1 AND generated`, c.ID)
+			// Generated requests are replaced. Generated folders stay, so
+			// what people put in them stays too: new requests go into the
+			// folder of their tag, and folders left empty go below.
+			tag, err := tx.Exec(ctx, `DELETE FROM collection_items WHERE collection_id = $1 AND generated AND kind = 'request'`, c.ID)
 			if err != nil {
 				return err
 			}
 			report.Replaced = int(tag.RowsAffected())
+			rows, err := tx.Query(ctx, `
+				SELECT f.id, f.name, coalesce((SELECT max(i.rank) FROM collection_items i WHERE i.parent_id = f.id), '')
+				FROM collection_items f WHERE f.collection_id = $1 AND f.generated AND f.kind = 'folder' AND f.parent_id IS NULL
+				ORDER BY f.rank`, c.ID)
+			if err != nil {
+				return err
+			}
+			folders, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (keptFolder, error) {
+				var f keptFolder
+				err := row.Scan(&f.id, &f.name, &f.last)
+				return f, err
+			})
+			if err != nil {
+				return err
+			}
+			for _, f := range folders {
+				if _, ok := kept[f.name]; !ok {
+					kept[f.name] = f
+				}
+			}
 		}
 		// Generated items go after what people added at the top.
 		var last string
@@ -168,11 +194,28 @@ func (m *Module) GenerateContractTests(ctx context.Context, userID, versionID uu
 			return err
 		}
 		var rows [][]any
-		if err := generatedRows(&rows, c.ID, uuid.Nil, last, gen.items); err != nil {
+		var top []genItem
+		for _, it := range gen.items {
+			f, ok := kept[it.name]
+			if it.request != nil || !ok {
+				top = append(top, it)
+				continue
+			}
+			if err := generatedRows(&rows, c.ID, f.id, f.last, it.items); err != nil {
+				return err
+			}
+		}
+		if err := generatedRows(&rows, c.ID, uuid.Nil, last, top); err != nil {
 			return err
 		}
-		_, err = tx.CopyFrom(ctx, pgx.Identifier{"collection_items"},
-			[]string{"id", "collection_id", "parent_id", "rank", "kind", "name", "description", "request", "generated"}, pgx.CopyFromRows(rows))
+		if _, err := tx.CopyFrom(ctx, pgx.Identifier{"collection_items"},
+			[]string{"id", "collection_id", "parent_id", "rank", "kind", "name", "description", "request", "generated"}, pgx.CopyFromRows(rows)); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `
+			DELETE FROM collection_items f WHERE f.collection_id = $1 AND f.generated AND f.kind = 'folder'
+				AND NOT EXISTS (SELECT 1 FROM collection_items i WHERE i.parent_id = f.id)`, c.ID)
+		report.Replaced += int(tag.RowsAffected())
 		return err
 	})
 	if err != nil {
@@ -187,6 +230,14 @@ type ContractError struct{ Err error }
 
 func (e *ContractError) Error() string { return "client: " + e.Err.Error() }
 func (e *ContractError) Unwrap() error { return e.Err }
+
+// keptFolder is a generated tag folder kept when generating again.
+type keptFolder struct {
+	id   uuid.UUID
+	name string
+	// last is the rank of its last item.
+	last string
+}
 
 // genItem is a generated folder, with items, or request.
 type genItem struct {

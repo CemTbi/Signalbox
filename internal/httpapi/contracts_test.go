@@ -60,7 +60,7 @@ func TestContractTestsRun(t *testing.T) {
 	r = h.do(call{method: http.MethodPost, path: "/api/v1/versions/" + v.ID + "/contract-tests"})
 	r.expect(t, http.StatusOK, "")
 	r.decode(t, &made)
-	if made.Report.Created || made.Report.Replaced != 2 || made.Collection.ID != c.ID {
+	if made.Report.Created || made.Report.Replaced != 1 || made.Collection.ID != c.ID {
 		t.Errorf("again = %+v", made.Report)
 	}
 

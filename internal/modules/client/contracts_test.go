@@ -136,10 +136,13 @@ func TestContractTests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var getID uuid.UUID
+	var getID, ordersID uuid.UUID
 	for _, it := range items {
-		if it.Name == "Get an order" {
+		switch it.Name {
+		case "Get an order":
 			getID = it.ID
+		case "Orders":
+			ordersID = it.ID
 		}
 	}
 	f.run.body = []byte(`{"id": "not a number"}`)
@@ -155,6 +158,11 @@ func TestContractTests(t *testing.T) {
 	if _, err := f.mod.CreateItem(f.ctx, f.owner, c.ID, client.ItemInput{Kind: client.KindRequest, Name: "Mine", Request: &client.SavedRequest{Method: "GET", URL: "{{baseUrl}}/mine"}}); err != nil {
 		t.Fatal(err)
 	}
+	// Including those put in a generated folder.
+	if _, err := f.mod.CreateItem(f.ctx, f.owner, c.ID, client.ItemInput{Kind: client.KindRequest, Name: "Theirs", Placement: client.Placement{Parent: ordersID},
+		Request: &client.SavedRequest{Method: "GET", URL: "{{baseUrl}}/orders/theirs"}}); err != nil {
+		t.Fatal(err)
+	}
 	staging := "https://staging.example.com"
 	vs := []client.CollectionVariable{{Key: "baseUrl", Value: staging}, {Key: "orderId", Value: "7"}}
 	if _, err := f.mod.UpdateCollection(f.ctx, f.owner, c.ID, workspaces.Precondition{}, client.CollectionPatch{Variables: &vs}); err != nil {
@@ -166,7 +174,7 @@ func TestContractTests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Created || c2.ID != c.ID || report.Requests != 4 || report.Replaced != 4 || c2.ContractVersionID != v2 {
+	if report.Created || c2.ID != c.ID || report.Requests != 4 || report.Replaced != 3 || c2.ContractVersionID != v2 {
 		t.Errorf("again = %+v, %+v", c2, report)
 	}
 	vars = map[string]string{}
@@ -181,11 +189,17 @@ func TestContractTests(t *testing.T) {
 		t.Fatal(err)
 	}
 	var names []string
+	inOrders := 0
 	for _, it := range items {
 		names = append(names, it.Name)
+		if it.ParentID == ordersID {
+			inOrders++
+		}
 	}
-	if len(items) != 6 || items[0].Name != "Mine" {
-		t.Errorf("items after = %v", names)
+	// Orders, kept in its place (Theirs, Create an order, Get an order),
+	// Mine, and the customers and health requests.
+	if strings.Join(names, ",") != "Orders,Mine,GET /customers/{customerId},GET /health,Theirs,Create an order,Get an order" || inOrders != 3 {
+		t.Errorf("items after = %v, %d in Orders", names, inOrders)
 	}
 
 	// Viewers can't generate, and a server without contracts can't at all.
