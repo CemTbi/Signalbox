@@ -9,6 +9,7 @@ Signalbox is an open-source platform for the whole life of an HTTP API. You desi
 - **`signalbox lint`** validates Swagger 2.0 and OpenAPI 3.0, 3.1 and 3.2 documents against the official JSON Schemas, resolves every `$ref`, and checks the recommended and OWASP API Security rules. Each finding has an exact line and column, and the exit code tells CI whether to fail.
 - **`signalbox diff`** compares two versions of an API and reports which changes break clients, such as a removed operation or a parameter that became required, with the operation and line of each.
 - **`signalbox codegen`** generates a TypeScript client on `fetch`, a Go client, or a Go server stub on `net/http` from a document, and warns about the OpenAPI 3.1 features the code can't express.
+- **`signalbox test run`** runs a Postman collection's requests and tests offline, like Newman, or a collection stored on a Signalbox server, there. It writes JUnit, JSON and HTML reports, and its exit code gates CI.
 - **`signalbox-server`** stores its data in PostgreSQL and migrates the schema at startup. A new installation asks for a setup code from the server log and creates the first admin account. People sign in with a password or through their organization's OpenID Connect provider; workspaces have owners, admins, editors and viewers, who bring others in with invitation links; each project gets development, staging and production environments, a canvas, and services whose OpenAPI specs are checked, kept in revisions, published as versions and served as hosted mocks. Spec checks run in the browser and over the API.
 - **The REST API** in [`api/openapi.yaml`](api/openapi.yaml) covers everything the web app does. Errors are RFC 9457 problem documents, edits use ETags, and lists page with cursors.
 
@@ -23,7 +24,7 @@ docker compose -f deploy/compose/compose.yaml logs signalbox | grep setup_code
 
 Open http://localhost:8080, enter the setup code from the log and create your admin account. Then create a workspace and a project. To serve Signalbox at another address, set `SIGNALBOX_PUBLIC_URL`; to turn on single sign-on, set the `SIGNALBOX_OIDC_` settings. The comments in [`compose.yaml`](deploy/compose/compose.yaml) explain them.
 
-To check a spec from the command line, you need Go 1.27 or newer:
+To check a spec or run tests from the command line, you need Go 1.27 or newer:
 
 ```sh
 go run ./cmd/signalbox lint path/to/openapi.yaml
@@ -36,6 +37,9 @@ git show origin/main:path/to/openapi.yaml | go run ./cmd/signalbox diff --format
 
 # A Go client in ./orders
 go run ./cmd/signalbox codegen --target go-client path/to/openapi.yaml
+
+# Run a Postman collection's tests, with a JUnit report for CI
+go run ./cmd/signalbox test run shop.postman_collection.json -e staging.postman_environment.json -r cli,junit -o reports
 ```
 
 To work on Signalbox itself, see [CONTRIBUTING.md](CONTRIBUTING.md). With `make` installed, `make help` lists the common tasks.

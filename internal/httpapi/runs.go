@@ -7,9 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -330,8 +328,6 @@ func (a *api) getRunStep(w http.ResponseWriter, r *http.Request, s *identity.Ses
 	writeJSON(w, http.StatusOK, runStepJSON(st))
 }
 
-var unsafeFileChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
-
 func (a *api) getRunReport(w http.ResponseWriter, r *http.Request, s *identity.Session) {
 	runID, ok := pathID(w, r, "runId", id.Run, "run")
 	if !ok {
@@ -350,12 +346,8 @@ func (a *api) getRunReport(w http.ResponseWriter, r *http.Request, s *identity.S
 		a.runsError(w, r, "run", err)
 		return
 	}
-	name := strings.Trim(unsafeFileChars.ReplaceAllString(strings.ToLower(rep.Name), "-"), "-")
-	if name == "" {
-		name = "run"
-	}
 	w.Header().Set("Content-Type", report.ContentType(format))
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s.%s"`, name, rep.ID, report.Ext(format)))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s.%s"`, report.Slug(rep.Name), rep.ID, report.Ext(format)))
 	// The HTML report runs nothing and loads nothing.
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
 	w.Header().Set("Cache-Control", "no-store")

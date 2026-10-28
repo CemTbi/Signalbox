@@ -12,6 +12,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/client"
 	"github.com/CemTbi/Signalbox/internal/modules/runner"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
+	"github.com/CemTbi/Signalbox/internal/platform/id"
 	"github.com/CemTbi/Signalbox/internal/platform/secretbox"
 	"github.com/CemTbi/Signalbox/internal/platform/validate"
 )
@@ -116,6 +117,17 @@ func TestVariablesAndSecrets(t *testing.T) {
 	}
 	if got, err := f.mod.HistoryEntry(f.ctx, f.owner, failed.ID); err != nil || got.Result.Failure.Message != "There's no host called •••.example.com." {
 		t.Errorf("stored failure = %+v, %v", got.Result.Failure, err)
+	}
+	// The history list says why, for entries kept before and after
+	// failures had lowercase keys.
+	if _, err := f.pool.Exec(f.ctx, `INSERT INTO request_history (id, project_id, user_id, method, url, record, duration_us)
+		VALUES ($1, $2, $3, 'GET', 'https://old.example.com', '{"headers": [], "failure": {"Code": "dns", "Message": "An old failure."}, "timings": {}}', 0)`,
+		id.New(), f.project, f.owner); err != nil {
+		t.Fatal(err)
+	}
+	page, err := f.mod.History(f.ctx, f.owner, f.project, workspaces.PageRequest{})
+	if err != nil || page.Items[0].Failure != "An old failure." || page.Items[1].Failure != "There's no host called •••.example.com." {
+		t.Errorf("history list = %+v, %v", page.Items, err)
 	}
 	f.run.fail = nil
 	if err := f.pool.QueryRow(f.ctx, `SELECT string_agg(url || record::text, '') FROM request_history`).Scan(&raw); err != nil || strings.Contains(raw, "tok-123456") {

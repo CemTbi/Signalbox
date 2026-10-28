@@ -4,12 +4,14 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/CemTbi/Signalbox/internal/modules/client/convert"
 	"github.com/CemTbi/Signalbox/internal/modules/runner"
 )
 
@@ -137,4 +139,58 @@ func (m *Module) RunEnvironment(ctx context.Context, userID, projectID, environm
 		return RunEnvironment{}, err
 	}
 	return RunEnvironment{Name: env.Name, Values: values, Secrets: secrets}, nil
+}
+
+// ErrNoFolder means a converted collection has no folder of the name asked
+// for.
+var ErrNoFolder = errors.New("client: no folder of that name")
+
+// PlanCollection returns the plan for running a converted collection, such
+// as a Postman file read offline, or the first folder in it, depth first,
+// named folder. It runs as PlanRun's plans do, without a database.
+func PlanCollection(c convert.Collection, folder string) (Plan, error) {
+	p := Plan{Name: c.Name, Variables: map[string]string{}}
+	for _, v := range c.Variables {
+		p.Variables[v.Key] = v.Value
+	}
+	top := []Link{{From: c.Name, Scripts: scriptsFrom(c.Scripts)}}
+	items := c.Items
+	var path []string
+	if folder != "" {
+		var find func(items []convert.Item, chain []Link, path []string) bool
+		find = func(list []convert.Item, chain []Link, at []string) bool {
+			for _, it := range list {
+				if it.Request != nil {
+					continue
+				}
+				links := append(chain[:len(chain):len(chain)], Link{From: it.Name, Scripts: scriptsFrom(it.Scripts)})
+				here := append(at[:len(at):len(at)], it.Name)
+				if it.Name == folder {
+					top, items, path, p.Name = links, it.Items, here, it.Name
+					return true
+				}
+				if find(it.Items, links, here) {
+					return true
+				}
+			}
+			return false
+		}
+		if !find(c.Items, top, nil) {
+			return Plan{}, ErrNoFolder
+		}
+	}
+	var walk func(list []convert.Item, chain []Link, path []string)
+	walk = func(list []convert.Item, chain []Link, path []string) {
+		for _, it := range list {
+			links := append(chain[:len(chain):len(chain)], Link{From: it.Name, Scripts: scriptsFrom(it.Scripts)})
+			if it.Request == nil {
+				walk(it.Items, links, append(path[:len(path):len(path)], it.Name))
+				continue
+			}
+			saved := savedFrom(it.Request)
+			p.Steps = append(p.Steps, Step{Name: it.Name, Path: strings.Join(path, " / "), Request: saved.toRunner(), Auth: saved.Auth, Chain: links})
+		}
+	}
+	walk(items, top, path)
+	return p, nil
 }

@@ -76,8 +76,8 @@ type Response struct {
 type Failure struct {
 	// Code is one of invalid-request, blocked, dns, connect, tls, timeout
 	// or network.
-	Code    string
-	Message string
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 // Result is a request's outcome: a Response or a Failure, and the timings

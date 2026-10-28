@@ -51,13 +51,13 @@ func NewRootCommand(stdin io.Reader, stdout, stderr io.Writer) *cobra.Command {
 	root := &cobra.Command{
 		Use:           "signalbox",
 		Short:         "Design, validate and test HTTP APIs from your terminal",
-		Long:          "signalbox is the command-line companion to the Signalbox platform.\nIt validates, lints and compares OpenAPI documents and generates code\nfrom them, locally and in CI.",
+		Long:          "signalbox is the command-line companion to the Signalbox platform.\nIt validates, lints and compares OpenAPI documents, generates code from\nthem, and runs API test suites, locally and in CI.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 	root.SetIn(stdin)
 	root.SetOut(stdout)
 	root.SetErr(stderr)
-	root.AddCommand(newLintCommand(), newDiffCommand(), newCodegenCommand(), newVersionCommand())
+	root.AddCommand(newLintCommand(), newDiffCommand(), newCodegenCommand(), newTestCommand(), newVersionCommand())
 	return root
 }
