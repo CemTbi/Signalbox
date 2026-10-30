@@ -51,4 +51,5 @@ All notable changes to Signalbox are recorded here. The format follows [Keep a C
 
 - go-jose 4.1.6 fixes a denial of service when parsing a JSON Web Key Set with RSA keys (GHSA-mgcc-cww5-fp2q), which an identity provider's keys endpoint could send. golang.org/x/net 0.62.0 fixes two flaws in its HTML parser.
 - Adding a spec no longer freezes the browser tab on YAML whose `info` block holds many blank, indented lines. Finding the title took twice as long with each such line.
-- The script sandbox no longer installs faker, which only `postman-collection` asked for and which was never bundled, so its advisories (GHSA-qxc2-j82w-r537) don't reach Signalbox's dependencies.
+- The script sandbox's faker, which `postman-collection` depends on but which was never bundled, is overridden to 10.6.0, past GHSA-qxc2-j82w-r537.
+- seroval 1.7.3, which the web app's router depends on, fixes two flaws that let crafted values inject script into serialized output (GHSA-9wx9-5pv9-3349, GHSA-f86p-h4j2-7qgj).
