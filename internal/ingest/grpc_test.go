@@ -6,6 +6,7 @@ import (
 	"context"
 	"net"
 	"testing"
+	"time"
 
 	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -109,5 +110,78 @@ func TestOTLPGRPCRefusesLargeMessages(t *testing.T) {
 	_, err := grpcClient(t, s).Export(withKey(t, goodKey), &coltracepb.ExportTraceServiceRequest{ResourceSpans: td.ResourceSpans})
 	if status.Code(err) != codes.ResourceExhausted {
 		t.Errorf("a message over the limit: %v", err)
+	}
+}
+
+func TestOTLPGRPCRefusesWhatIsntOTLP(t *testing.T) {
+	s, _, _ := newServer(t, Options{})
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := s.GRPCServer()
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(srv.Stop)
+	conn, err := grpc.NewClient(ln.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultCallOptions(grpc.ForceCodecV2(rawCodec{})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	var out []byte
+	err = conn.Invoke(withKey(t, goodKey), "/"+traceService+"/Export", rawMessage{0xff, 0xff, 0xff}, &out)
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("garbage: %v", err)
+	}
+}
+
+func TestOTLPGRPCLimitsUnknownKeysPerPeer(t *testing.T) {
+	s, _, _ := newServer(t, Options{})
+	client := grpcClient(t, s)
+	req := &coltracepb.ExportTraceServiceRequest{}
+	// 20 at once from one address, then the rest wait.
+	var last error
+	for range 21 {
+		_, last = client.Export(withKey(t, "sbx_ing_nope"), req)
+	}
+	if status.Code(last) != codes.ResourceExhausted {
+		t.Errorf("the 21st unknown key: %v", last)
+	}
+}
+
+func TestStopGRPCCutsOffWhenTheTimeRunsOut(t *testing.T) {
+	block := make(chan struct{})
+	defer close(block)
+	s, spans, _ := newServer(t, Options{})
+	spans.block = block
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := s.GRPCServer()
+	go func() { _ = srv.Serve(ln) }()
+	conn, err := grpc.NewClient(ln.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	// A call that never finishes, as with a writer stuck on ClickHouse.
+	done := make(chan error, 1)
+	go func() {
+		_, err := coltracepb.NewTraceServiceClient(conn).Export(withKey(t, goodKey), &coltracepb.ExportTraceServiceRequest{ResourceSpans: traces().ResourceSpans})
+		done <- err
+	}()
+	for spans.waiting() == 0 {
+		time.Sleep(5 * time.Millisecond)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	StopGRPC(ctx, srv)
+	if time.Since(start) > 5*time.Second {
+		t.Error("the stop waited for the call")
+	}
+	if err := <-done; status.Code(err) != codes.Unavailable {
+		t.Errorf("the cut-off call: %v", err)
 	}
 }

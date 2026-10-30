@@ -48,6 +48,22 @@ func (s *Server) GRPCServer() *grpc.Server {
 	return srv
 }
 
+// StopGRPC lets calls in progress finish until ctx ends, then cuts them
+// off.
+func StopGRPC(ctx context.Context, srv *grpc.Server) {
+	done := make(chan struct{})
+	go func() {
+		srv.GracefulStop()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		srv.Stop()
+		<-done
+	}
+}
+
 // export handles one Export call.
 func (s *Server) export(_ any, ctx context.Context, decode func(any) error, _ grpc.UnaryServerInterceptor) (any, error) {
 	const protocol = "otlp_grpc"

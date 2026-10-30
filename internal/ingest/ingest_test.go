@@ -47,9 +47,22 @@ type fakeSpans struct {
 	mu    sync.Mutex
 	spans []telemetry.Span
 	err   error
+	// block, when set, holds writes until it closes or their context ends.
+	block   chan struct{}
+	blocked int
 }
 
-func (f *fakeSpans) Write(_ context.Context, spans []telemetry.Span) error {
+func (f *fakeSpans) Write(ctx context.Context, spans []telemetry.Span) error {
+	if f.block != nil {
+		f.mu.Lock()
+		f.blocked++
+		f.mu.Unlock()
+		select {
+		case <-f.block:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.err != nil {
@@ -57,6 +70,12 @@ func (f *fakeSpans) Write(_ context.Context, spans []telemetry.Span) error {
 	}
 	f.spans = append(f.spans, spans...)
 	return nil
+}
+
+func (f *fakeSpans) waiting() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.blocked
 }
 
 func (f *fakeSpans) take() []telemetry.Span {

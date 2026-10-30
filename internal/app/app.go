@@ -343,22 +343,6 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 	return s, nil
 }
 
-// stopGRPC lets calls in progress finish until ctx ends, then cuts them
-// off.
-func stopGRPC(ctx context.Context, srv *grpc.Server) {
-	done := make(chan struct{})
-	go func() {
-		srv.GracefulStop()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-ctx.Done():
-		srv.Stop()
-		<-done
-	}
-}
-
 // abort releases what New made before it failed with err.
 func (s *Server) abort(err error) error {
 	for _, e := range []*endpoint{s.api, s.ops, s.otlp, s.zipkin} {
@@ -619,7 +603,7 @@ func (s *Server) shutdown() error {
 		_ = e.ln.Close()
 	}
 	if s.otlpGRPC != nil {
-		stopGRPC(ctx, s.otlpGRPC)
+		ingest.StopGRPC(ctx, s.otlpGRPC)
 		_ = s.otlpGRPCLn.Close()
 	}
 	// Spans already received are written before the process ends.
