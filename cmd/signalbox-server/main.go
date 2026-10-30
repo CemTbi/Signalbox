@@ -23,6 +23,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/buildinfo"
 	"github.com/CemTbi/Signalbox/internal/logging"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
+	"github.com/CemTbi/Signalbox/internal/platform/clickhouse"
 	"github.com/CemTbi/Signalbox/internal/platform/postgres"
 )
 
@@ -109,7 +110,9 @@ environment, or name a file that holds one with the variable plus _FILE:
 	f.StringVar(&cfg.SetupCode, "setup-code", env("SIGNALBOX_SETUP_CODE", cfg.SetupCode),
 		"code that unlocks first-run setup; by default a random one is logged [SIGNALBOX_SETUP_CODE]")
 	addOIDCFlags(f, &cfg.OIDC)
-	addDatabaseFlags(f, &cfg.DatabaseURL, &cfg.DatabaseWait)
+	addDatabaseFlags(f, &cfg.DatabaseURL, &cfg.ClickHouseURL, &cfg.DatabaseWait)
+	f.IntVar(&cfg.TraceRetentionDays, "trace-retention-days", envSmallInt("SIGNALBOX_TRACE_RETENTION_DAYS", cfg.TraceRetentionDays),
+		"how many days spans are kept, from 1 to 3650 [SIGNALBOX_TRACE_RETENTION_DAYS]")
 	f.BoolVar(&cfg.Migrate, "migrate", envBool("SIGNALBOX_MIGRATE", cfg.Migrate),
 		"apply pending database migrations at startup [SIGNALBOX_MIGRATE]")
 	f.DurationVar(&cfg.DrainDelay, "drain-delay", envDuration("SIGNALBOX_DRAIN_DELAY", cfg.DrainDelay),
@@ -127,6 +130,7 @@ environment, or name a file that holds one with the variable plus _FILE:
 func newMigrateCommand() *cobra.Command {
 	var (
 		databaseURL         string
+		clickHouseURL       string
 		wait                time.Duration
 		logFormat, logLevel string
 	)
@@ -135,8 +139,9 @@ func newMigrateCommand() *cobra.Command {
 		Short: "Apply pending database migrations and exit",
 		Long: `Apply pending database migrations and exit.
 
-The server migrates the database at startup unless --migrate=false is set.
-Use this command when migrations run as a separate deployment step.`,
+The server migrates PostgreSQL and ClickHouse at startup unless
+--migrate=false is set. Use this command when migrations run as a separate
+deployment step.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			logger, err := logging.New(cmd.ErrOrStderr(), logFormat, logLevel)
@@ -145,6 +150,9 @@ Use this command when migrations run as a separate deployment step.`,
 			}
 			if databaseURL == "" {
 				return fmt.Errorf("no database configured: set SIGNALBOX_DATABASE_URL or --database-url")
+			}
+			if clickHouseURL == "" {
+				return fmt.Errorf("no ClickHouse configured: set SIGNALBOX_CLICKHOUSE_URL or --clickhouse-url")
 			}
 			ctx := cmd.Context()
 			pool, err := postgres.Open(ctx, databaseURL)
@@ -157,20 +165,38 @@ Use this command when migrations run as a separate deployment step.`,
 			if err := postgres.WaitReady(waitCtx, pool, logger); err != nil {
 				return err
 			}
-			return postgres.Migrate(ctx, pool, logger)
+			if err := postgres.Migrate(ctx, pool, logger); err != nil {
+				return err
+			}
+			conn, err := clickhouse.Open(clickHouseURL)
+			if err != nil {
+				return err
+			}
+			defer conn.Close() //nolint:errcheck // nothing to do about a failed close at exit
+			// ClickHouse gets the whole wait too, as at server startup.
+			chCtx, cancelCH := context.WithTimeout(ctx, wait)
+			defer cancelCH()
+			if err := clickhouse.WaitReady(chCtx, conn, logger); err != nil {
+				return err
+			}
+			return clickhouse.Migrate(ctx, clickHouseURL, func(ctx context.Context, f func() error) error {
+				return postgres.WithAdvisoryLock(ctx, pool, postgres.LockClickHouseMigrations, f)
+			}, logger)
 		},
 	}
 	f := cmd.Flags()
-	addDatabaseFlags(f, &databaseURL, &wait)
+	addDatabaseFlags(f, &databaseURL, &clickHouseURL, &wait)
 	addLogFlags(f, &logFormat, &logLevel)
 	return cmd
 }
 
-func addDatabaseFlags(f *pflag.FlagSet, url *string, wait *time.Duration) {
+func addDatabaseFlags(f *pflag.FlagSet, url, clickHouseURL *string, wait *time.Duration) {
 	f.StringVar(url, "database-url", env("SIGNALBOX_DATABASE_URL", ""),
 		"PostgreSQL URL, such as postgres://signalbox:password@localhost:5432/signalbox [SIGNALBOX_DATABASE_URL]")
+	f.StringVar(clickHouseURL, "clickhouse-url", env("SIGNALBOX_CLICKHOUSE_URL", ""),
+		"ClickHouse URL, such as clickhouse://signalbox:password@localhost:9000/signalbox [SIGNALBOX_CLICKHOUSE_URL]")
 	f.DurationVar(wait, "database-wait", envDuration("SIGNALBOX_DATABASE_WAIT", time.Minute),
-		"how long startup waits for the database to answer [SIGNALBOX_DATABASE_WAIT]")
+		"how long startup waits for PostgreSQL and ClickHouse to answer [SIGNALBOX_DATABASE_WAIT]")
 }
 
 // addOIDCFlags adds the single sign-on settings. The client secret has no
@@ -275,6 +301,18 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 			return d
 		}
 		fmt.Fprintf(os.Stderr, "signalbox-server: ignoring %s=%q: not a duration such as 5s\n", key, v)
+	}
+	return fallback
+}
+
+// envSmallInt reads a whole number that fits an int, such as a count of
+// days; range checks are the setting's own.
+func envSmallInt(key string, fallback int) int {
+	if v, ok := os.LookupEnv(key); ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+		fmt.Fprintf(os.Stderr, "signalbox-server: ignoring %s=%q: not a whole number\n", key, v)
 	}
 	return fallback
 }

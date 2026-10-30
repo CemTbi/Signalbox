@@ -5,7 +5,9 @@ package telemetry_test
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,8 +20,8 @@ import (
 
 func newStore(t *testing.T) clickhouse.Conn {
 	t.Helper()
-	conn := clickhousetest.New(t)
-	if err := telemetry.CreateSchema(context.Background(), conn, telemetry.SchemaOptions{}); err != nil {
+	conn, url := clickhousetest.NewWithURL(t)
+	if err := clickhouse.Migrate(context.Background(), url, nil, slog.New(slog.DiscardHandler)); err != nil {
 		t.Fatal(err)
 	}
 	return conn
@@ -247,18 +249,40 @@ func TestOperations(t *testing.T) {
 	}
 }
 
-func TestSchemaOptions(t *testing.T) {
-	conn := clickhousetest.New(t)
+func TestRetention(t *testing.T) {
 	ctx := context.Background()
-	for _, opts := range []telemetry.SchemaOptions{{RetentionDays: -1}, {RetentionDays: 4000}} {
-		if err := telemetry.CreateSchema(ctx, conn, opts); err == nil {
-			t.Errorf("CreateSchema accepted %+v", opts)
+	log := slog.New(slog.DiscardHandler)
+	// Before the migrations, it says what to do.
+	if err := telemetry.ApplyRetention(ctx, clickhousetest.New(t), 7, log); err == nil || !strings.Contains(err.Error(), "migrate") {
+		t.Errorf("without tables: %v", err)
+	}
+	conn := newStore(t)
+	for _, days := range []int{0, -1, telemetry.MaxRetentionDays + 1} {
+		if err := telemetry.ApplyRetention(ctx, conn, days, log); err == nil {
+			t.Errorf("ApplyRetention accepted %d days", days)
 		}
 	}
-	// Creating the schema twice is harmless.
-	for range 2 {
-		if err := telemetry.CreateSchema(ctx, conn, telemetry.SchemaOptions{RetentionDays: 3}); err != nil {
+	ttl := func(table string) string {
+		t.Helper()
+		var engine string
+		if err := conn.QueryRow(ctx, `SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name = {name:String}`,
+			clickhouse.Named("name", table)).Scan(&engine); err != nil {
 			t.Fatal(err)
+		}
+		return engine
+	}
+	if got := ttl("spans"); !strings.Contains(got, "toIntervalDay(7)") && !strings.Contains(got, "INTERVAL 7 DAY") {
+		t.Fatalf("a new schema keeps 7 days: %s", got)
+	}
+	// Applying it twice is harmless, and the second time changes nothing.
+	for range 2 {
+		if err := telemetry.ApplyRetention(ctx, conn, 30, log); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, table := range []string{"spans", "trace_ids", "span_metrics_1m"} {
+		if got := ttl(table); !strings.Contains(got, "toIntervalDay(30)") && !strings.Contains(got, "INTERVAL 30 DAY") {
+			t.Errorf("%s: %s", table, got)
 		}
 	}
 }

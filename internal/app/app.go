@@ -30,8 +30,10 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
 	"github.com/CemTbi/Signalbox/internal/modules/runner"
 	"github.com/CemTbi/Signalbox/internal/modules/scripts"
+	"github.com/CemTbi/Signalbox/internal/modules/telemetry"
 	"github.com/CemTbi/Signalbox/internal/modules/testruns"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
+	"github.com/CemTbi/Signalbox/internal/platform/clickhouse"
 	"github.com/CemTbi/Signalbox/internal/platform/egress"
 	"github.com/CemTbi/Signalbox/internal/platform/metrics"
 	"github.com/CemTbi/Signalbox/internal/platform/postgres"
@@ -60,8 +62,14 @@ type Config struct {
 
 	// DatabaseURL is the PostgreSQL connection URL. Required.
 	DatabaseURL string
-	// DatabaseWait bounds how long startup waits for PostgreSQL to answer.
+	// DatabaseWait bounds how long startup waits for PostgreSQL, and then
+	// ClickHouse, to answer.
 	DatabaseWait time.Duration
+	// ClickHouseURL is the ClickHouse connection URL, for spans and what's
+	// built from them. Required.
+	ClickHouseURL string
+	// TraceRetentionDays is how long spans are kept, from 1 to 3650.
+	TraceRetentionDays int
 	// Migrate applies pending database migrations at startup. Turn it off
 	// to run them separately with "signalbox-server migrate".
 	Migrate bool
@@ -94,14 +102,15 @@ type Config struct {
 // DefaultConfig returns the configuration for a local single-node install.
 func DefaultConfig() Config {
 	return Config{
-		Roles:           "all",
-		HTTPAddr:        ":8080",
-		OpsAddr:         ":9090",
-		ShutdownTimeout: 20 * time.Second,
-		MaxSpecBytes:    httpapi.DefaultMaxSpecBytes,
-		DatabaseWait:    time.Minute,
-		Migrate:         true,
-		PublicURL:       "http://localhost:8080",
+		Roles:              "all",
+		HTTPAddr:           ":8080",
+		OpsAddr:            ":9090",
+		ShutdownTimeout:    20 * time.Second,
+		MaxSpecBytes:       httpapi.DefaultMaxSpecBytes,
+		DatabaseWait:       time.Minute,
+		TraceRetentionDays: telemetry.DefaultRetentionDays,
+		Migrate:            true,
+		PublicURL:          "http://localhost:8080",
 	}
 }
 
@@ -113,6 +122,7 @@ type Server struct {
 	health     *health.Checker
 	publicURL  *url.URL
 	db         *pgxpool.Pool
+	ch         clickhouse.Conn
 	identity   *identity.Service
 	workspaces *workspaces.Service
 	client     *client.Module   // nil when the api role isn't running
@@ -146,6 +156,13 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 	if cfg.DatabaseURL == "" {
 		return nil, errors.New("no database configured: set SIGNALBOX_DATABASE_URL or --database-url to a PostgreSQL URL, " +
 			"such as postgres://signalbox:password@localhost:5432/signalbox")
+	}
+	if cfg.ClickHouseURL == "" {
+		return nil, errors.New("no ClickHouse configured: set SIGNALBOX_CLICKHOUSE_URL or --clickhouse-url to a ClickHouse URL, " +
+			"such as clickhouse://signalbox:password@localhost:9000/signalbox")
+	}
+	if cfg.TraceRetentionDays < 1 || cfg.TraceRetentionDays > telemetry.MaxRetentionDays {
+		return nil, fmt.Errorf("trace retention of %d days: use 1 to %d", cfg.TraceRetentionDays, telemetry.MaxRetentionDays)
 	}
 	if cfg.OIDC.Issuer != "" && cfg.OIDC.ClientID == "" {
 		return nil, errors.New("single sign-on needs a client ID: set SIGNALBOX_OIDC_CLIENT_ID or --oidc-client-id " +
@@ -270,6 +287,16 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 			return nil, err
 		}
 	}
+	// The pool connects when it's first used, after startup waits for it.
+	if s.ch, err = clickhouse.Open(cfg.ClickHouseURL); err != nil {
+		if s.api != nil {
+			_ = s.api.ln.Close()
+		}
+		_ = s.ops.ln.Close()
+		db.Close()
+		return nil, err
+	}
+	checker.Add(clickhouse.Check(s.ch, logger))
 	return s, nil
 }
 
@@ -323,6 +350,7 @@ func (s *Server) OpsAddr() string { return s.ops.ln.Addr().String() }
 // it. The api listener serves only once that is done.
 func (s *Server) Run(ctx context.Context) error {
 	defer s.db.Close()
+	defer s.ch.Close() //nolint:errcheck // nothing to do about a failed close at exit
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return serve(s.ops) })
 	g.Go(func() error {
@@ -386,12 +414,34 @@ func (s *Server) start(ctx context.Context) error {
 			return err
 		}
 	}
+
+	s.health.SetStarting("waiting for ClickHouse")
+	chCtx, cancelCH := context.WithTimeout(ctx, s.cfg.DatabaseWait)
+	defer cancelCH()
+	if err := clickhouse.WaitReady(chCtx, s.ch, s.logger); err != nil {
+		return err
+	}
+	if s.cfg.Migrate {
+		s.health.SetStarting("running ClickHouse migrations")
+		if err := clickhouse.Migrate(ctx, s.cfg.ClickHouseURL, s.lockClickHouse, s.logger); err != nil {
+			return err
+		}
+	}
+	if err := telemetry.ApplyRetention(ctx, s.ch, s.cfg.TraceRetentionDays, s.logger); err != nil {
+		return err
+	}
 	if s.api != nil {
 		if err := s.identity.PrepareSetup(ctx, s.publicURL.JoinPath("setup").String()); err != nil {
 			return fmt.Errorf("prepare first-run setup: %w", err)
 		}
 	}
 	return nil
+}
+
+// lockClickHouse makes processes that start together take turns at
+// ClickHouse's migrations.
+func (s *Server) lockClickHouse(ctx context.Context, f func() error) error {
+	return postgres.WithAdvisoryLock(ctx, s.db, postgres.LockClickHouseMigrations, f)
 }
 
 // warnAboutPlainHTTP warns when people will reach Signalbox over plain HTTP

@@ -85,7 +85,10 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 
 	switch cmd {
 	case "schema":
-		return telemetry.CreateSchema(ctx, conn, telemetry.SchemaOptions{RetentionDays: 30})
+		if err := clickhouse.Migrate(ctx, *url, nil, slog.New(slog.DiscardHandler)); err != nil {
+			return err
+		}
+		return telemetry.ApplyRetention(ctx, conn, 30, slog.New(slog.DiscardHandler))
 	case "paced":
 		return paced(ctx, conn, out, *seed, env, *rate, *length)
 	case "bulk":
@@ -96,7 +99,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	case "stats":
 		return stats(ctx, conn, out)
 	case "drop":
-		for _, t := range []string{"span_metrics_1m_mv", "trace_ids_mv", "span_metrics_1m", "trace_ids", "spans"} {
+		for _, t := range []string{"span_metrics_1m_mv", "trace_ids_mv", "span_metrics_1m", "trace_ids", "spans", "goose_db_version"} {
 			if err := conn.Exec(ctx, "DROP TABLE IF EXISTS "+t+" SYNC"); err != nil {
 				return err
 			}

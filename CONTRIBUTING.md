@@ -21,10 +21,10 @@ Then:
 
 ```sh
 git clone https://github.com/CemTbi/Signalbox.git signalbox && cd signalbox
-make test          # Go tests with the race detector; database tests start PostgreSQL in Docker
+make test          # Go tests with the race detector; database tests start PostgreSQL and ClickHouse in Docker
 make web           # build the web app into the server
 make build         # build bin/signalbox and bin/signalbox-server
-make dev-db        # start PostgreSQL on localhost:5432
+make dev-db        # start PostgreSQL on localhost:5432 and ClickHouse on localhost:9000
 make run           # start the server on :8080 with readable logs
 ```
 
@@ -82,7 +82,7 @@ A change is done when:
 | `make web-check` | Web app lint, type check and unit tests |
 | `npm --prefix e2e test` | The end-to-end tests in Chromium, against a running installation |
 
-Tests that need PostgreSQL start it with Testcontainers and skip themselves when Docker isn't available; CI sets `SIGNALBOX_REQUIRE_DATABASE_TESTS` so they can't skip there. To use an existing server instead, set `SIGNALBOX_TEST_DATABASE_URL`.
+Tests that need PostgreSQL or ClickHouse start them with Testcontainers and skip themselves when Docker isn't available; CI sets `SIGNALBOX_REQUIRE_DATABASE_TESTS` so they can't skip there. To use existing servers instead, set `SIGNALBOX_TEST_DATABASE_URL` and `SIGNALBOX_TEST_CLICKHOUSE_URL`.
 
 The API tests check every request and response against `api/openapi.yaml`, so a handler that drifts from the contract fails them.
 

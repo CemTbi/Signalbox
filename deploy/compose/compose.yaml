@@ -46,7 +46,8 @@ services:
       SIGNALBOX_LOG_FORMAT: json
       SIGNALBOX_DRAIN_DELAY: 2s
       SIGNALBOX_DATABASE_URL: postgres://signalbox:${POSTGRES_PASSWORD:-signalbox}@postgres:5432/signalbox?sslmode=disable
-      # Not read yet; tracing storage arrives with the ingest role.
+      # Spans and what's built from them. SIGNALBOX_TRACE_RETENTION_DAYS sets
+      # how long spans are kept, 7 days by default.
       SIGNALBOX_CLICKHOUSE_URL: clickhouse://signalbox:${CLICKHOUSE_PASSWORD:-signalbox}@clickhouse:9000/signalbox
     ports:
       - "8080:8080"
