@@ -55,12 +55,28 @@ export async function expectAccessible(page: Page) {
   expect(results.violations, `accessibility violations on ${page.url()}:\n${summary}`).toEqual([]);
 }
 
-/** Signs in on the sign-in page. */
+/**
+ * Signs in on the sign-in page. Every test signs in from this machine, so
+ * the server's limit of 10 sign-ins at once per address can refuse one;
+ * like a person, it waits the seconds the page names and tries again.
+ */
 export async function signIn(page: Page, email = admin.email, password = admin.password) {
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
   await page.getByLabel("Email address").fill(email);
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  for (let attempt = 0; ; attempt++) {
+    await page.getByRole("button", { name: "Sign in" }).click();
+    try {
+      await page.waitForURL((url) => !url.pathname.startsWith("/sign-in"), { timeout: 5_000 });
+      return;
+    } catch {
+      // Still on the sign-in page: refused, or limited.
+    }
+    const alert = (await page.getByRole("alert").first().textContent({ timeout: 1_000 }).catch(() => "")) ?? "";
+    const limited = alert.match(/Too many attempts\. Try again in (\d+) seconds?/);
+    if (!limited || attempt === 2) return; // for the test to check
+    await page.waitForTimeout((Number(limited[1]) + 1) * 1000);
+  }
 }
 
 /**

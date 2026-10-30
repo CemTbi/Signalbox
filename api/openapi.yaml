@@ -64,6 +64,8 @@ tags:
     description: Running a collection, or a folder of it, as a test suite, and its reports.
   - name: Agents
     description: 'Agents: `signalbox agent` processes on people''s machines that send their owner''s requests from there, so `localhost` and private networks work.'
+  - name: Tracing
+    description: 'Spans from your services. They arrive at the ingest role''s own listeners, over OTLP/HTTP (`POST /v1/traces` on port 4318) and Zipkin v2 (`POST /api/v2/spans` on port 9411), with an ingest key; this API manages the keys.'
 
 paths:
   /livez:
@@ -1914,6 +1916,90 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         default: {$ref: '#/components/responses/Error'}
+  /api/v1/environments/{environmentId}/ingest-keys:
+    parameters:
+      - $ref: '#/components/parameters/EnvironmentId'
+    get:
+      operationId: listIngestKeys
+      summary: List an environment's ingest keys
+      description: Lists the keys that send spans to the environment, newest first. Every member of the workspace may. Secrets are never listed.
+      tags: [Tracing]
+      responses:
+        '200':
+          description: The keys.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/IngestKeyList'}
+              example:
+                data:
+                  - {id: ing_01j9z3w5y7a9c1e3g5j7m9p1r3, environmentId: env_01j9z3n5q7s9v1w3y5a7c9e1g3, name: checkout-service, hint: x9Qa, createdBy: usr_01j9z3kq4m8r2t6v0x5w7y9a1b, createdAt: '2026-10-30T12:00:00Z', lastUsedAt: '2026-10-30T12:05:00Z'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createIngestKey
+      summary: Create an ingest key
+      description: |
+        Creates a key that sends spans to this environment, whatever the spans' attributes say. The key is in this response only; Signalbox keeps just its hash. Exporters send it as `Authorization: Bearer sbx_ing_…`, such as with `OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer sbx_ing_…"`.
+
+        Workspace owners and admins may. An environment may have 50 keys.
+      tags: [Tracing]
+      requestBody:
+        required: true
+        description: The key's name.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/IngestKeyCreate'}
+            example: {name: checkout-service}
+      responses:
+        '201':
+          description: The new key, with its secret.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            Location: {$ref: '#/components/headers/Location'}
+            Cache-Control:
+              description: '`no-store`: the response holds a secret.'
+              schema: {type: string, examples: [no-store]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NewIngestKey'}
+              example: {id: ing_01j9z3w5y7a9c1e3g5j7m9p1r3, environmentId: env_01j9z3n5q7s9v1w3y5a7c9e1g3, name: checkout-service, hint: x9Qa, createdBy: usr_01j9z3kq4m8r2t6v0x5w7y9a1b, createdAt: '2026-10-30T12:00:00Z', lastUsedAt: null, key: sbx_ing_3q2-7wEjK9bM4xR1vT6nY8pL0sD5gH2fA7cZ9eUx9Qa}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: The environment already has 50 keys (`too-many-keys`).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example: {type: about:blank, title: Conflict, status: 409, code: too-many-keys, detail: This environment has 50 ingest keys, the most it may. Revoke one nothing uses.}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/ingest-keys/{keyId}:
+    parameters:
+      - name: keyId
+        in: path
+        required: true
+        description: The ingest key's ID.
+        schema: {$ref: '#/components/schemas/IngestKeyId'}
+    delete:
+      operationId: revokeIngestKey
+      summary: Revoke an ingest key
+      description: Deletes an ingest key. Spans sent with it are refused at once by the process that handled this request, and within 10 seconds by others. Workspace owners and admins may.
+      tags: [Tracing]
+      responses:
+        '204':
+          description: The key is revoked.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
   /api/v1/environments/{environmentId}/variable-imports:
     parameters:
       - $ref: '#/components/parameters/EnvironmentId'
@@ -3495,6 +3581,65 @@ components:
       description: An access token's ID.
       pattern: '^tok_[0-9a-hjkmnp-tv-z]{26}$'
       examples: [tok_01j9z3w5y7a9c1e3g5j7m9p1r3]
+    IngestKeyId:
+      type: string
+      description: An ingest key's ID.
+      pattern: '^ing_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [ing_01j9z3w5y7a9c1e3g5j7m9p1r3]
+    IngestKey:
+      type: object
+      description: A key that sends spans to one environment, without its secret.
+      required: [id, environmentId, name, hint, createdBy, createdAt, lastUsedAt]
+      examples: [{id: ing_01j9z3w5y7a9c1e3g5j7m9p1r3, environmentId: env_01j9z3n5q7s9v1w3y5a7c9e1g3, name: checkout-service, hint: x9Qa, createdBy: usr_01j9z3kq4m8r2t6v0x5w7y9a1b, createdAt: '2026-10-30T12:00:00Z', lastUsedAt: '2026-10-30T12:05:00Z'}]
+      properties:
+        id: {$ref: '#/components/schemas/IngestKeyId'}
+        environmentId: {$ref: '#/components/schemas/EnvironmentId'}
+        name: {type: string, minLength: 1, maxLength: 100, description: What sends with the key., examples: [checkout-service]}
+        hint: {type: string, minLength: 4, maxLength: 4, description: The key's last four characters, to tell keys apart., examples: [x9Qa]}
+        createdBy:
+          description: Who created the key, or null once their account is gone.
+          examples: [usr_01j9z3kq4m8r2t6v0x5w7y9a1b]
+          oneOf:
+            - $ref: '#/components/schemas/UserId'
+            - type: 'null'
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+        lastUsedAt:
+          description: When spans last arrived with the key, to the minute, or null if they never did.
+          examples: ['2026-10-30T12:05:00Z']
+          oneOf:
+            - $ref: '#/components/schemas/Timestamp'
+            - type: 'null'
+    NewIngestKey:
+      description: A key that was just created, with its secret, shown this once.
+      allOf:
+        - $ref: '#/components/schemas/IngestKey'
+        - type: object
+          description: The secret.
+          required: [key]
+          properties:
+            key:
+              type: string
+              pattern: '^sbx_ing_[A-Za-z0-9_-]{43}$'
+              description: The key. Store it now; it can't be shown again.
+              examples: [sbx_ing_3q2-7wEjK9bM4xR1vT6nY8pL0sD5gH2fA7cZ9eUx9Qa]
+    IngestKeyCreate:
+      type: object
+      description: A new ingest key.
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100, description: What sends with the key., examples: [checkout-service]}
+    IngestKeyList:
+      type: object
+      description: An environment's ingest keys.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The keys, newest first.
+          maxItems: 50
+          items: {$ref: '#/components/schemas/IngestKey'}
+          examples: [[{id: ing_01j9z3w5y7a9c1e3g5j7m9p1r3, environmentId: env_01j9z3n5q7s9v1w3y5a7c9e1g3, name: checkout-service, hint: x9Qa, createdBy: usr_01j9z3kq4m8r2t6v0x5w7y9a1b, createdAt: '2026-10-30T12:00:00Z', lastUsedAt: '2026-10-30T12:05:00Z'}]]
     AccessToken:
       type: object
       description: A personal access token, without its secret.

@@ -29,7 +29,7 @@ var All = []Name{API, Mock, Runner, Scheduler, Worker, Ingest}
 
 // available lists the roles this version can run. The rest are planned; the
 // roadmap in docs/product/requirements-1.0.md says when each one lands.
-var available = map[Name]bool{API: true, Runner: true}
+var available = map[Name]bool{API: true, Runner: true, Ingest: true}
 
 // Available reports whether this version can run the role.
 func Available(n Name) bool { return available[n] }

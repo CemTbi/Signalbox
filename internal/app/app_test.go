@@ -5,6 +5,7 @@ package app_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -13,8 +14,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/CemTbi/Signalbox/internal/app"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
+	"github.com/CemTbi/Signalbox/internal/modules/telemetry"
+	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
+	"github.com/CemTbi/Signalbox/internal/platform/clickhouse"
 	"github.com/CemTbi/Signalbox/internal/platform/clickhouse/clickhousetest"
 	"github.com/CemTbi/Signalbox/internal/platform/postgres/postgrestest"
 )
@@ -23,6 +29,8 @@ func testConfig(databaseURL string) app.Config {
 	cfg := app.DefaultConfig()
 	cfg.HTTPAddr = "127.0.0.1:0"
 	cfg.OpsAddr = "127.0.0.1:0"
+	cfg.OTLPHTTPAddr = "127.0.0.1:0"
+	cfg.ZipkinAddr = "127.0.0.1:0"
 	cfg.ShutdownTimeout = 5 * time.Second
 	cfg.DatabaseURL = databaseURL
 	// Nothing listens here: tests that start the server set a real one.
@@ -202,7 +210,8 @@ func TestNewValidatesConfiguration(t *testing.T) {
 		wantErr string
 	}{
 		{"busy port", func(c *app.Config) { c.HTTPAddr = ln.Addr().String() }, "listen on"},
-		{"unavailable role", func(c *app.Config) { c.Roles = "ingest" }, "not available"},
+		{"unavailable role", func(c *app.Config) { c.Roles = "scheduler" }, "not available"},
+		{"no ingest rate", func(c *app.Config) { c.IngestSpansPerSecond = 0 }, "ingest rate"},
 		{"no database", func(c *app.Config) { c.DatabaseURL = "" }, "SIGNALBOX_DATABASE_URL"},
 		{"no ClickHouse", func(c *app.Config) { c.ClickHouseURL = "" }, "SIGNALBOX_CLICKHOUSE_URL"},
 		{"bad ClickHouse URL", func(c *app.Config) { c.ClickHouseURL = "clickhouse://u:p@[::1/db" }, "ClickHouse URL"},
@@ -243,5 +252,104 @@ func TestParsePublicURL(t *testing.T) {
 		case want != "" && (err != nil || u.String() != want):
 			t.Errorf("ParsePublicURL(%q) = %v, %v, want %s", in, u, err, want)
 		}
+	}
+}
+
+func TestIngestStoresSpans(t *testing.T) {
+	pg, url := postgrestest.NewWithURL(t)
+	ch, chURL := clickhousetest.NewWithURL(t)
+	cfg := testConfig(url)
+	cfg.ClickHouseURL = chURL
+	cfg.Roles = "ingest" // the ingest role runs on its own
+	srv, err := app.New(context.Background(), cfg, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if srv.HTTPAddr() != "" {
+		t.Error("the ingest role alone serves the API")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- srv.Run(ctx) }()
+	defer func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("Run = %v", err)
+		}
+	}()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		if code, _ := readyStatus(t, "http://"+srv.OpsAddr()+"/readyz"); code == http.StatusOK {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the server never became ready")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	// A key for a project's first environment.
+	log := slog.New(slog.DiscardHandler)
+	ws := workspaces.New(pg, log)
+	owner := uuid.Must(uuid.NewV7())
+	if _, err := pg.Exec(ctx, `INSERT INTO users (id, email, name) VALUES ($1, 'ada@example.com', 'Ada')`, owner); err != nil {
+		t.Fatal(err)
+	}
+	w, err := ws.CreateWorkspace(ctx, owner, workspaces.WorkspaceInput{Name: "Shop", Slug: "shop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := ws.CreateProject(ctx, owner, w.ID, workspaces.ProjectInput{Name: "Checkout"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	envs, err := ws.ListEnvironments(ctx, owner, p.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := telemetry.NewKeys(pg, log, ws).Create(ctx, owner, envs[0].ID, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now().Add(-time.Second)
+	send := func(url, contentType, body string) {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodPost, url, strings.NewReader(body))
+		req.Header.Set("Content-Type", contentType)
+		req.Header.Set("Authorization", "Bearer "+key.Key)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if resp.StatusCode/100 != 2 {
+			t.Fatalf("%s: %d %s", url, resp.StatusCode, b)
+		}
+	}
+	send("http://"+srv.OTLPHTTPAddr()+"/v1/traces", "application/json", fmt.Sprintf(
+		`{"resourceSpans":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"orders"}}]},"scopeSpans":[{"spans":[
+		{"traceId":"%s","spanId":"0102030405060708","name":"GET /orders","kind":2,"startTimeUnixNano":"%d","endTimeUnixNano":"%d"}]}]}]}`,
+		strings.Repeat("ab", 16), start.UnixNano(), start.Add(time.Millisecond).UnixNano()))
+	send("http://"+srv.ZipkinAddr()+"/api/v2/spans", "application/json", fmt.Sprintf(
+		`[{"traceId":"%s","id":"1112131415161718","name":"get","kind":"SERVER","timestamp":%d,"duration":900,"localEndpoint":{"serviceName":"web"}}]`,
+		strings.Repeat("cd", 16), start.UnixMicro()))
+
+	// Both were stored before their requests were answered.
+	var services []string
+	rows, err := ch.Query(ctx, `SELECT service_name FROM spans WHERE environment_id = {env:UUID} ORDER BY service_name`, clickhouse.Named("env", envs[0].ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var s string
+		if err := rows.Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		services = append(services, s)
+	}
+	if strings.Join(services, " ") != "orders web" {
+		t.Errorf("stored spans of %v", services)
 	}
 }

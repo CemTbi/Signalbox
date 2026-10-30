@@ -506,6 +506,18 @@ h1[tabindex="-1"]:focus {
   align-self: flex-start;
 }
 
+/* Settings to copy, such as an exporter's environment variables. */
+.invitation-link textarea {
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--ink);
+  resize: vertical;
+  background: var(--surface-2);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+}
+
 a.button {
   text-decoration: none;
 }

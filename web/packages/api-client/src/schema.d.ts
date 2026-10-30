@@ -962,6 +962,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/environments/{environmentId}/ingest-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The environment's ID. */
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List an environment's ingest keys
+         * @description Lists the keys that send spans to the environment, newest first. Every member of the workspace may. Secrets are never listed.
+         */
+        get: operations["listIngestKeys"];
+        put?: never;
+        /**
+         * Create an ingest key
+         * @description Creates a key that sends spans to this environment, whatever the spans' attributes say. The key is in this response only; Signalbox keeps just its hash. Exporters send it as `Authorization: Bearer sbx_ing_…`, such as with `OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer sbx_ing_…"`.
+         *
+         *     Workspace owners and admins may. An environment may have 50 keys.
+         */
+        post: operations["createIngestKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ingest-keys/{keyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ingest key's ID. */
+                keyId: components["schemas"]["IngestKeyId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke an ingest key
+         * @description Deletes an ingest key. Spans sent with it are refused at once by the process that handled this request, and within 10 seconds by others. Workspace owners and admins may.
+         */
+        delete: operations["revokeIngestKey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/environments/{environmentId}/variable-imports": {
         parameters: {
             query?: never;
@@ -1611,6 +1663,82 @@ export interface components {
          * @example tok_01j9z3w5y7a9c1e3g5j7m9p1r3
          */
         AccessTokenId: string;
+        /**
+         * @description An ingest key's ID.
+         * @example ing_01j9z3w5y7a9c1e3g5j7m9p1r3
+         */
+        IngestKeyId: string;
+        /**
+         * @description A key that sends spans to one environment, without its secret.
+         * @example {
+         *       "id": "ing_01j9z3w5y7a9c1e3g5j7m9p1r3",
+         *       "environmentId": "env_01j9z3n5q7s9v1w3y5a7c9e1g3",
+         *       "name": "checkout-service",
+         *       "hint": "x9Qa",
+         *       "createdBy": "usr_01j9z3kq4m8r2t6v0x5w7y9a1b",
+         *       "createdAt": "2026-10-30T12:00:00Z",
+         *       "lastUsedAt": "2026-10-30T12:05:00Z"
+         *     }
+         */
+        IngestKey: {
+            id: components["schemas"]["IngestKeyId"];
+            environmentId: components["schemas"]["EnvironmentId"];
+            /**
+             * @description What sends with the key.
+             * @example checkout-service
+             */
+            name: string;
+            /**
+             * @description The key's last four characters
+             * @example x9Qa
+             */
+            hint: string;
+            /**
+             * @description Who created the key, or null once their account is gone.
+             * @example usr_01j9z3kq4m8r2t6v0x5w7y9a1b
+             */
+            createdBy: components["schemas"]["UserId"] | null;
+            createdAt: components["schemas"]["Timestamp"];
+            /**
+             * @description When spans last arrived with the key, to the minute, or null if they never did.
+             * @example 2026-10-30T12:05:00Z
+             */
+            lastUsedAt: components["schemas"]["Timestamp"] | null;
+        };
+        /** @description A key that was just created, with its secret, shown this once. */
+        NewIngestKey: components["schemas"]["IngestKey"] & {
+            /**
+             * @description The key. Store it now; it can't be shown again.
+             * @example sbx_ing_3q2-7wEjK9bM4xR1vT6nY8pL0sD5gH2fA7cZ9eUx9Qa
+             */
+            key: string;
+        };
+        /** @description A new ingest key. */
+        IngestKeyCreate: {
+            /**
+             * @description What sends with the key.
+             * @example checkout-service
+             */
+            name: string;
+        };
+        /** @description An environment's ingest keys. */
+        IngestKeyList: {
+            /**
+             * @description The keys, newest first.
+             * @example [
+             *       {
+             *         "id": "ing_01j9z3w5y7a9c1e3g5j7m9p1r3",
+             *         "environmentId": "env_01j9z3n5q7s9v1w3y5a7c9e1g3",
+             *         "name": "checkout-service",
+             *         "hint": "x9Qa",
+             *         "createdBy": "usr_01j9z3kq4m8r2t6v0x5w7y9a1b",
+             *         "createdAt": "2026-10-30T12:00:00Z",
+             *         "lastUsedAt": "2026-10-30T12:05:00Z"
+             *       }
+             *     ]
+             */
+            data: components["schemas"]["IngestKey"][];
+        };
         /** @description A personal access token, without its secret. */
         AccessToken: {
             id: components["schemas"]["AccessTokenId"];
@@ -7817,6 +7945,148 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listIngestKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The environment's ID. */
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The keys. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "id": "ing_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *           "environmentId": "env_01j9z3n5q7s9v1w3y5a7c9e1g3",
+                     *           "name": "checkout-service",
+                     *           "hint": "x9Qa",
+                     *           "createdBy": "usr_01j9z3kq4m8r2t6v0x5w7y9a1b",
+                     *           "createdAt": "2026-10-30T12:00:00Z",
+                     *           "lastUsedAt": "2026-10-30T12:05:00Z"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["IngestKeyList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    createIngestKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The environment's ID. */
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        /** @description The key's name. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "name": "checkout-service"
+                 *     }
+                 */
+                "application/json": components["schemas"]["IngestKeyCreate"];
+            };
+        };
+        responses: {
+            /** @description The new key, with its secret. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    Location: components["headers"]["Location"];
+                    /** @description `no-store`: the response holds a secret. */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "ing_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "environmentId": "env_01j9z3n5q7s9v1w3y5a7c9e1g3",
+                     *       "name": "checkout-service",
+                     *       "hint": "x9Qa",
+                     *       "createdBy": "usr_01j9z3kq4m8r2t6v0x5w7y9a1b",
+                     *       "createdAt": "2026-10-30T12:00:00Z",
+                     *       "lastUsedAt": null,
+                     *       "key": "sbx_ing_3q2-7wEjK9bM4xR1vT6nY8pL0sD5gH2fA7cZ9eUx9Qa"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["NewIngestKey"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The environment already has 50 keys (`too-many-keys`). */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Conflict",
+                     *       "status": 409,
+                     *       "code": "too-many-keys",
+                     *       "detail": "This environment has 50 ingest keys",
+                     *       "the most it may. Revoke one nothing uses.": null
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    revokeIngestKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The ingest key's ID. */
+                keyId: components["schemas"]["IngestKeyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The key is revoked. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             default: components["responses"]["Error"];
         };

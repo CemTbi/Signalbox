@@ -72,3 +72,30 @@ func TestTooManyKeysAreRefused(t *testing.T) {
 		t.Error("a key beyond the limit was allowed")
 	}
 }
+
+func TestAllowNTakesManyTokens(t *testing.T) {
+	// 10 spans a second, up to 20 at once.
+	l := New(20, 100*time.Millisecond)
+	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	l.now = func() time.Time { return now }
+
+	if ok, _ := l.AllowN("env", 15); !ok {
+		t.Fatal("15 of a bucket of 20 were refused")
+	}
+	ok, retry := l.AllowN("env", 10)
+	if ok || retry.Round(time.Millisecond) != 500*time.Millisecond {
+		t.Errorf("10 more: ok=%v retry=%s, want refused with 500ms", ok, retry)
+	}
+	// A refusal took nothing: the 5 left are still there.
+	if ok, _ := l.AllowN("env", 5); !ok {
+		t.Error("the 5 tokens left were gone")
+	}
+	// More than the burst waits for a full bucket, then takes all of it.
+	now = now.Add(2 * time.Second)
+	if ok, _ := l.AllowN("env", 1000); !ok {
+		t.Error("a request larger than the burst never passes")
+	}
+	if ok, _ := l.Allow("env"); ok {
+		t.Error("the large request didn't empty the bucket")
+	}
+}

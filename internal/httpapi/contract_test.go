@@ -34,6 +34,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
 	"github.com/CemTbi/Signalbox/internal/modules/runner"
 	"github.com/CemTbi/Signalbox/internal/modules/scripts"
+	"github.com/CemTbi/Signalbox/internal/modules/telemetry"
 	"github.com/CemTbi/Signalbox/internal/modules/testruns"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/egress"
@@ -190,6 +191,7 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *har
 		Runs:        runs,
 		Contracts:   sender,
 		Agents:      ag,
+		IngestKeys:  telemetry.NewKeys(pool, logger, ws),
 		PublicURL:   public,
 	})
 	srv.StartTLS()

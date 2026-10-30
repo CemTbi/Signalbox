@@ -18,7 +18,7 @@ import (
 
 const insertSpans = `INSERT INTO spans (
     environment_id, timestamp, trace_id, span_id, parent_span_id, trace_state,
-    service_name, span_name, span_kind, duration_ns, status_code, status_message,
+    service_name, span_name, operation, span_kind, duration_ns, status_code, status_message,
     http_method, http_route, http_status_code, server_address, db_system,
     scope_name, scope_version, resource, span_attributes,
     ` + "`events.timestamp`, `events.name`, `events.attributes`," + `
@@ -44,9 +44,13 @@ func WriteSpans(ctx context.Context, conn clickhouse.Conn, spans []Span) error {
 		}
 		eventTimes, eventNames, eventAttrs := splitEvents(s.Events)
 		linkTraces, linkSpans, linkStates, linkAttrs := splitLinks(s.Links)
+		operation := s.Operation
+		if operation == "" {
+			operation = s.Name
+		}
 		err = batch.Append(
 			s.EnvironmentID, s.Start, s.TraceID[:], s.SpanID[:], s.ParentSpanID[:], s.TraceState,
-			s.Service, s.Name, s.Kind.String(), durationNS(s.Duration), s.Status.String(), s.StatusMessage,
+			s.Service, s.Name, operation, s.Kind.String(), durationNS(s.Duration), s.Status.String(), s.StatusMessage,
 			s.HTTPMethod, s.HTTPRoute, s.HTTPStatusCode, s.ServerAddress, s.DBSystem,
 			s.ScopeName, s.ScopeVersion, string(resource), sorted(storedAttributes(s)),
 			eventTimes, eventNames, eventAttrs,

@@ -4,6 +4,7 @@ package clickhouse_test
 
 import (
 	"context"
+	"io/fs"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -96,9 +97,13 @@ func TestMigrate(t *testing.T) {
 	if got := strings.Join(tables, " "); got != "goose_db_version span_metrics_1m span_metrics_1m_mv spans trace_ids trace_ids_mv" {
 		t.Errorf("tables = %s", got)
 	}
+	files, err := fs.Glob(clickhouse.Migrations(), "*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
 	var applied uint64
-	if err := conn.QueryRow(ctx, `SELECT count() FROM goose_db_version WHERE version_id > 0`).Scan(&applied); err != nil || applied != 1 {
-		t.Errorf("recorded %d migrations, %v", applied, err)
+	if err := conn.QueryRow(ctx, `SELECT count() FROM goose_db_version WHERE version_id > 0`).Scan(&applied); err != nil || applied != uint64(len(files)) {
+		t.Errorf("recorded %d migrations, want %d: %v", applied, len(files), err)
 	}
 	if err := clickhouse.Migrate(ctx, "clickhouse://u:s3cret@[::1/db", nil, slog.New(slog.DiscardHandler)); err == nil || strings.Contains(err.Error(), "s3cret") {
 		t.Errorf("a bad URL: %v", err)

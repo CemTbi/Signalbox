@@ -76,8 +76,12 @@ type Span struct {
 	Start        time.Time
 	Duration     time.Duration
 	// Service is the resource's service.name.
-	Service       string
-	Name          string
+	Service string
+	Name    string
+	// Operation is what the per-minute rollup groups by: the name, or
+	// "METHOD /route" for a server span with a route. Prepare sets it;
+	// empty means the name.
+	Operation     string
 	Kind          SpanKind
 	Status        StatusCode
 	StatusMessage string

@@ -44,6 +44,15 @@ func New(burst int, every time.Duration) *Limiter {
 // Allow takes a token for the key. When none is left it returns false and
 // how long until the next one.
 func (l *Limiter) Allow(key string) (ok bool, retryAfter time.Duration) {
+	return l.AllowN(key, 1)
+}
+
+// AllowN takes n tokens for the key at once, such as one per span in a
+// request. More than the burst counts as the whole burst, so a large
+// request waits for a full bucket rather than forever. When too few are
+// left it takes none, and returns false and how long until there are.
+func (l *Limiter) AllowN(key string, n int) (ok bool, retryAfter time.Duration) {
+	n = min(max(n, 1), l.burst)
 	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -60,7 +69,7 @@ func (l *Limiter) Allow(key string) (ok bool, retryAfter time.Duration) {
 		l.buckets[key] = b
 	}
 	b.used = now
-	r := b.limiter.ReserveN(now, 1)
+	r := b.limiter.ReserveN(now, n)
 	if delay := r.DelayFrom(now); delay > 0 {
 		r.CancelAt(now)
 		return false, delay
