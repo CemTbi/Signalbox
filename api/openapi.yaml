@@ -65,7 +65,7 @@ tags:
   - name: Agents
     description: 'Agents: `signalbox agent` processes on people''s machines that send their owner''s requests from there, so `localhost` and private networks work.'
   - name: Tracing
-    description: 'Spans from your services. They arrive at the ingest role''s own listeners, over OTLP/HTTP (`POST /v1/traces` on port 4318) and Zipkin v2 (`POST /api/v2/spans` on port 9411), with an ingest key; this API manages the keys.'
+    description: 'Spans from your services. They arrive at the ingest role''s own listeners, over OTLP/gRPC (port 4317), OTLP/HTTP (`POST /v1/traces` on port 4318) and Zipkin v2 (`POST /api/v2/spans` on port 9411), with an ingest key; this API manages the keys.'
 
 paths:
   /livez:

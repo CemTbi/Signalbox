@@ -3,6 +3,7 @@
 package app_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	coltracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
+	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
+	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/CemTbi/Signalbox/internal/app"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
@@ -29,6 +37,7 @@ func testConfig(databaseURL string) app.Config {
 	cfg := app.DefaultConfig()
 	cfg.HTTPAddr = "127.0.0.1:0"
 	cfg.OpsAddr = "127.0.0.1:0"
+	cfg.OTLPGRPCAddr = "127.0.0.1:0"
 	cfg.OTLPHTTPAddr = "127.0.0.1:0"
 	cfg.ZipkinAddr = "127.0.0.1:0"
 	cfg.ShutdownTimeout = 5 * time.Second
@@ -336,7 +345,24 @@ func TestIngestStoresSpans(t *testing.T) {
 		`[{"traceId":"%s","id":"1112131415161718","name":"get","kind":"SERVER","timestamp":%d,"duration":900,"localEndpoint":{"serviceName":"web"}}]`,
 		strings.Repeat("cd", 16), start.UnixMicro()))
 
-	// Both were stored before their requests were answered.
+	conn, err := grpc.NewClient(srv.OTLPGRPCAddr(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_, err = coltracepb.NewTraceServiceClient(conn).Export(metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+key.Key),
+		&coltracepb.ExportTraceServiceRequest{ResourceSpans: []*tracepb.ResourceSpans{{
+			Resource: &resourcepb.Resource{Attributes: []*commonpb.KeyValue{{Key: "service.name", Value: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "payments"}}}}},
+			ScopeSpans: []*tracepb.ScopeSpans{{Spans: []*tracepb.Span{{
+				TraceId: bytes.Repeat([]byte{0xef}, 16), SpanId: bytes.Repeat([]byte{0x01}, 8), Name: "charge", Kind: tracepb.Span_SPAN_KIND_SERVER,
+				StartTimeUnixNano: uint64(start.UnixNano()), EndTimeUnixNano: uint64(start.Add(time.Millisecond).UnixNano()),
+			}}}},
+		}}})
+	if err != nil {
+		t.Fatalf("OTLP/gRPC: %v", err)
+	}
+
+	// All three were stored before their requests were answered.
 	var services []string
 	rows, err := ch.Query(ctx, `SELECT service_name FROM spans WHERE environment_id = {env:UUID} ORDER BY service_name`, clickhouse.Named("env", envs[0].ID))
 	if err != nil {
@@ -349,7 +375,7 @@ func TestIngestStoresSpans(t *testing.T) {
 		}
 		services = append(services, s)
 	}
-	if strings.Join(services, " ") != "orders web" {
+	if strings.Join(services, " ") != "orders payments web" {
 		t.Errorf("stored spans of %v", services)
 	}
 }

@@ -230,7 +230,7 @@ export function NewKey({ ingestKey, onDone }: { ingestKey: NewIngestKey; onDone:
       </label>
       <textarea id={settingsId} className="mono" readOnly rows={3} value={settings} onFocus={(e) => e.target.select()} />
       <p className="field-hint">
-        Port 4318 takes OTLP over HTTP, and 9411 takes Zipkin. If spans reach Signalbox at another address, use that instead.
+        Port 4318 takes OTLP over HTTP, 4317 OTLP over gRPC, and 9411 Zipkin. If spans reach Signalbox at another address, use that instead.
       </p>
       <div className="form-actions">
         <button type="button" className="button secondary" onClick={() => void copy("settings", settings)}>

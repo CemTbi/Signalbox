@@ -20,6 +20,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 
 	"github.com/CemTbi/Signalbox/internal/buildinfo"
 	"github.com/CemTbi/Signalbox/internal/health"
@@ -71,8 +72,10 @@ type Config struct {
 	ClickHouseURL string
 	// TraceRetentionDays is how long spans are kept, from 1 to 3650.
 	TraceRetentionDays int
-	// OTLPHTTPAddr and ZipkinAddr are where the ingest role receives spans
-	// over OTLP/HTTP and Zipkin v2. Empty turns one off.
+	// OTLPGRPCAddr, OTLPHTTPAddr and ZipkinAddr are where the ingest role
+	// receives spans over OTLP/gRPC, OTLP/HTTP and Zipkin v2. Empty turns
+	// one off.
+	OTLPGRPCAddr string
 	OTLPHTTPAddr string
 	ZipkinAddr   string
 	// IngestSpansPerSecond is each environment's rate limit at ingest.
@@ -116,6 +119,7 @@ func DefaultConfig() Config {
 		MaxSpecBytes:         httpapi.DefaultMaxSpecBytes,
 		DatabaseWait:         time.Minute,
 		TraceRetentionDays:   telemetry.DefaultRetentionDays,
+		OTLPGRPCAddr:         ":4317",
 		OTLPHTTPAddr:         ":4318",
 		ZipkinAddr:           ":9411",
 		IngestSpansPerSecond: ingest.DefaultSpansPerSecond,
@@ -143,7 +147,10 @@ type Server struct {
 	// otlp and zipkin receive spans; nil when the ingest role isn't
 	// running or its address is empty.
 	otlp, zipkin *endpoint
-	spans        *telemetry.Writer // nil when the ingest role isn't running
+	// otlpGRPC receives spans over OTLP/gRPC, on otlpGRPCLn.
+	otlpGRPC   *grpc.Server
+	otlpGRPCLn net.Listener
+	spans      *telemetry.Writer // nil when the ingest role isn't running
 }
 
 type endpoint struct {
@@ -315,6 +322,13 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 		}
 		s.spans = telemetry.NewWriter(s.ch, logger, telemetry.WriterOptions{}, reg)
 		in := ingest.New(keys, s.spans, logger, ingest.Options{SpansPerSecond: cfg.IngestSpansPerSecond, RetentionDays: cfg.TraceRetentionDays}, reg)
+		if cfg.OTLPGRPCAddr != "" {
+			var lc net.ListenConfig
+			if s.otlpGRPCLn, err = lc.Listen(ctx, "tcp", cfg.OTLPGRPCAddr); err != nil {
+				return nil, s.abort(fmt.Errorf("listen on %s: %w", cfg.OTLPGRPCAddr, err))
+			}
+			s.otlpGRPC = in.GRPCServer()
+		}
 		if cfg.OTLPHTTPAddr != "" {
 			if s.otlp, err = s.bind(ctx, cfg.OTLPHTTPAddr, in.OTLPHandler()); err != nil {
 				return nil, s.abort(err)
@@ -335,6 +349,9 @@ func (s *Server) abort(err error) error {
 		if e != nil {
 			_ = e.ln.Close()
 		}
+	}
+	if s.otlpGRPCLn != nil {
+		_ = s.otlpGRPCLn.Close()
 	}
 	if s.spans != nil {
 		s.spans.Close()
@@ -385,8 +402,16 @@ func (s *Server) HTTPAddr() string {
 	return s.api.ln.Addr().String()
 }
 
-// OTLPHTTPAddr and ZipkinAddr return where the ingest role receives
-// spans, or "" when it doesn't on that protocol.
+// OTLPGRPCAddr returns where the ingest role receives spans over
+// OTLP/gRPC, or "" when it doesn't.
+func (s *Server) OTLPGRPCAddr() string {
+	if s.otlpGRPCLn == nil {
+		return ""
+	}
+	return s.otlpGRPCLn.Addr().String()
+}
+
+// OTLPHTTPAddr is like OTLPGRPCAddr, for OTLP/HTTP.
 func (s *Server) OTLPHTTPAddr() string { return addrOf(s.otlp) }
 
 // ZipkinAddr is like OTLPHTTPAddr, for Zipkin.
@@ -432,6 +457,14 @@ func (s *Server) Run(ctx context.Context) error {
 			g.Go(func() error { return serve(e) })
 		}
 	}
+	if s.otlpGRPC != nil {
+		g.Go(func() error {
+			if err := s.otlpGRPC.Serve(s.otlpGRPCLn); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+				return fmt.Errorf("serve on %s: %w", s.otlpGRPCLn.Addr(), err)
+			}
+			return nil
+		})
+	}
 	g.Go(func() error {
 		s.identity.Run(gctx)
 		return nil
@@ -456,7 +489,7 @@ func (s *Server) Run(ctx context.Context) error {
 	build := buildinfo.Get()
 	s.logger.Info("signalbox-server started",
 		"version", build.Version, "roles", s.roles, "http_addr", s.HTTPAddr(), "ops_addr", s.OpsAddr(),
-		"otlp_http_addr", s.OTLPHTTPAddr(), "zipkin_addr", s.ZipkinAddr(),
+		"otlp_grpc_addr", s.OTLPGRPCAddr(), "otlp_http_addr", s.OTLPHTTPAddr(), "zipkin_addr", s.ZipkinAddr(),
 		"public_url", s.publicURL.String())
 	return g.Wait()
 }
@@ -568,6 +601,10 @@ func (s *Server) shutdown() error {
 		}
 		// Shutdown doesn't close a listener that never started serving.
 		_ = e.ln.Close()
+	}
+	if s.otlpGRPC != nil {
+		ingest.StopGRPC(ctx, s.otlpGRPC)
+		_ = s.otlpGRPCLn.Close()
 	}
 	// Spans already received are written before the process ends.
 	if s.spans != nil {

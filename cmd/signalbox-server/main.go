@@ -111,6 +111,8 @@ environment, or name a file that holds one with the variable plus _FILE:
 		"code that unlocks first-run setup; by default a random one is logged [SIGNALBOX_SETUP_CODE]")
 	addOIDCFlags(f, &cfg.OIDC)
 	addDatabaseFlags(f, &cfg.DatabaseURL, &cfg.ClickHouseURL, &cfg.DatabaseWait)
+	f.StringVar(&cfg.OTLPGRPCAddr, "otlp-grpc-addr", env("SIGNALBOX_OTLP_GRPC_ADDR", cfg.OTLPGRPCAddr),
+		"address where the ingest role receives OTLP/gRPC spans; empty turns it off [SIGNALBOX_OTLP_GRPC_ADDR]")
 	f.StringVar(&cfg.OTLPHTTPAddr, "otlp-http-addr", env("SIGNALBOX_OTLP_HTTP_ADDR", cfg.OTLPHTTPAddr),
 		"address where the ingest role receives OTLP/HTTP spans; empty turns it off [SIGNALBOX_OTLP_HTTP_ADDR]")
 	f.StringVar(&cfg.ZipkinAddr, "zipkin-addr", env("SIGNALBOX_ZIPKIN_ADDR", cfg.ZipkinAddr),
