@@ -90,12 +90,26 @@ func TestAllowNTakesManyTokens(t *testing.T) {
 	if ok, _ := l.AllowN("env", 5); !ok {
 		t.Error("the 5 tokens left were gone")
 	}
-	// More than the burst waits for a full bucket, then takes all of it.
+	// More than the burst passes with a full bucket, and the rest is a
+	// debt that later requests wait for: 1,000 is charged as 1,000.
+	if ok, _ := l.AllowN("env", 1000); ok {
+		t.Error("a large request passed without a full bucket")
+	}
 	now = now.Add(2 * time.Second)
 	if ok, _ := l.AllowN("env", 1000); !ok {
 		t.Error("a request larger than the burst never passes")
 	}
+	ok, retry = l.Allow("env")
+	if ok || retry.Round(time.Second) != 98*time.Second {
+		t.Errorf("after 1,000 at 10 a second: ok=%v retry=%s, want refused for about 98s", ok, retry)
+	}
+	// The sweep doesn't forget a bucket in debt.
+	now = now.Add(90 * time.Second)
 	if ok, _ := l.Allow("env"); ok {
-		t.Error("the large request didn't empty the bucket")
+		t.Error("the debt was forgotten")
+	}
+	now = now.Add(10 * time.Second)
+	if ok, _ := l.Allow("env"); !ok {
+		t.Error("the debt was never paid")
 	}
 }

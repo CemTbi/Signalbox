@@ -135,11 +135,12 @@ type result struct {
 // decoder reads a request body of a media type into spans.
 type decoder func(body []byte, mediaType string, accept window) (spans []telemetry.Span, rejected int, why string, err error)
 
-// ingest runs a request through the steps both protocols share.
+// ingest runs an HTTP request through the steps both HTTP protocols
+// share.
 func (s *Server) ingest(r *http.Request, protocol string, decode decoder) result {
-	sender, res, ok := s.authenticate(r)
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	sender, res, ok := s.authenticate(r.Context(), protocol, r.Header.Get("Authorization"), host)
 	if !ok {
-		s.requests.Inc(protocol, "unauthorized")
 		return res
 	}
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -161,11 +162,17 @@ func (s *Server) ingest(r *http.Request, protocol string, decode decoder) result
 		s.requests.Inc(protocol, "invalid")
 		return result{status: http.StatusBadRequest, message: err.Error()}
 	}
+	return s.accept(r.Context(), protocol, sender, spans, rejected, why)
+}
+
+// accept stores a request's valid spans and counts the rest, for every
+// protocol.
+func (s *Server) accept(ctx context.Context, protocol string, sender telemetry.Sender, spans []telemetry.Span, rejected int, why string) result {
 	if rejected > 0 {
 		s.refused.Add(float64(rejected), protocol, "invalid")
 	}
 	if len(spans) > 0 {
-		if res, ok := s.store(r.Context(), protocol, sender.EnvironmentID, spans); !ok {
+		if res, ok := s.store(ctx, protocol, sender.EnvironmentID, spans); !ok {
 			return res
 		}
 	}
@@ -177,23 +184,31 @@ func (s *Server) ingest(r *http.Request, protocol string, decode decoder) result
 	return result{status: http.StatusOK, rejected: rejected, why: why}
 }
 
-// authenticate checks the request's ingest key.
-func (s *Server) authenticate(r *http.Request) (telemetry.Sender, result, bool) {
-	key, found := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+// authenticate checks the ingest key in an Authorization header, sent
+// from host.
+func (s *Server) authenticate(ctx context.Context, protocol, authorization, host string) (telemetry.Sender, result, bool) {
+	sender, res, ok := s.checkKey(ctx, authorization, host)
+	if !ok {
+		s.requests.Inc(protocol, "unauthorized")
+	}
+	return sender, res, ok
+}
+
+func (s *Server) checkKey(ctx context.Context, authorization, host string) (telemetry.Sender, result, bool) {
+	key, found := strings.CutPrefix(authorization, "Bearer ")
 	if !found || key == "" {
 		return telemetry.Sender{}, result{status: http.StatusUnauthorized,
 			message: "Send an ingest key as Authorization: Bearer sbx_ing_…; project admins create them under Ingest keys."}, false
 	}
-	sender, err := s.keys.Authenticate(r.Context(), strings.TrimSpace(key))
+	sender, err := s.keys.Authenticate(ctx, strings.TrimSpace(key))
 	switch {
 	case errors.Is(err, telemetry.ErrUnknownKey):
-		host, _, _ := net.SplitHostPort(r.RemoteAddr)
 		if ok, retry := s.badKeyIP.Allow(host); !ok {
 			return sender, result{status: http.StatusTooManyRequests, retryAfter: retry, message: "Too many requests with unknown keys."}, false
 		}
 		return sender, result{status: http.StatusUnauthorized, message: "This ingest key doesn't exist or was revoked."}, false
 	case err != nil:
-		s.logger.ErrorContext(r.Context(), "couldn't check an ingest key", "error", err)
+		s.logger.ErrorContext(ctx, "couldn't check an ingest key", "error", err)
 		return sender, result{status: http.StatusServiceUnavailable, retryAfter: 5 * time.Second, message: "Signalbox can't check keys right now."}, false
 	}
 	return sender, result{}, true
@@ -230,7 +245,10 @@ func (s *Server) readBody(r *http.Request) ([]byte, result, bool) {
 	b, err := io.ReadAll(io.LimitReader(body, limit+1))
 	var maxBytes *http.MaxBytesError
 	switch {
-	case errors.As(err, &maxBytes), int64(len(b)) > limit:
+	case errors.As(err, &maxBytes), int64(len(b)) > limit,
+		// zstd refuses a frame whose window would exceed the limit before
+		// it allocates the window.
+		errors.Is(err, zstd.ErrWindowSizeExceeded), errors.Is(err, zstd.ErrDecoderSizeExceeded):
 		return nil, tooLarge, false
 	case err != nil:
 		return nil, result{status: http.StatusBadRequest, message: "The body couldn't be read: " + err.Error()}, false

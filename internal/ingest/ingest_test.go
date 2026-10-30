@@ -214,6 +214,10 @@ func TestOTLPErrors(t *testing.T) {
 	zw := gzip.NewWriter(&bomb)
 	_, _ = zw.Write(bytes.Repeat([]byte{0}, 1<<20)) // 1 MiB of zeros in about 1 KiB
 	_ = zw.Close()
+	var zbomb bytes.Buffer
+	zsw, _ := zstd.NewWriter(&zbomb)
+	_, _ = zsw.Write(bytes.Repeat([]byte{0}, 1<<20))
+	_ = zsw.Close()
 
 	for _, tc := range []struct {
 		name, contentType, encoding, key string
@@ -228,6 +232,7 @@ func TestOTLPErrors(t *testing.T) {
 		{"not JSON", "application/json", "", goodKey, []byte("{"), http.StatusBadRequest},
 		{"too large", "application/x-protobuf", "", goodKey, big, http.StatusRequestEntityTooLarge},
 		{"decompression bomb", "application/x-protobuf", "gzip", goodKey, bomb.Bytes(), http.StatusRequestEntityTooLarge},
+		{"zstd decompression bomb", "application/x-protobuf", "zstd", goodKey, zbomb.Bytes(), http.StatusRequestEntityTooLarge},
 		{"not gzip", "application/x-protobuf", "gzip", goodKey, body, http.StatusBadRequest},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

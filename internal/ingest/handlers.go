@@ -132,6 +132,13 @@ func writeOTLPResponse(w http.ResponseWriter, res result, asJSON bool) {
 		_ = json.NewEncoder(w).Encode(out)
 		return
 	}
+	w.Header().Set("Content-Type", mediaProtobuf)
+	_, _ = w.Write(exportResponse(res))
+}
+
+// exportResponse encodes an ExportTraceServiceResponse: empty, or with
+// partial_success saying how many spans were refused and why.
+func exportResponse(res result) []byte {
 	var b []byte
 	if res.rejected > 0 {
 		var partial []byte
@@ -142,8 +149,7 @@ func writeOTLPResponse(w http.ResponseWriter, res result, asJSON bool) {
 		b = protowire.AppendTag(b, 1, protowire.BytesType)
 		b = protowire.AppendBytes(b, partial)
 	}
-	w.Header().Set("Content-Type", mediaProtobuf)
-	_, _ = w.Write(b)
+	return b
 }
 
 // ZipkinHandler serves Zipkin's POST /api/v2/spans, in JSON or protobuf.
