@@ -87,6 +87,8 @@ test("a service's spec is checked, edited, kept in revisions and published", asy
 
   // The docs show the published version, and try it against the mock.
   await versions.getByRole("link", { name: "Read the docs" }).click();
+  // The spec page has the same heading, so wait for the docs to open.
+  await expect(page).toHaveURL(/\/docs(\?|$)/);
   await expect(page.getByRole("heading", { level: 1, name: "Orders API" })).toBeVisible();
   await expect(page.getByLabel("Version", { exact: true })).toHaveValue("1.0.1");
   const operation = page.getByRole("region", { name: "GET /orders/{id}" });

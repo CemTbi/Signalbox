@@ -291,6 +291,103 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List your agents
+         * @description Lists your agents by name, and whether each is online. People see only their own agents.
+         */
+        get: operations["listAgents"];
+        put?: never;
+        /**
+         * Connect an agent
+         * @description Registers one of your agents, or finds the one with the same name, so an agent that restarts stays the same agent. `signalbox agent` calls this when it starts, with a personal access token.
+         */
+        post: operations["connectAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent's ID. */
+                agentId: components["parameters"]["AgentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete an agent
+         * @description Forgets one of your agents. Requests waiting for it fail. If it is still running, it connects again as a new agent; revoke its token to stop it for good.
+         */
+        delete: operations["deleteAgent"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/jobs/next": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent's ID. */
+                agentId: components["parameters"]["AgentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wait for a job
+         * @description Hands one of your agents the next request to send, waiting up to `waitMs` for one. The agent sends it from its machine and returns the result with `completeAgentJob`. Asking keeps the agent online.
+         *
+         *     The job carries the request as it goes out, its variables and secrets filled in, so the response is never cached. Only your own requests reach your agents.
+         */
+        post: operations["nextAgentJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/jobs/{jobId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent's ID. */
+                agentId: components["parameters"]["AgentId"];
+                /** @description The job's ID. */
+                jobId: components["schemas"]["AgentJobId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Return a job's result
+         * @description Returns what the agent got for a job it took. A job whose sender stopped waiting, or that already has a result, is not found.
+         */
+        put: operations["completeAgentJob"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces": {
         parameters: {
             query?: never;
@@ -1604,6 +1701,11 @@ export interface components {
         /** @description A request to send. */
         SendRequest: {
             environmentId?: components["schemas"]["EnvironmentId"];
+            /**
+             * @description One of your agents to send the request through, from its machine. Absent sends it from the server.
+             * @example agt_01j9z3w5y7a9c1e3g5j7m9p1r3
+             */
+            agentId?: components["schemas"]["AgentId"];
             collectionId?: components["schemas"]["CollectionId"];
             itemId?: components["schemas"]["ItemId"];
             scripts?: components["schemas"]["Scripts"];
@@ -1730,11 +1832,11 @@ export interface components {
         /** @description Why a request got no response. */
         RunnerFailure: {
             /**
-             * @description The kind of failure. `script`: a pre-request script failed, so the request wasn't sent. `skipped`: a pre-request script skipped it. `too-large`: in a run, the request was too large once its variables were filled in.
+             * @description The kind of failure. `script`: a pre-request script failed, so the request wasn't sent. `skipped`: a pre-request script skipped it. `too-large`: in a run, the request was too large once its variables were filled in. `agent-offline`: the agent didn't take the request within 15 seconds. `agent-busy`: 64 requests were already waiting for the agent, or it was sending as many as it may and didn't take this one within 15 seconds. `agent-timeout`: the agent took the request but didn't return its result.
              * @example timeout
              * @enum {string}
              */
-            code: "invalid-request" | "blocked" | "dns" | "connect" | "tls" | "timeout" | "network" | "script" | "skipped" | "too-large";
+            code: "invalid-request" | "blocked" | "dns" | "connect" | "tls" | "timeout" | "network" | "script" | "skipped" | "too-large" | "agent-offline" | "agent-busy" | "agent-timeout";
             /**
              * @description What went wrong
              * @example The server didn't answer in time.
@@ -1774,10 +1876,192 @@ export interface components {
              */
             totalMs: number;
         };
+        /**
+         * @description An agent ID.
+         * @example agt_01j9z3w5y7a9c1e3g5j7m9p1r3
+         */
+        AgentId: string;
+        /**
+         * @description A job ID.
+         * @example job_01j9z3w5y7a9c1e3g5j7m9p1r3
+         */
+        AgentJobId: string;
+        /** @description One of your agents. */
+        Agent: {
+            id: components["schemas"]["AgentId"];
+            /**
+             * @description The name it goes by in Run on, such as its machine's name.
+             * @example ada-laptop
+             */
+            name: string;
+            /**
+             * @description The machine's hostname.
+             * @example ada-laptop.local
+             */
+            hostname?: string;
+            /**
+             * @description The machine's system and architecture.
+             * @example darwin/arm64
+             */
+            os?: string;
+            /**
+             * @description The agent's version.
+             * @example 0.2.0
+             */
+            version?: string;
+            /**
+             * @description Whether it asked for work in the last 45 seconds, or is sending requests it took.
+             * @example true
+             */
+            online: boolean;
+            createdAt: components["schemas"]["Timestamp"];
+            lastSeenAt: components["schemas"]["Timestamp"];
+        };
+        /** @description Your agents, by name. */
+        AgentList: {
+            /**
+             * @description The agents, by name.
+             * @example [
+             *       {
+             *         "id": "agt_01j9z3w5y7a9c1e3g5j7m9p1r3",
+             *         "name": "ada-laptop",
+             *         "online": true,
+             *         "createdAt": "2026-10-28T12:00:00Z",
+             *         "lastSeenAt": "2026-10-28T12:05:00Z"
+             *       }
+             *     ]
+             */
+            data: components["schemas"]["Agent"][];
+        };
+        /** @description What an agent says about itself. */
+        AgentConnect: {
+            /**
+             * @description The agent's name. Your agent with this name, if there is one, is the same agent.
+             * @example ada-laptop
+             */
+            name: string;
+            /**
+             * @description The machine's hostname.
+             * @example ada-laptop.local
+             */
+            hostname?: string;
+            /**
+             * @description The machine's system and architecture.
+             * @example darwin/arm64
+             */
+            os?: string;
+            /**
+             * @description The agent's version.
+             * @example 0.2.0
+             */
+            version?: string;
+        };
+        /** @description A request for an agent to send, as it should go out. */
+        AgentJob: {
+            id: components["schemas"]["AgentJobId"];
+            /**
+             * @description The method.
+             * @example GET
+             */
+            method: string;
+            /**
+             * @description The URL, variables filled in.
+             * @example http://localhost:3000/orders/42
+             */
+            url: string;
+            /**
+             * @description The headers, in order, credentials included.
+             * @example [
+             *       {
+             *         "key": "Accept",
+             *         "value": "application/json"
+             *       }
+             *     ]
+             */
+            headers: components["schemas"]["HttpHeader"][];
+            /**
+             * @description The body in base64; absent when there is none.
+             * @example eyJpZCI6NDJ9
+             */
+            body?: string;
+            /**
+             * @description How long the request may take; absent for the agent's default.
+             * @example 30000
+             */
+            timeoutMs?: number;
+        };
+        /** @description What an agent got for a job. It has `response` or `failure`. */
+        AgentResult: {
+            /** @description The response. */
+            response?: {
+                /**
+                 * @description The status code.
+                 * @example 200
+                 */
+                status: number;
+                /**
+                 * @description The status line's text.
+                 * @example 200 OK
+                 */
+                statusText?: string;
+                /**
+                 * @description The protocol.
+                 * @example HTTP/1.1
+                 */
+                proto?: string;
+                /** @description The headers, in order. */
+                headers: components["schemas"]["HttpHeader"][];
+                /**
+                 * @description The body in base64
+                 * @example eyJpZCI6NDJ9
+                 */
+                body?: string;
+                /**
+                 * @description Where the response came from
+                 * @example http://localhost:3000/orders/42
+                 */
+                url?: string;
+                /**
+                 * @description How many redirects were followed.
+                 * @example 0
+                 */
+                redirects?: number;
+                /**
+                 * @description The address and port the agent connected to.
+                 * @example 127.0.0.1:3000
+                 */
+                remoteAddress?: string;
+                /**
+                 * @description Whether the body was cut at 10 MiB.
+                 * @example false
+                 */
+                truncated?: boolean;
+            };
+            /** @description Why there was no response. */
+            failure?: {
+                /**
+                 * @description The kind of failure.
+                 * @example connect
+                 * @enum {string}
+                 */
+                code: "invalid-request" | "blocked" | "dns" | "connect" | "tls" | "timeout" | "network";
+                /**
+                 * @description What went wrong.
+                 * @example Couldn't connect: connection refused.
+                 */
+                message: string;
+            };
+            timings: components["schemas"]["RunnerTimings"];
+        };
         /** @description A sent request and what came of it. It has `response` or `failure`. */
         HistoryEntry: {
             id: components["schemas"]["HistoryEntryId"];
             environmentId?: components["schemas"]["EnvironmentId"];
+            /**
+             * @description The agent that sent it; absent when the server did.
+             * @example ada-laptop
+             */
+            agent?: string;
             /**
              * @description The `{{names}}` that had no value, and were sent as they are.
              * @example [
@@ -2094,6 +2378,11 @@ export interface components {
             folderId?: components["schemas"]["ItemId"];
             environmentId?: components["schemas"]["EnvironmentId"];
             /**
+             * @description One of your agents to send the requests through, from its machine. Absent sends them from the server.
+             * @example agt_01j9z3w5y7a9c1e3g5j7m9p1r3
+             */
+            agentId?: components["schemas"]["AgentId"];
+            /**
              * @description How many times the requests run. 0 or absent runs them once per data row, or once. Iterations past the last data row reuse it.
              * @example 3
              */
@@ -2156,6 +2445,12 @@ export interface components {
             folderId?: components["schemas"]["ItemId"];
             environmentId?: components["schemas"]["EnvironmentId"];
             startedBy?: components["schemas"]["UserId"];
+            agentId?: components["schemas"]["AgentId"];
+            /**
+             * @description The agent the requests went through, by its name then; absent when the server sent them.
+             * @example ada-laptop
+             */
+            agent?: string;
             /**
              * @description The collection's or folder's name when the run started.
              * @example Shop API
@@ -4533,6 +4828,8 @@ export interface components {
         WorkspaceId: components["schemas"]["WorkspaceId"];
         /** @description The project's ID. */
         ProjectId: components["schemas"]["ProjectId"];
+        /** @description The agent's ID. */
+        AgentId: components["schemas"]["AgentId"];
         /** @description The environment's ID. */
         EnvironmentId: components["schemas"]["EnvironmentId"];
         /** @description The service's ID. */
@@ -5347,6 +5644,237 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listAgents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Your agents. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "id": "agt_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *           "name": "ada-laptop",
+                     *           "hostname": "ada-laptop.local",
+                     *           "os": "darwin/arm64",
+                     *           "version": "0.2.0",
+                     *           "online": true,
+                     *           "createdAt": "2026-10-28T12:00:00Z",
+                     *           "lastSeenAt": "2026-10-28T12:05:00Z"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AgentList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            default: components["responses"]["Error"];
+        };
+    };
+    connectAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description What the agent says about itself. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "name": "ada-laptop",
+                 *       "hostname": "ada-laptop.local",
+                 *       "os": "darwin/arm64",
+                 *       "version": "0.2.0"
+                 *     }
+                 */
+                "application/json": components["schemas"]["AgentConnect"];
+            };
+        };
+        responses: {
+            /** @description The agent. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "agt_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "name": "ada-laptop",
+                     *       "hostname": "ada-laptop.local",
+                     *       "os": "darwin/arm64",
+                     *       "version": "0.2.0",
+                     *       "online": false,
+                     *       "createdAt": "2026-10-28T12:00:00Z",
+                     *       "lastSeenAt": "2026-10-28T12:00:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Agent"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent's ID. */
+                agentId: components["parameters"]["AgentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The agent is deleted. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    nextAgentJob: {
+        parameters: {
+            query?: {
+                /** @description How long to wait for a job, in milliseconds. */
+                waitMs?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The agent's ID. */
+                agentId: components["parameters"]["AgentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A job. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    /** @description `no-store`: the job may hold secrets. */
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "job_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "method": "GET",
+                     *       "url": "http://localhost:3000/orders/42",
+                     *       "headers": [
+                     *         {
+                     *           "key": "Accept",
+                     *           "value": "application/json"
+                     *         }
+                     *       ],
+                     *       "timeoutMs": 30000
+                     *     }
+                     */
+                    "application/json": components["schemas"]["AgentJob"];
+                };
+            };
+            /** @description No job came in time. Ask again. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    completeAgentJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The agent's ID. */
+                agentId: components["parameters"]["AgentId"];
+                /** @description The job's ID. */
+                jobId: components["schemas"]["AgentJobId"];
+            };
+            cookie?: never;
+        };
+        /** @description The response, or why there was none. At most 16 MiB. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "response": {
+                 *         "status": 200,
+                 *         "statusText": "200 OK",
+                 *         "proto": "HTTP/1.1",
+                 *         "headers": [
+                 *           {
+                 *             "key": "Content-Type",
+                 *             "value": "application/json"
+                 *           }
+                 *         ],
+                 *         "body": "eyJpZCI6NDJ9",
+                 *         "url": "http://localhost:3000/orders/42"
+                 *       },
+                 *       "timings": {
+                 *         "dnsMs": 0.1,
+                 *         "connectMs": 0.4,
+                 *         "tlsMs": 0,
+                 *         "firstByteMs": 3.2,
+                 *         "downloadMs": 0.1,
+                 *         "totalMs": 3.9
+                 *       }
+                 *     }
+                 */
+                "application/json": components["schemas"]["AgentResult"];
+            };
+        };
+        responses: {
+            /** @description The result reached the sender. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["ContentTooLarge"];
             default: components["responses"]["Error"];
         };
     };

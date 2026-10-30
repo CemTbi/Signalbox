@@ -83,6 +83,9 @@ type Module struct {
 	// documents for generating contract tests; nil without them.
 	contracts ContractChecker
 	versions  ContractVersions
+	// agents send people's requests from their machines; nil without
+	// them.
+	agents Agents
 }
 
 // New returns the module. run may be nil, when this process can't send
@@ -99,6 +102,9 @@ type Entry struct {
 	// EnvironmentID is the environment whose variables were filled in, or
 	// uuid.Nil.
 	EnvironmentID uuid.UUID
+	// Agent names the agent that sent it, from its owner's machine; "" when
+	// the server sent it.
+	Agent string
 	// Unresolved lists the {{names}} that had no value, sorted; they were
 	// sent as they are.
 	Unresolved []string
@@ -151,6 +157,9 @@ type SendOptions struct {
 	// EnvironmentID is an environment of the project whose variables
 	// fill in {{name}}, or uuid.Nil.
 	EnvironmentID uuid.UUID
+	// AgentID is one of the sender's agents to send it through, from
+	// their machine, or uuid.Nil to send from the server.
+	AgentID uuid.UUID
 	// CollectionID is a collection of the project whose variables fill in
 	// {{name}} where the environment has none, or uuid.Nil. ItemID sets
 	// it to the item's.
@@ -255,12 +264,16 @@ func (m *Module) Send(ctx context.Context, userID, projectID uuid.UUID, req runn
 	for _, k := range secrets {
 		st.stored[k] = envValues[k]
 	}
-	out, err := m.Engine().step(ctx, st, step)
+	engine, err := m.EngineFor(ctx, userID, opts.AgentID)
+	if err != nil {
+		return Entry{}, err
+	}
+	out, err := engine.step(ctx, st, step)
 	if err != nil {
 		return Entry{}, err
 	}
 	e := out.entry()
-	e.ID, e.ProjectID, e.UserID, e.EnvironmentID = id.New(), projectID, userID, environmentID
+	e.ID, e.ProjectID, e.UserID, e.EnvironmentID, e.Agent = id.New(), projectID, userID, environmentID, engine.Via()
 	// What comes back is whole; what history keeps doesn't hold secrets.
 	kept := e.masked(out.mask(st))
 	if len(kept.Body) > maxStoredRequestRaw {
@@ -294,6 +307,7 @@ func redact(headers []runner.Header) []runner.Header {
 // stored is what history keeps of a result, as JSON.
 type stored struct {
 	EnvironmentID *uuid.UUID      `json:"environmentId,omitempty"`
+	Agent         string          `json:"agent,omitempty"`
 	Unresolved    []string        `json:"unresolved,omitempty"`
 	Auth          *Auth           `json:"auth,omitempty"`
 	Scripts       *ScriptOutcome  `json:"scripts,omitempty"`
@@ -322,7 +336,7 @@ type storedTimings struct {
 }
 
 func (m *Module) save(ctx context.Context, e *Entry) error {
-	s := stored{Headers: e.Headers, Unresolved: e.Unresolved, Auth: e.Auth, Scripts: e.Scripts, BodyTruncated: e.BodyTruncated, Failure: e.Result.Failure, Timings: timingsOut(e.Result.Timings)}
+	s := stored{Headers: e.Headers, Agent: e.Agent, Unresolved: e.Unresolved, Auth: e.Auth, Scripts: e.Scripts, BodyTruncated: e.BodyTruncated, Failure: e.Result.Failure, Timings: timingsOut(e.Result.Timings)}
 	if e.EnvironmentID != uuid.Nil {
 		s.EnvironmentID = &e.EnvironmentID
 	}
@@ -451,7 +465,7 @@ func (m *Module) HistoryEntry(ctx context.Context, userID, entryID uuid.UUID) (E
 		return Entry{}, fmt.Errorf("read history entry: %w", err)
 	}
 	e.Headers, e.Body, e.BodyTruncated, e.Unresolved, e.Auth = s.Headers, []byte(s.Body), s.BodyTruncated, s.Unresolved, s.Auth
-	e.Scripts = s.Scripts
+	e.Scripts, e.Agent = s.Scripts, s.Agent
 	if s.EnvironmentID != nil {
 		e.EnvironmentID = *s.EnvironmentID
 	}

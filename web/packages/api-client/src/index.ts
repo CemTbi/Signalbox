@@ -19,6 +19,7 @@ export type FieldError = Schemas["FieldError"];
 export type User = Schemas["User"];
 export type AccessToken = Schemas["AccessToken"];
 export type NewAccessToken = Schemas["NewAccessToken"];
+export type Agent = Schemas["Agent"];
 export type HistoryEntry = Schemas["HistoryEntry"];
 export type HistorySummary = Schemas["HistorySummary"];
 export type HttpHeader = Schemas["HttpHeader"];

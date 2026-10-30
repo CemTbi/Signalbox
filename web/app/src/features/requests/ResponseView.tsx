@@ -17,6 +17,7 @@ export function ResponseView({ entry }: { entry: HistoryEntry }) {
         <p className="response-failure" role="alert">
           <strong>{entry.failure?.code === "skipped" ? "Not sent." : "No response."}</strong> {entry.failure?.message}
         </p>
+        {entry.agent ? <p className="field-hint">Sent from {entry.agent}.</p> : null}
         {t.totalMs > 0 ? <p className="field-hint">Gave up after {formatMs(t.totalMs)}.</p> : null}
         {scripts ? <ScriptsView scripts={scripts} /> : null}
       </section>
@@ -35,6 +36,7 @@ export function ResponseView({ entry }: { entry: HistoryEntry }) {
           · {formatMs(t.totalMs)} · {formatSize(r.size)}
           {r.truncated ? " (cut)" : ""}
           {r.redirects > 0 ? ` · ${r.redirects} redirect${r.redirects === 1 ? "" : "s"}` : ""}
+          {entry.agent ? ` · from ${entry.agent}` : ""}
         </span>
       </p>
       <div className="tabs" role="tablist" aria-label="Response parts">

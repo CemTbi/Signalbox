@@ -28,6 +28,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/buildinfo"
 	"github.com/CemTbi/Signalbox/internal/health"
 	"github.com/CemTbi/Signalbox/internal/httpapi"
+	"github.com/CemTbi/Signalbox/internal/modules/agents"
 	"github.com/CemTbi/Signalbox/internal/modules/apis"
 	"github.com/CemTbi/Signalbox/internal/modules/client"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
@@ -169,6 +170,8 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *har
 	t.Cleanup(scriptPool.Close)
 	sender.UseScripts(scriptPool)
 	sender.UseContracts(mods, mods)
+	ag := agents.New(pool, logger)
+	sender.UseAgents(ag)
 	runs := testruns.New(pool, logger, ws, sender)
 	t.Cleanup(runs.Close)
 	srv.Config.Handler = httpapi.NewHandler(httpapi.Deps{
@@ -186,6 +189,7 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *har
 		Imports:     sender,
 		Runs:        runs,
 		Contracts:   sender,
+		Agents:      ag,
 		PublicURL:   public,
 	})
 	srv.StartTLS()

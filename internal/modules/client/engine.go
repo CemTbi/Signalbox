@@ -26,6 +26,8 @@ type Engine struct {
 	contracts ContractChecker
 	// slots bounds how many sets of scripts run at once.
 	slots chan struct{}
+	// via names the agent the engine sends through; "" for the server.
+	via string
 }
 
 // NewEngine returns an engine that sends through run and runs scripts from
@@ -39,6 +41,17 @@ func NewEngine(run Runner, pool ScriptPool) *Engine {
 func (m *Module) Engine() *Engine {
 	return &Engine{runner: m.runner, scripts: m.scripts, slots: m.scriptSlots, contracts: m.contracts}
 }
+
+// Through returns a copy of the engine that sends with run instead, such
+// as through the agent named via.
+func (e *Engine) Through(run Runner, via string) *Engine {
+	out := *e
+	out.runner, out.via = run, via
+	return &out
+}
+
+// Via names the agent the engine sends through; "" for the server.
+func (e *Engine) Via() string { return e.via }
 
 // CanSend reports whether the engine has a runner to send with.
 func (e *Engine) CanSend() bool { return e.runner != nil }
@@ -265,8 +278,13 @@ func (e *Engine) Run(ctx context.Context, p Plan, opts RunOptions, emit func(Ste
 	return "", nil
 }
 
+// runnerKey carries the engine's runner to pm.sendRequest, so a script's
+// requests go where the step's do, such as through an agent.
+type runnerKey struct{}
+
 // step runs one request with its scripts.
 func (e *Engine) step(ctx context.Context, st *state, s Step) (stepOut, error) {
+	ctx = context.WithValue(ctx, runnerKey{}, e.runner)
 	req, auth := s.Request, s.Auth
 	values := flatten(st.vars)
 	c := s.chain()

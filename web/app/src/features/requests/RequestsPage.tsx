@@ -7,6 +7,7 @@ import { useEffect, useId, useState } from "react";
 import { api, ApiError, describeError, unwrap, unwrapTagged } from "../../api";
 import { LoadError, Loading, PageHeader } from "../../components/Page";
 import { environmentsQuery, historyKey, historyQuery, itemsKey, projectQuery, workspaceQuery } from "../../queries";
+import { RunOnSelect, useRunOn } from "../agents/RunOn";
 import { CollectionsPanel } from "./CollectionsPanel";
 import { CurlImport } from "./CurlImport";
 import { ImportReport, type Report } from "./ImportReport";
@@ -38,6 +39,7 @@ export function RequestsPage() {
   const environments = useQuery(environmentsQuery(api, projectId));
   const [environmentId, setEnvironmentId] = useState(() => rememberedEnvironment(projectId));
   const [editingVariables, setEditingVariables] = useState(false);
+  const runOn = useRunOn();
   const environmentField = useId();
   const environment = environments.data?.data.find((e) => e.id === environmentId);
   useEffect(() => {
@@ -60,7 +62,12 @@ export function RequestsPage() {
           params: { path: { projectId } },
           // A saved request uses its collection's variables, and the environment's win.
           // A saved request runs its collection's and folders' scripts, and uses its collection's variables. Its own scripts are the editor's.
-          body: { ...toSend(d), ...(environment ? { environmentId: environment.id } : {}), ...(openItem ? { itemId: openItem.id, scripts: toScripts(d.scripts) } : {}) },
+          body: {
+            ...toSend(d),
+            ...(environment ? { environmentId: environment.id } : {}),
+            ...(runOn.agent ? { agentId: runOn.agent.id } : {}),
+            ...(openItem ? { itemId: openItem.id, scripts: toScripts(d.scripts) } : {}),
+          },
         }),
       ),
     onSuccess: async (entry) => {
@@ -192,6 +199,7 @@ export function RequestsPage() {
           <span className="field-hint">Choose an environment to fill in {"{{variables}}"}.</span>
         )}
         {environment?.kind === "production" ? <span className="environment-kind">Production</span> : null}
+        <RunOnSelect agent={runOn.agent} agents={runOn.agents} onChange={runOn.choose} />
       </div>
       {environments.isError ? <LoadError message={describeError(environments.error)} onRetry={() => void environments.refetch()} /> : null}
       {environment && editingVariables ? (

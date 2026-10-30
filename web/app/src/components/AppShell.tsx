@@ -60,6 +60,9 @@ function UserMenu({ session }: { session: Session }) {
       <span className="user-name" title={session.user.email}>
         {session.user.name}
       </span>
+      <Link to="/account/agents" className="button ghost" activeProps={{ "aria-current": "page" }}>
+        Agents
+      </Link>
       <Link to="/account/tokens" className="button ghost" activeProps={{ "aria-current": "page" }}>
         Access tokens
       </Link>

@@ -62,6 +62,8 @@ tags:
     description: Sending requests from a project, and each person's history of them.
   - name: Test runs
     description: Running a collection, or a folder of it, as a test suite, and its reports.
+  - name: Agents
+    description: 'Agents: `signalbox agent` processes on people''s machines that send their owner''s requests from there, so `localhost` and private networks work.'
 
 paths:
   /livez:
@@ -608,6 +610,136 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+
+  /api/v1/agents:
+    get:
+      operationId: listAgents
+      summary: List your agents
+      description: Lists your agents by name, and whether each is online. People see only their own agents.
+      tags: [Agents]
+      responses:
+        '200':
+          description: Your agents.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AgentList'}
+              example:
+                data:
+                  - {id: agt_01j9z3w5y7a9c1e3g5j7m9p1r3, name: ada-laptop, hostname: ada-laptop.local, os: darwin/arm64, version: 0.2.0, online: true, createdAt: '2026-10-28T12:00:00Z', lastSeenAt: '2026-10-28T12:05:00Z'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: connectAgent
+      summary: Connect an agent
+      description: Registers one of your agents, or finds the one with the same name, so an agent that restarts stays the same agent. `signalbox agent` calls this when it starts, with a personal access token.
+      tags: [Agents]
+      requestBody:
+        required: true
+        description: What the agent says about itself.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AgentConnect'}
+            example: {name: ada-laptop, hostname: ada-laptop.local, os: darwin/arm64, version: 0.2.0}
+      responses:
+        '200':
+          description: The agent.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Agent'}
+              example: {id: agt_01j9z3w5y7a9c1e3g5j7m9p1r3, name: ada-laptop, hostname: ada-laptop.local, os: darwin/arm64, version: 0.2.0, online: false, createdAt: '2026-10-28T12:00:00Z', lastSeenAt: '2026-10-28T12:00:00Z'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/agents/{agentId}:
+    parameters:
+      - $ref: '#/components/parameters/AgentId'
+    delete:
+      operationId: deleteAgent
+      summary: Delete an agent
+      description: Forgets one of your agents. Requests waiting for it fail. If it is still running, it connects again as a new agent; revoke its token to stop it for good.
+      tags: [Agents]
+      responses:
+        '204':
+          description: The agent is deleted.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/agents/{agentId}/jobs/next:
+    parameters:
+      - $ref: '#/components/parameters/AgentId'
+    post:
+      operationId: nextAgentJob
+      summary: Wait for a job
+      description: |
+        Hands one of your agents the next request to send, waiting up to `waitMs` for one. The agent sends it from its machine and returns the result with `completeAgentJob`. Asking keeps the agent online.
+
+        The job carries the request as it goes out, its variables and secrets filled in, so the response is never cached. Only your own requests reach your agents.
+      tags: [Agents]
+      parameters:
+        - name: waitMs
+          in: query
+          description: How long to wait for a job, in milliseconds.
+          schema: {type: integer, minimum: 0, maximum: 25000, default: 25000}
+      responses:
+        '200':
+          description: A job.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            Cache-Control:
+              description: '`no-store`: the job may hold secrets.'
+              schema: {type: string, examples: [no-store]}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AgentJob'}
+              example: {id: job_01j9z3w5y7a9c1e3g5j7m9p1r3, method: GET, url: 'http://localhost:3000/orders/42', headers: [{key: Accept, value: application/json}], timeoutMs: 30000}
+        '204':
+          description: No job came in time. Ask again.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/agents/{agentId}/jobs/{jobId}:
+    parameters:
+      - $ref: '#/components/parameters/AgentId'
+      - name: jobId
+        in: path
+        required: true
+        description: The job's ID.
+        schema: {$ref: '#/components/schemas/AgentJobId'}
+    put:
+      operationId: completeAgentJob
+      summary: Return a job's result
+      description: Returns what the agent got for a job it took. A job whose sender stopped waiting, or that already has a result, is not found.
+      tags: [Agents]
+      requestBody:
+        required: true
+        description: The response, or why there was none. At most 16 MiB.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AgentResult'}
+            example: {response: {status: 200, statusText: 200 OK, proto: HTTP/1.1, headers: [{key: Content-Type, value: application/json}], body: eyJpZCI6NDJ9, url: 'http://localhost:3000/orders/42'}, timings: {dnsMs: 0.1, connectMs: 0.4, tlsMs: 0, firstByteMs: 3.2, downloadMs: 0.1, totalMs: 3.9}}
+      responses:
+        '204':
+          description: The result reached the sender.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '413': {$ref: '#/components/responses/ContentTooLarge'}
         default: {$ref: '#/components/responses/Error'}
 
   /api/v1/workspaces:
@@ -3015,6 +3147,12 @@ components:
       required: true
       description: The project's ID.
       schema: {$ref: '#/components/schemas/ProjectId'}
+    AgentId:
+      name: agentId
+      in: path
+      required: true
+      description: The agent's ID.
+      schema: {$ref: '#/components/schemas/AgentId'}
     EnvironmentId:
       name: environmentId
       in: path
@@ -3428,6 +3566,11 @@ components:
       additionalProperties: false
       properties:
         environmentId: {$ref: '#/components/schemas/EnvironmentId'}
+        agentId:
+          type: string
+          $ref: '#/components/schemas/AgentId'
+          description: One of your agents to send the request through, from its machine. Absent sends it from the server.
+          examples: [agt_01j9z3w5y7a9c1e3g5j7m9p1r3]
         collectionId: {$ref: '#/components/schemas/CollectionId'}
         itemId: {$ref: '#/components/schemas/ItemId'}
         scripts: {$ref: '#/components/schemas/Scripts'}
@@ -3480,7 +3623,7 @@ components:
       description: Why a request got no response.
       required: [code, message]
       properties:
-        code: {type: string, enum: [invalid-request, blocked, dns, connect, tls, timeout, network, script, skipped, too-large], description: 'The kind of failure. `script`: a pre-request script failed, so the request wasn''t sent. `skipped`: a pre-request script skipped it. `too-large`: in a run, the request was too large once its variables were filled in.', examples: [timeout]}
+        code: {type: string, enum: [invalid-request, blocked, dns, connect, tls, timeout, network, script, skipped, too-large, agent-offline, agent-busy, agent-timeout], description: 'The kind of failure. `script`: a pre-request script failed, so the request wasn''t sent. `skipped`: a pre-request script skipped it. `too-large`: in a run, the request was too large once its variables were filled in. `agent-offline`: the agent didn''t take the request within 15 seconds. `agent-busy`: 64 requests were already waiting for the agent, or it was sending as many as it may and didn''t take this one within 15 seconds. `agent-timeout`: the agent took the request but didn''t return its result.', examples: [timeout]}
         message: {type: string, description: What went wrong, in words a person can act on., examples: ["The server didn't answer in time."]}
     RunnerTimings:
       type: object
@@ -3493,6 +3636,95 @@ components:
         firstByteMs: {type: number, minimum: 0, description: From sending the request to the response's first byte., examples: [40.2]}
         downloadMs: {type: number, minimum: 0, description: Reading the body., examples: [0.3]}
         totalMs: {type: number, minimum: 0, description: The whole request., examples: [83.5]}
+    AgentId:
+      type: string
+      description: An agent ID.
+      pattern: '^agt_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [agt_01j9z3w5y7a9c1e3g5j7m9p1r3]
+    AgentJobId:
+      type: string
+      description: A job ID.
+      pattern: '^job_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [job_01j9z3w5y7a9c1e3g5j7m9p1r3]
+    Agent:
+      type: object
+      description: One of your agents.
+      required: [id, name, online, createdAt, lastSeenAt]
+      properties:
+        id: {$ref: '#/components/schemas/AgentId'}
+        name: {type: string, description: 'The name it goes by in Run on, such as its machine''s name.', examples: [ada-laptop]}
+        hostname: {type: string, description: The machine's hostname., examples: [ada-laptop.local]}
+        os: {type: string, description: The machine's system and architecture., examples: [darwin/arm64]}
+        version: {type: string, description: The agent's version., examples: [0.2.0]}
+        online: {type: boolean, description: 'Whether it asked for work in the last 45 seconds, or is sending requests it took.', examples: [true]}
+        createdAt: {$ref: '#/components/schemas/Timestamp'}
+        lastSeenAt: {$ref: '#/components/schemas/Timestamp'}
+    AgentList:
+      type: object
+      description: Your agents, by name.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The agents, by name.
+          items: {$ref: '#/components/schemas/Agent'}
+          examples:
+            - [{id: agt_01j9z3w5y7a9c1e3g5j7m9p1r3, name: ada-laptop, online: true, createdAt: '2026-10-28T12:00:00Z', lastSeenAt: '2026-10-28T12:05:00Z'}]
+    AgentConnect:
+      type: object
+      description: What an agent says about itself.
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100, description: 'The agent''s name. Your agent with this name, if there is one, is the same agent.', examples: [ada-laptop]}
+        hostname: {type: string, maxLength: 255, description: The machine's hostname., examples: [ada-laptop.local]}
+        os: {type: string, maxLength: 64, description: The machine's system and architecture., examples: [darwin/arm64]}
+        version: {type: string, maxLength: 64, description: The agent's version., examples: [0.2.0]}
+    AgentJob:
+      type: object
+      description: A request for an agent to send, as it should go out.
+      required: [id, method, url, headers]
+      properties:
+        id: {$ref: '#/components/schemas/AgentJobId'}
+        method: {type: string, description: The method., examples: [GET]}
+        url: {type: string, description: 'The URL, variables filled in.', examples: ['http://localhost:3000/orders/42']}
+        headers:
+          type: array
+          description: The headers, in order, credentials included.
+          items: {$ref: '#/components/schemas/HttpHeader'}
+          examples: [[{key: Accept, value: application/json}]]
+        body: {type: string, contentEncoding: base64, description: The body in base64; absent when there is none., examples: [eyJpZCI6NDJ9]}
+        timeoutMs: {type: integer, minimum: 0, description: 'How long the request may take; absent for the agent''s default.', examples: [30000]}
+    AgentResult:
+      type: object
+      description: What an agent got for a job. It has `response` or `failure`.
+      required: [timings]
+      properties:
+        response:
+          type: object
+          description: The response.
+          required: [status, headers]
+          properties:
+            status: {type: integer, minimum: 100, maximum: 999, description: The status code., examples: [200]}
+            statusText: {type: string, description: The status line's text., examples: [200 OK]}
+            proto: {type: string, description: The protocol., examples: [HTTP/1.1]}
+            headers:
+              type: array
+              description: The headers, in order.
+              items: {$ref: '#/components/schemas/HttpHeader'}
+            body: {type: string, contentEncoding: base64, description: The body in base64, at most 10 MiB before encoding., examples: [eyJpZCI6NDJ9]}
+            url: {type: string, description: Where the response came from, after redirects., examples: ['http://localhost:3000/orders/42']}
+            redirects: {type: integer, minimum: 0, description: How many redirects were followed., examples: [0]}
+            remoteAddress: {type: string, description: The address and port the agent connected to., examples: ['127.0.0.1:3000']}
+            truncated: {type: boolean, description: Whether the body was cut at 10 MiB., examples: [false]}
+        failure:
+          type: object
+          description: Why there was no response.
+          required: [code, message]
+          properties:
+            code: {type: string, enum: [invalid-request, blocked, dns, connect, tls, timeout, network], description: The kind of failure., examples: [connect]}
+            message: {type: string, maxLength: 1000, description: What went wrong., examples: ['Couldn''t connect: connection refused.']}
+        timings: {$ref: '#/components/schemas/RunnerTimings'}
     HistoryEntry:
       type: object
       description: A sent request and what came of it. It has `response` or `failure`.
@@ -3500,6 +3732,7 @@ components:
       properties:
         id: {$ref: '#/components/schemas/HistoryEntryId'}
         environmentId: {$ref: '#/components/schemas/EnvironmentId'}
+        agent: {type: string, description: The agent that sent it; absent when the server did., examples: [ada-laptop]}
         unresolved:
           type: array
           description: The `{{names}}` that had no value, and were sent as they are.
@@ -3681,6 +3914,11 @@ components:
       properties:
         folderId: {$ref: '#/components/schemas/ItemId'}
         environmentId: {$ref: '#/components/schemas/EnvironmentId'}
+        agentId:
+          type: string
+          $ref: '#/components/schemas/AgentId'
+          description: One of your agents to send the requests through, from its machine. Absent sends them from the server.
+          examples: [agt_01j9z3w5y7a9c1e3g5j7m9p1r3]
         iterations: {type: integer, minimum: 0, maximum: 1000, description: 'How many times the requests run. 0 or absent runs them once per data row, or once. Iterations past the last data row reuse it.', examples: [3]}
         data:
           type: object
@@ -3712,6 +3950,8 @@ components:
         folderId: {$ref: '#/components/schemas/ItemId'}
         environmentId: {$ref: '#/components/schemas/EnvironmentId'}
         startedBy: {$ref: '#/components/schemas/UserId'}
+        agentId: {$ref: '#/components/schemas/AgentId'}
+        agent: {type: string, description: 'The agent the requests went through, by its name then; absent when the server sent them.', examples: [ada-laptop]}
         name: {type: string, description: The collection's or folder's name when the run started., examples: [Shop API]}
         environment: {type: string, description: The environment's name when the run started., examples: [Staging]}
         status: {type: string, enum: [queued, running, passed, failed, canceled, interrupted], description: '`passed`: every request got a response, every test passed and no script failed. `interrupted`: the server stopped during the run.', examples: [passed]}

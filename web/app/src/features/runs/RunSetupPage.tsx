@@ -8,6 +8,7 @@ import { api, describeError, unwrap } from "../../api";
 import { fieldError, FormAlert } from "../../components/Form";
 import { LoadError, Loading, PageHeader } from "../../components/Page";
 import { collectionQuery, environmentsQuery, itemsQuery, projectQuery, runsQuery, workspaceQuery } from "../../queries";
+import { RunOnSelect, useRunOn } from "../agents/RunOn";
 import { folders, formatMs, rememberedEnvironment, rememberEnvironment } from "../requests/model";
 import { dataFormat, maxDataBytes, statusLabel } from "./model";
 
@@ -99,7 +100,8 @@ export function RunRow({ run: r }: { run: Run }) {
           </span>
           <span className="row-sub">
             {timeFormat.format(new Date(r.createdAt))}
-            {r.environment ? ` · ${r.environment}` : ""} · {r.totals.requests} request{r.totals.requests === 1 ? "" : "s"}
+            {r.environment ? ` · ${r.environment}` : ""}
+            {r.agent ? ` · on ${r.agent}` : ""} · {r.totals.requests} request{r.totals.requests === 1 ? "" : "s"}
             {r.totals.tests ? ` · ${r.totals.tests - r.totals.failedTests}/${r.totals.tests} tests passed` : ""}
             {r.durationMs ? ` · ${formatMs(r.durationMs)}` : ""}
           </span>
@@ -123,6 +125,7 @@ function RunForm({ collectionId, projectId, initialFolder, disabled }: { collect
   const [bail, setBail] = useState(false);
   const [data, setData] = useState<{ name: string; content: string } | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  const runOn = useRunOn();
   const ids = { folder: useId(), environment: useId(), data: useId(), dataHint: useId(), bail: useId() };
   const environment = environments.data?.data.find((e) => e.id === environmentId);
   useEffect(() => {
@@ -154,6 +157,7 @@ function RunForm({ collectionId, projectId, initialFolder, disabled }: { collect
     const body: RunStart = { bail };
     if (folderId) body.folderId = folderId;
     if (environment) body.environmentId = environment.id;
+    if (runOn.agent) body.agentId = runOn.agent.id;
     if (iterations.trim() !== "") body.iterations = Number(iterations);
     if (delayMs.trim() !== "") body.delayMs = Number(delayMs);
     if (data) body.data = { format: dataFormat(data.name), content: data.content };
@@ -164,7 +168,7 @@ function RunForm({ collectionId, projectId, initialFolder, disabled }: { collect
   const dataError = fileError ?? fieldError(start.error, "data/content") ?? fieldError(start.error, "data/format");
   return (
     <form className="form" onSubmit={submit} noValidate>
-      <FormAlert error={start.error} fields={["folderId", "environmentId", "iterations", "data/content", "data/format", "delayMs"]} />
+      <FormAlert error={start.error} fields={["folderId", "environmentId", "agentId", "iterations", "data/content", "data/format", "delayMs"]} />
       <div className="field">
         <label htmlFor={ids.folder}>What to run</label>
         <select id={ids.folder} value={folderId} onChange={(e) => setFolderId(e.target.value)} disabled={disabled}>
@@ -197,6 +201,11 @@ function RunForm({ collectionId, projectId, initialFolder, disabled }: { collect
           ))}
         </select>
       </div>
+      {runOn.agents.length > 0 ? (
+        <div className="field">
+          <RunOnSelect agent={runOn.agent} agents={runOn.agents} onChange={runOn.choose} />
+        </div>
+      ) : null}
       <div className="field">
         <label htmlFor={ids.data}>Data file</label>
         <input id={ids.data} type="file" accept=".csv,.json,text/csv,application/json" disabled={disabled} aria-describedby={ids.dataHint} onChange={(e) => void chooseFile(e.target.files?.[0])} />

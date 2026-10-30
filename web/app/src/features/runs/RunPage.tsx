@@ -90,7 +90,8 @@ function RunMeta({ run: r }: { run: Run }) {
           {statusLabel(r.status)}
         </span>{" "}
         {r.startedAt ? `Started ${timeFormat.format(new Date(r.startedAt))}` : `Queued ${timeFormat.format(new Date(r.createdAt))}`}
-        {r.environment ? ` · ${r.environment}` : " · No environment"} · {r.iterations} iteration{r.iterations === 1 ? "" : "s"}
+        {r.environment ? ` · ${r.environment}` : " · No environment"}
+        {r.agent ? ` · on ${r.agent}` : ""} · {r.iterations} iteration{r.iterations === 1 ? "" : "s"}
         {r.dataRows ? ` · ${r.dataRows} data row${r.dataRows === 1 ? "" : "s"}` : ""}
         {r.startedAt ? ` · ${formatMs(r.durationMs)}` : ""}
       </p>

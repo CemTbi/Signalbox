@@ -444,8 +444,12 @@ func (e *Engine) ScriptSender() scripts.Sender {
 	return sender(e.runner)
 }
 
-func sender(run Runner) scripts.Sender {
+func sender(fallback Runner) scripts.Sender {
 	return func(ctx context.Context, sr scripts.Request) (*scripts.Response, error) {
+		run := fallback
+		if r, ok := ctx.Value(runnerKey{}).(Runner); ok && r != nil {
+			run = r
+		}
 		if run == nil {
 			return nil, ErrRunnerUnavailable
 		}

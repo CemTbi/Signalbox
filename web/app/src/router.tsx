@@ -18,6 +18,7 @@ import { describeError } from "./api";
 import { AppShell } from "./components/AppShell";
 import { LoadError, PageHeader } from "./components/Page";
 import { TokensPage } from "./features/account/TokensPage";
+import { AgentsPage } from "./features/agents/AgentsPage";
 import { SetupPage, SignInPage } from "./features/auth/pages";
 import { ssoFailureMessages } from "./features/auth/sso";
 import { InvitePage } from "./features/invitations/InvitePage";
@@ -186,6 +187,12 @@ const tokensRoute = createRoute({
   component: TokensPage,
 });
 
+const agentsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/account/agents",
+  component: AgentsPage,
+});
+
 const specCheckRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/spec-check",
@@ -216,6 +223,7 @@ const routeTree = rootRoute.addChildren([
     docsRoute,
     specCheckRoute,
     tokensRoute,
+    agentsRoute,
   ]),
 ]);
 
