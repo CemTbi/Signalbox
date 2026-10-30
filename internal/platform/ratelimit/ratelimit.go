@@ -44,6 +44,16 @@ func New(burst int, every time.Duration) *Limiter {
 // Allow takes a token for the key. When none is left it returns false and
 // how long until the next one.
 func (l *Limiter) Allow(key string) (ok bool, retryAfter time.Duration) {
+	return l.AllowN(key, 1)
+}
+
+// AllowN takes n tokens for the key at once, such as one per span in a
+// request. When too few are left it takes none, and returns false and how
+// long until there are. More than the burst passes only with a full
+// bucket, and then puts it in debt for the rest, so later events wait
+// until the whole request is paid for.
+func (l *Limiter) AllowN(key string, n int) (ok bool, retryAfter time.Duration) {
+	n = max(n, 1)
 	now := l.now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -59,13 +69,27 @@ func (l *Limiter) Allow(key string) (ok bool, retryAfter time.Duration) {
 		b = &bucket{limiter: rate.NewLimiter(rate.Every(l.every), l.burst)}
 		l.buckets[key] = b
 	}
-	b.used = now
-	r := b.limiter.ReserveN(now, 1)
+	first := min(n, l.burst)
+	r := b.limiter.ReserveN(now, first)
 	if delay := r.DelayFrom(now); delay > 0 {
 		r.CancelAt(now)
+		b.used = later(b.used, now)
 		return false, delay
 	}
+	// Reservations that wait aren't cancelled: they are the debt.
+	for rest := n - first; rest > 0; rest -= l.burst {
+		b.limiter.ReserveN(now, min(rest, l.burst))
+	}
+	// The sweep keeps the bucket until the debt is paid and it refills.
+	b.used = later(b.used, now.Add(time.Duration(n-first)*l.every))
 	return true, 0
+}
+
+func later(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
 }
 
 // sweep drops buckets that have refilled completely, at most once a minute.

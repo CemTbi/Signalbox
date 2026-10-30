@@ -104,6 +104,9 @@ type Deps struct {
 	// Agents hands people's requests to their agents; nil leaves the
 	// routes out.
 	Agents Agents
+	// IngestKeys keeps the keys services send spans with; nil leaves the
+	// routes out.
+	IngestKeys IngestKeys
 	// PublicURL is the address people open Signalbox at. It decides the
 	// session cookie's name and flags, and the origin that unsafe requests
 	// must come from. Default http://localhost:8080.
@@ -255,6 +258,13 @@ func NewHandler(d Deps) http.Handler {
 		mux.Handle("/api/v1/agents/{agentId}", methods{http.MethodDelete: a.authenticated(a.deleteAgent)})
 		mux.Handle("/api/v1/agents/{agentId}/jobs/next", methods{http.MethodPost: a.authenticated(a.nextAgentJob)})
 		mux.Handle("/api/v1/agents/{agentId}/jobs/{jobId}", methods{http.MethodPut: a.authenticated(a.completeAgentJob)})
+	}
+	if a.IngestKeys != nil {
+		mux.Handle("/api/v1/environments/{environmentId}/ingest-keys", methods{
+			http.MethodGet:  a.authenticated(a.listIngestKeys),
+			http.MethodPost: a.authenticated(a.createIngestKey),
+		})
+		mux.Handle("/api/v1/ingest-keys/{keyId}", methods{http.MethodDelete: a.authenticated(a.revokeIngestKey)})
 	}
 	if a.Contracts != nil {
 		mux.Handle("/api/v1/versions/{versionId}/contract-tests", methods{http.MethodPost: a.authenticated(a.generateContractTests)})

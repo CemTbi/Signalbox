@@ -40,6 +40,7 @@ const (
 	Run         Prefix = "run"
 	Agent       Prefix = "agt"
 	Job         Prefix = "job"
+	IngestKey   Prefix = "ing"
 )
 
 // ErrInvalid means a string isn't an ID of the expected type.

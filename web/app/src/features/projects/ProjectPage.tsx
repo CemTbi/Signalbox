@@ -41,9 +41,14 @@ export function ProjectPage() {
         ]}
         meta={p.description ? <p className="lede">{p.description}</p> : null}
         actions={
-          <Link to="/projects/$projectId/requests" params={{ projectId: p.id }} className="button secondary">
-            Requests
-          </Link>
+          <>
+            <Link to="/projects/$projectId/ingest-keys" params={{ projectId: p.id }} className="button ghost">
+              Ingest keys
+            </Link>
+            <Link to="/projects/$projectId/requests" params={{ projectId: p.id }} className="button secondary">
+              Requests
+            </Link>
+          </>
         }
       />
       <section className="canvas-frame" aria-label={`Canvas of ${p.name}`}>

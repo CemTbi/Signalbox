@@ -111,6 +111,12 @@ environment, or name a file that holds one with the variable plus _FILE:
 		"code that unlocks first-run setup; by default a random one is logged [SIGNALBOX_SETUP_CODE]")
 	addOIDCFlags(f, &cfg.OIDC)
 	addDatabaseFlags(f, &cfg.DatabaseURL, &cfg.ClickHouseURL, &cfg.DatabaseWait)
+	f.StringVar(&cfg.OTLPHTTPAddr, "otlp-http-addr", env("SIGNALBOX_OTLP_HTTP_ADDR", cfg.OTLPHTTPAddr),
+		"address where the ingest role receives OTLP/HTTP spans; empty turns it off [SIGNALBOX_OTLP_HTTP_ADDR]")
+	f.StringVar(&cfg.ZipkinAddr, "zipkin-addr", env("SIGNALBOX_ZIPKIN_ADDR", cfg.ZipkinAddr),
+		"address where the ingest role receives Zipkin v2 spans; empty turns it off [SIGNALBOX_ZIPKIN_ADDR]")
+	f.IntVar(&cfg.IngestSpansPerSecond, "ingest-spans-per-second", envSmallInt("SIGNALBOX_INGEST_SPANS_PER_SECOND", cfg.IngestSpansPerSecond),
+		"spans each environment may send a second, with twice as many at once [SIGNALBOX_INGEST_SPANS_PER_SECOND]")
 	f.IntVar(&cfg.TraceRetentionDays, "trace-retention-days", envSmallInt("SIGNALBOX_TRACE_RETENTION_DAYS", cfg.TraceRetentionDays),
 		"how many days spans are kept, from 1 to 3650 [SIGNALBOX_TRACE_RETENTION_DAYS]")
 	f.BoolVar(&cfg.Migrate, "migrate", envBool("SIGNALBOX_MIGRATE", cfg.Migrate),

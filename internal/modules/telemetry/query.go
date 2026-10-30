@@ -22,7 +22,7 @@ import (
 var ErrTraceNotFound = errors.New("telemetry: trace not found")
 
 const spanColumns = `trace_id, span_id, parent_span_id, trace_state, timestamp, duration_ns,
-    service_name, span_name, span_kind, status_code, status_message,
+    service_name, span_name, operation, span_kind, status_code, status_message,
     http_method, http_route, http_status_code, server_address, db_system,
     scope_name, scope_version, resource, span_attributes,
     ` + "`events.timestamp`, `events.name`, `events.attributes`," + `
@@ -97,7 +97,7 @@ func scanSpan(rows scanner) (Span, error) {
 		linkTraces, linkSpans, linkStates []string
 	)
 	err := rows.Scan(&traceID, &spanID, &parentID, &s.TraceState, &s.Start, &durationNS,
-		&s.Service, &s.Name, &kind, &status, &s.StatusMessage,
+		&s.Service, &s.Name, &s.Operation, &kind, &status, &s.StatusMessage,
 		&s.HTTPMethod, &s.HTTPRoute, &s.HTTPStatusCode, &s.ServerAddress, &s.DBSystem,
 		&s.ScopeName, &s.ScopeVersion, &resource, &s.Attributes,
 		&eventTimes, &eventNames, &eventAttrs,

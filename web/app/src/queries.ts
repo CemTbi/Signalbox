@@ -326,3 +326,13 @@ export function agentsQuery(client: ApiClient) {
     refetchInterval: 15_000,
   });
 }
+
+export const ingestKeysKey = (environmentId: string) => ["environments", environmentId, "ingest-keys"] as const;
+
+/** The keys that send spans to an environment, without their secrets. */
+export function ingestKeysQuery(client: ApiClient, environmentId: string) {
+  return queryOptions({
+    queryKey: ingestKeysKey(environmentId),
+    queryFn: () => unwrap(client.GET("/api/v1/environments/{environmentId}/ingest-keys", { params: { path: { environmentId } } })),
+  });
+}

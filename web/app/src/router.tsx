@@ -23,6 +23,7 @@ import { SetupPage, SignInPage } from "./features/auth/pages";
 import { ssoFailureMessages } from "./features/auth/sso";
 import { InvitePage } from "./features/invitations/InvitePage";
 import { WorkspaceMembers } from "./features/members/MembersPage";
+import { IngestKeysPage } from "./features/projects/IngestKeysPage";
 import { ProjectPage } from "./features/projects/ProjectPage";
 import { RequestsPage } from "./features/requests/RequestsPage";
 import { RunPage } from "./features/runs/RunPage";
@@ -146,6 +147,12 @@ const requestsRoute = createRoute({
   component: RequestsPage,
 });
 
+const ingestKeysRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/projects/$projectId/ingest-keys",
+  component: IngestKeysPage,
+});
+
 const runSetupRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/collections/$collectionId/runs",
@@ -216,6 +223,7 @@ const routeTree = rootRoute.addChildren([
     workspaceRoute.addChildren([workspaceProjectsRoute, workspaceMembersRoute]),
     projectRoute,
     requestsRoute,
+    ingestKeysRoute,
     runSetupRoute,
     runRoute,
     serviceRoute,

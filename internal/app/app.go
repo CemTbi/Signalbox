@@ -24,6 +24,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/buildinfo"
 	"github.com/CemTbi/Signalbox/internal/health"
 	"github.com/CemTbi/Signalbox/internal/httpapi"
+	"github.com/CemTbi/Signalbox/internal/ingest"
 	"github.com/CemTbi/Signalbox/internal/modules/agents"
 	"github.com/CemTbi/Signalbox/internal/modules/apis"
 	"github.com/CemTbi/Signalbox/internal/modules/client"
@@ -70,6 +71,12 @@ type Config struct {
 	ClickHouseURL string
 	// TraceRetentionDays is how long spans are kept, from 1 to 3650.
 	TraceRetentionDays int
+	// OTLPHTTPAddr and ZipkinAddr are where the ingest role receives spans
+	// over OTLP/HTTP and Zipkin v2. Empty turns one off.
+	OTLPHTTPAddr string
+	ZipkinAddr   string
+	// IngestSpansPerSecond is each environment's rate limit at ingest.
+	IngestSpansPerSecond int
 	// Migrate applies pending database migrations at startup. Turn it off
 	// to run them separately with "signalbox-server migrate".
 	Migrate bool
@@ -102,15 +109,18 @@ type Config struct {
 // DefaultConfig returns the configuration for a local single-node install.
 func DefaultConfig() Config {
 	return Config{
-		Roles:              "all",
-		HTTPAddr:           ":8080",
-		OpsAddr:            ":9090",
-		ShutdownTimeout:    20 * time.Second,
-		MaxSpecBytes:       httpapi.DefaultMaxSpecBytes,
-		DatabaseWait:       time.Minute,
-		TraceRetentionDays: telemetry.DefaultRetentionDays,
-		Migrate:            true,
-		PublicURL:          "http://localhost:8080",
+		Roles:                "all",
+		HTTPAddr:             ":8080",
+		OpsAddr:              ":9090",
+		ShutdownTimeout:      20 * time.Second,
+		MaxSpecBytes:         httpapi.DefaultMaxSpecBytes,
+		DatabaseWait:         time.Minute,
+		TraceRetentionDays:   telemetry.DefaultRetentionDays,
+		OTLPHTTPAddr:         ":4318",
+		ZipkinAddr:           ":9411",
+		IngestSpansPerSecond: ingest.DefaultSpansPerSecond,
+		Migrate:              true,
+		PublicURL:            "http://localhost:8080",
 	}
 }
 
@@ -130,6 +140,10 @@ type Server struct {
 
 	ops *endpoint
 	api *endpoint // nil when the api role isn't running
+	// otlp and zipkin receive spans; nil when the ingest role isn't
+	// running or its address is empty.
+	otlp, zipkin *endpoint
+	spans        *telemetry.Writer // nil when the ingest role isn't running
 }
 
 type endpoint struct {
@@ -238,6 +252,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 		run = r
 	}
 
+	keys := telemetry.NewKeys(db, logger, s.workspaces)
 	for _, n := range names {
 		if n != roles.API {
 			continue
@@ -277,6 +292,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 			Runs:           s.runs,
 			Contracts:      s.client,
 			Agents:         ag,
+			IngestKeys:     keys,
 			PublicURL:      publicURL,
 			TrustedProxies: trusted,
 			Metrics:        reg,
@@ -289,15 +305,45 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 	}
 	// The pool connects when it's first used, after startup waits for it.
 	if s.ch, err = clickhouse.Open(cfg.ClickHouseURL); err != nil {
-		if s.api != nil {
-			_ = s.api.ln.Close()
-		}
-		_ = s.ops.ln.Close()
-		db.Close()
-		return nil, err
+		return nil, s.abort(err)
 	}
 	checker.Add(clickhouse.Check(s.ch, logger))
+
+	if slices.Contains(names, roles.Ingest) {
+		if cfg.IngestSpansPerSecond < 1 {
+			return nil, s.abort(fmt.Errorf("ingest rate of %d spans a second: use at least 1", cfg.IngestSpansPerSecond))
+		}
+		s.spans = telemetry.NewWriter(s.ch, logger, telemetry.WriterOptions{}, reg)
+		in := ingest.New(keys, s.spans, logger, ingest.Options{SpansPerSecond: cfg.IngestSpansPerSecond, RetentionDays: cfg.TraceRetentionDays}, reg)
+		if cfg.OTLPHTTPAddr != "" {
+			if s.otlp, err = s.bind(ctx, cfg.OTLPHTTPAddr, in.OTLPHandler()); err != nil {
+				return nil, s.abort(err)
+			}
+		}
+		if cfg.ZipkinAddr != "" {
+			if s.zipkin, err = s.bind(ctx, cfg.ZipkinAddr, in.ZipkinHandler()); err != nil {
+				return nil, s.abort(err)
+			}
+		}
+	}
 	return s, nil
+}
+
+// abort releases what New made before it failed with err.
+func (s *Server) abort(err error) error {
+	for _, e := range []*endpoint{s.api, s.ops, s.otlp, s.zipkin} {
+		if e != nil {
+			_ = e.ln.Close()
+		}
+	}
+	if s.spans != nil {
+		s.spans.Close()
+	}
+	if s.ch != nil {
+		_ = s.ch.Close()
+	}
+	s.db.Close()
+	return err
 }
 
 // ParsePublicURL checks the address Signalbox is reached at. Signalbox must
@@ -339,6 +385,20 @@ func (s *Server) HTTPAddr() string {
 	return s.api.ln.Addr().String()
 }
 
+// OTLPHTTPAddr and ZipkinAddr return where the ingest role receives
+// spans, or "" when it doesn't on that protocol.
+func (s *Server) OTLPHTTPAddr() string { return addrOf(s.otlp) }
+
+// ZipkinAddr is like OTLPHTTPAddr, for Zipkin.
+func (s *Server) ZipkinAddr() string { return addrOf(s.zipkin) }
+
+func addrOf(e *endpoint) string {
+	if e == nil {
+		return ""
+	}
+	return e.ln.Addr().String()
+}
+
 // OpsAddr returns the address the ops listener is bound to.
 func (s *Server) OpsAddr() string { return s.ops.ln.Addr().String() }
 
@@ -367,8 +427,10 @@ func (s *Server) Run(ctx context.Context) error {
 		return g.Wait()
 	}
 
-	if s.api != nil {
-		g.Go(func() error { return serve(s.api) })
+	for _, e := range []*endpoint{s.api, s.otlp, s.zipkin} {
+		if e != nil {
+			g.Go(func() error { return serve(e) })
+		}
 	}
 	g.Go(func() error {
 		s.identity.Run(gctx)
@@ -394,6 +456,7 @@ func (s *Server) Run(ctx context.Context) error {
 	build := buildinfo.Get()
 	s.logger.Info("signalbox-server started",
 		"version", build.Version, "roles", s.roles, "http_addr", s.HTTPAddr(), "ops_addr", s.OpsAddr(),
+		"otlp_http_addr", s.OTLPHTTPAddr(), "zipkin_addr", s.ZipkinAddr(),
 		"public_url", s.publicURL.String())
 	return g.Wait()
 }
@@ -496,7 +559,7 @@ func (s *Server) shutdown() error {
 	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.ShutdownTimeout)
 	defer cancel()
 	var errs []error
-	for _, e := range []*endpoint{s.api, s.ops} {
+	for _, e := range []*endpoint{s.api, s.otlp, s.zipkin, s.ops} {
 		if e == nil {
 			continue
 		}
@@ -505,6 +568,10 @@ func (s *Server) shutdown() error {
 		}
 		// Shutdown doesn't close a listener that never started serving.
 		_ = e.ln.Close()
+	}
+	// Spans already received are written before the process ends.
+	if s.spans != nil {
+		s.spans.Close()
 	}
 	// Runs in progress stop, and are marked interrupted.
 	if s.runs != nil {
