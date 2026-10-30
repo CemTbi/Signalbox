@@ -1,0 +1,149 @@
+openapi: 3.1.1
+info:
+  title: Orders API
+  version: 1.0.0
+  description: Places the demo shop's orders, reserving stock and charging them, and keeps them in PostgreSQL.
+  license: {name: Apache-2.0, identifier: Apache-2.0}
+servers:
+  - url: http://orders-api:8080
+    description: Inside the demo shop's network.
+tags:
+  - name: Orders
+    description: Placing and reading orders.
+  - name: Health
+    description: Whether the service works.
+paths:
+  /orders:
+    post:
+      operationId: createOrder
+      summary: Place an order
+      description: Reserves each item's stock, charges the total, and saves the order.
+      tags: [Orders]
+      requestBody:
+        required: true
+        description: The items to buy.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OrderRequest'}
+            example: {items: [{sku: TEA-01, quantity: 2}]}
+      responses:
+        '201':
+          description: The order is placed.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Order'}
+              example: {id: ord_7k2m9x4q1w8e5r3t, items: [{sku: TEA-01, quantity: 2}], amountCents: 2580, paymentId: ch_4f8a2k9m1x7q3w5e, createdAt: '2026-10-31T12:00:00Z'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: An item is out of stock.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example: {title: Conflict, status: 409, detail: TEA-01 is out of stock.}
+        '502':
+          description: The inventory or the payment failed.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example: {title: Bad Gateway, status: 502, detail: The payment didn't go through.}
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      summary: Read an order
+      description: Returns an order by its ID.
+      tags: [Orders]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: The order's ID.
+          schema: {type: string, examples: [ord_7k2m9x4q1w8e5r3t]}
+      responses:
+        '200':
+          description: The order.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Order'}
+              example: {id: ord_7k2m9x4q1w8e5r3t, items: [{sku: TEA-01, quantity: 2}], amountCents: 2580, paymentId: ch_4f8a2k9m1x7q3w5e, createdAt: '2026-10-31T12:00:00Z'}
+        '404':
+          description: There is no such order.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example: {title: Not Found, status: 404, detail: There is no order ord_7k2m9x4q1w8e5r3t.}
+  /health:
+    get:
+      operationId: getHealth
+      summary: Check health
+      description: Reports whether the service and its database work, in the Health Check Response Format.
+      tags: [Health]
+      responses:
+        '200':
+          description: The service works.
+          content:
+            application/health+json:
+              schema: {$ref: '#/components/schemas/Health'}
+              example: {status: pass, serviceId: orders-api, version: 1.0.0}
+        '503':
+          description: The database doesn't answer.
+          content:
+            application/health+json:
+              schema: {$ref: '#/components/schemas/Health'}
+              example: {status: fail, serviceId: orders-api, version: 1.0.0}
+components:
+  schemas:
+    OrderItem:
+      type: object
+      description: A product and how many.
+      required: [sku, quantity]
+      properties:
+        sku: {type: string, description: The product., examples: [TEA-01]}
+        quantity: {type: integer, minimum: 1, description: How many., examples: [2]}
+    OrderRequest:
+      type: object
+      description: An order to place.
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          description: What to buy.
+          items: {$ref: '#/components/schemas/OrderItem'}
+          examples: [[{sku: TEA-01, quantity: 2}]]
+    Order:
+      type: object
+      description: A placed order.
+      required: [id, items, amountCents, paymentId, createdAt]
+      properties:
+        id: {type: string, description: The order's ID., examples: [ord_7k2m9x4q1w8e5r3t]}
+        items:
+          type: array
+          description: What was bought.
+          items: {$ref: '#/components/schemas/OrderItem'}
+          examples: [[{sku: TEA-01, quantity: 2}]]
+        amountCents: {type: integer, minimum: 1, description: The total in euro cents., examples: [2580]}
+        paymentId: {type: string, description: The charge that paid it., examples: [ch_4f8a2k9m1x7q3w5e]}
+        createdAt: {type: string, format: date-time, description: When it was placed., examples: ['2026-10-31T12:00:00Z']}
+    Health:
+      type: object
+      description: A health response, in the Health Check Response Format.
+      required: [status]
+      properties:
+        status: {type: string, enum: [pass, warn, fail], description: Whether the service works., examples: [pass]}
+        serviceId: {type: string, description: The service., examples: [orders-api]}
+        version: {type: string, description: The service's version., examples: [1.0.0]}
+    Problem:
+      type: object
+      description: An RFC 9457 problem.
+      required: [title, status]
+      properties:
+        title: {type: string, description: The status's name., examples: [Bad Request]}
+        status: {type: integer, description: The HTTP status., examples: [400]}
+        detail: {type: string, description: What went wrong., examples: ['Send the items as JSON, at least one.']}
+  responses:
+    Problem:
+      description: The request was wrong.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example: {title: Bad Request, status: 400, detail: 'Send the items as JSON, at least one.'}

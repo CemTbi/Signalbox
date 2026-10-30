@@ -1,0 +1,142 @@
+openapi: 3.1.1
+info:
+  title: Payments API
+  version: 1.0.0
+  description: Charges the demo shop's orders through an outside payment provider.
+  license: {name: Apache-2.0, identifier: Apache-2.0}
+servers:
+  - url: http://payments-api:8080
+    description: Inside the demo shop's network.
+tags:
+  - name: Payments
+    description: Charging orders.
+  - name: Chaos
+    description: Breaking payments on purpose, to see monitors and alerts work.
+  - name: Health
+    description: Whether the service works.
+paths:
+  /payments:
+    post:
+      operationId: createPayment
+      summary: Charge an order
+      description: Charges an order's amount through the payment provider.
+      tags: [Payments]
+      requestBody:
+        required: true
+        description: The order and its amount.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PaymentRequest'}
+            example: {orderId: ord_7k2m9x4q1w8e5r3t, amountCents: 2580}
+      responses:
+        '201':
+          description: The order is charged.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Payment'}
+              example: {id: ch_4f8a2k9m1x7q3w5e, status: succeeded}
+        '400': {$ref: '#/components/responses/Problem'}
+        '502':
+          description: The payment provider refused the charge or didn't answer.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example: {title: Bad Gateway, status: 502, detail: The payment provider refused the charge.}
+  /chaos:
+    get:
+      operationId: getChaos
+      summary: Read the chaos mode
+      description: Says how payments are broken on purpose, if they are.
+      tags: [Chaos]
+      responses:
+        '200':
+          description: The mode.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Chaos'}
+              example: {mode: 'off'}
+    put:
+      operationId: setChaos
+      summary: Set the chaos mode
+      description: |
+        Breaks payments on purpose: `slow` adds 1.5 seconds to each payment, `failing` fails half of them, and `unhealthy` makes the health check fail while payments still work. `off` mends them.
+      tags: [Chaos]
+      requestBody:
+        required: true
+        description: The new mode.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Chaos'}
+            example: {mode: unhealthy}
+      responses:
+        '200':
+          description: The new mode.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Chaos'}
+              example: {mode: unhealthy}
+        '400': {$ref: '#/components/responses/Problem'}
+  /health:
+    get:
+      operationId: getHealth
+      summary: Check health
+      description: Reports whether payments work and the payment provider answers, in the Health Check Response Format.
+      tags: [Health]
+      responses:
+        '200':
+          description: Payments work, maybe with a warning.
+          content:
+            application/health+json:
+              schema: {$ref: '#/components/schemas/Health'}
+              example: {status: pass, serviceId: payments-api, version: 1.0.0}
+        '503':
+          description: Payments don't work.
+          content:
+            application/health+json:
+              schema: {$ref: '#/components/schemas/Health'}
+              example: {status: fail, serviceId: payments-api, version: 1.0.0}
+components:
+  schemas:
+    PaymentRequest:
+      type: object
+      description: An order to charge.
+      required: [orderId, amountCents]
+      properties:
+        orderId: {type: string, description: The order to charge., examples: [ord_7k2m9x4q1w8e5r3t]}
+        amountCents: {type: integer, minimum: 1, description: The amount in euro cents., examples: [2580]}
+    Payment:
+      type: object
+      description: A charge.
+      required: [id, status]
+      properties:
+        id: {type: string, description: The charge at the payment provider., examples: [ch_4f8a2k9m1x7q3w5e]}
+        status: {type: string, description: The charge's status., examples: [succeeded]}
+    Chaos:
+      type: object
+      description: How payments are broken on purpose.
+      required: [mode]
+      properties:
+        mode: {type: string, enum: ['off', slow, failing, unhealthy], description: How payments are broken on purpose., examples: [unhealthy]}
+    Health:
+      type: object
+      description: A health response, in the Health Check Response Format.
+      required: [status]
+      properties:
+        status: {type: string, enum: [pass, warn, fail], description: Whether the service works., examples: [pass]}
+        serviceId: {type: string, description: The service., examples: [payments-api]}
+        version: {type: string, description: The service's version., examples: [1.0.0]}
+    Problem:
+      type: object
+      description: An RFC 9457 problem.
+      required: [title, status]
+      properties:
+        title: {type: string, description: The status's name., examples: [Bad Request]}
+        status: {type: integer, description: The HTTP status., examples: [400]}
+        detail: {type: string, description: What went wrong., examples: [Send the orderId and a positive amountCents as JSON.]}
+  responses:
+    Problem:
+      description: The request was wrong.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example: {title: Bad Request, status: 400, detail: Send the orderId and a positive amountCents as JSON.}

@@ -1,0 +1,127 @@
+# The demo shop, added to compose.yaml: a small web shop whose services send
+# real traces to Signalbox, with people shopping a few times a second.
+#
+#   SIGNALBOX_SETUP_CODE=DEMO-SETUP-CODE-0001 DEMO_SETUP_CODE=DEMO-SETUP-CODE-0001 \
+#     docker compose -f deploy/compose/compose.yaml -f deploy/compose/compose.demo.yaml up -d --build
+#
+# Then sign in at http://localhost:8080 as ada@example.com with the password
+# "correct horse battery staple", and open the Demo shop workspace. With
+# DEMO_SETUP_CODE set, the seed completes first-run setup itself; without
+# it, it waits until someone does, then signs in with DEMO_EMAIL and
+# DEMO_PASSWORD. The shop answers at http://localhost:8090, and payments'
+# chaos switch at http://localhost:8091/chaos:
+#
+#   curl -X PUT -d '{"mode":"unhealthy"}' http://localhost:8091/chaos
+#
+# See examples/demo-shop/README.md.
+
+# The services start at once, and read the ingest key from the file the
+# seed writes whenever they export spans: until it's there, their spans
+# are refused, and when the seed replaces it, they follow.
+x-shop: &shop
+  build:
+    context: ../../examples/demo-shop
+  image: signalbox-demo-shop:dev
+  restart: unless-stopped
+  volumes:
+    - demo-run:/run/demo:ro
+
+x-traced: &traced
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://signalbox:4317
+  SIGNALBOX_INGEST_KEY_FILE: /run/demo/ingest-key
+
+services:
+  # Sets the shop up in Signalbox and makes its ingest key, then exits.
+  demo-seed:
+    build:
+      context: ../../examples/demo-shop
+    image: signalbox-demo-shop:dev
+    command: ["seed"]
+    environment:
+      SIGNALBOX_URL: http://signalbox:8080
+      SIGNALBOX_PUBLIC_URL: ${SIGNALBOX_PUBLIC_URL:-http://localhost:8080}
+      SIGNALBOX_SETUP_CODE: ${DEMO_SETUP_CODE:-}
+      DEMO_EMAIL: ${DEMO_EMAIL:-ada@example.com}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-correct horse battery staple}
+      SIGNALBOX_INGEST_KEY_FILE: /run/demo/ingest-key
+    volumes:
+      - demo-run:/run/demo
+    depends_on:
+      signalbox:
+        condition: service_healthy
+    restart: "no"
+
+  storefront-web:
+    <<: *shop
+    command: ["storefront"]
+    environment:
+      <<: *traced
+    ports:
+      - "127.0.0.1:8090:8080"
+
+  orders-api:
+    <<: *shop
+    command: ["orders"]
+    environment:
+      <<: *traced
+      DEMO_DATABASE_URL: postgres://shop:shop@shop-db:5432/shop?sslmode=disable
+    depends_on:
+      shop-db:
+        condition: service_healthy
+
+  inventory-api:
+    <<: *shop
+    command: ["inventory"]
+    environment:
+      <<: *traced
+
+  # Sends over OTLP/HTTP, where the others use gRPC, so both are in use.
+  payments-api:
+    <<: *shop
+    command: ["payments"]
+    environment:
+      <<: *traced
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://signalbox:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      DEMO_PSP_URL: http://psp.example:8080
+    ports:
+      - "127.0.0.1:8091:8080"
+
+  # A payment provider outside the shop: not traced, so Signalbox sees it
+  # only from payments' calls, as an external host.
+  psp:
+    image: signalbox-demo-shop:dev
+    command: ["psp"]
+    restart: unless-stopped
+    networks:
+      default:
+        aliases: [psp.example]
+
+  shopper:
+    image: signalbox-demo-shop:dev
+    command: ["shopper"]
+    restart: unless-stopped
+    environment:
+      DEMO_STOREFRONT_URL: http://storefront-web:8080
+      DEMO_VISITS_PER_SECOND: ${DEMO_VISITS_PER_SECOND:-3}
+    depends_on:
+      - storefront-web
+
+  shop-db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: shop
+      POSTGRES_PASSWORD: shop
+      POSTGRES_DB: shop
+    volumes:
+      - shop-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shop -d shop"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  demo-run:
+  shop-data:

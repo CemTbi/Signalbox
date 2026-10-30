@@ -17,6 +17,8 @@ Signalbox is an open-source platform for the whole life of an HTTP API. You desi
 
 ## Try it
 
+To see Signalbox with a shop sending it traces, see [the demo shop](examples/demo-shop/README.md).
+
 You need Docker. From a clone of this repository:
 
 ```sh
@@ -62,6 +64,7 @@ To work on Signalbox itself, see [CONTRIBUTING.md](CONTRIBUTING.md). With `make`
 | `web/` | The React web app |
 | `e2e/` | End-to-end tests that drive Signalbox in a browser |
 | `deploy/` | Docker image and Docker Compose files |
+| `examples/demo-shop` | A small shop that sends real traces to Signalbox, for trying it and for its tests |
 | `actions/test`, `ci/gitlab` | The GitHub Action and GitLab CI include that run test suites |
 | `docs/` | Architecture decisions, RFCs and product requirements |
 
