@@ -1,0 +1,127 @@
+openapi: 3.1.1
+info:
+  title: Inventory API
+  version: 1.0.0
+  description: The demo shop's products and their stock.
+  license: {name: Apache-2.0, identifier: Apache-2.0}
+servers:
+  - url: http://inventory-api:8080
+    description: Inside the demo shop's network.
+tags:
+  - name: Products
+    description: What the shop sells.
+  - name: Health
+    description: Whether the service works.
+paths:
+  /products:
+    get:
+      operationId: listProducts
+      summary: List products
+      description: Lists every product, with its price and stock.
+      tags: [Products]
+      responses:
+        '200':
+          description: The products.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    description: The products, by SKU.
+                    items: {$ref: '#/components/schemas/Product'}
+                    examples: [[{sku: TEA-01, name: 'Sencha, 100 g', priceCents: 1290, stock: 40}]]
+              example:
+                data:
+                  - {sku: TEA-01, name: 'Sencha, 100 g', priceCents: 1290, stock: 40}
+  /reservations:
+    post:
+      operationId: reserveStock
+      summary: Reserve stock
+      description: Takes stock of a product for an order.
+      tags: [Products]
+      requestBody:
+        required: true
+        description: The product and quantity.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ReservationRequest'}
+            example: {sku: TEA-01, quantity: 2}
+      responses:
+        '201':
+          description: The stock is reserved.
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Reservation'}
+              example: {sku: TEA-01, quantity: 2, priceCents: 1290}
+        '400': {$ref: '#/components/responses/Problem'}
+        '409':
+          description: The product is out of stock. It is restocked for the next order.
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example: {title: Conflict, status: 409, detail: TEA-01 is out of stock.}
+  /health:
+    get:
+      operationId: getHealth
+      summary: Check health
+      description: Reports whether the service works, in the Health Check Response Format.
+      tags: [Health]
+      responses:
+        '200':
+          description: The service works.
+          content:
+            application/health+json:
+              schema: {$ref: '#/components/schemas/Health'}
+              example: {status: pass, serviceId: inventory-api, version: 1.0.0}
+components:
+  schemas:
+    Product:
+      type: object
+      description: A product the shop sells.
+      required: [sku, name, priceCents, stock]
+      properties:
+        sku: {type: string, description: The product's stock keeping unit., examples: [TEA-01]}
+        name: {type: string, description: The product's name., examples: ['Sencha, 100 g']}
+        priceCents: {type: integer, minimum: 1, description: The price in euro cents., examples: [1290]}
+        stock: {type: integer, minimum: 0, description: How many are in stock., examples: [40]}
+    ReservationRequest:
+      type: object
+      description: Stock to reserve.
+      required: [sku, quantity]
+      properties:
+        sku: {type: string, description: The product to reserve., examples: [TEA-01]}
+        quantity: {type: integer, minimum: 1, description: How many., examples: [2]}
+    Reservation:
+      type: object
+      description: Stock reserved for an order.
+      required: [sku, quantity, priceCents]
+      properties:
+        sku: {type: string, description: The product reserved., examples: [TEA-01]}
+        quantity: {type: integer, minimum: 1, description: How many., examples: [2]}
+        priceCents: {type: integer, minimum: 1, description: The price of one, in euro cents., examples: [1290]}
+    Health:
+      type: object
+      description: A health response, in the Health Check Response Format.
+      required: [status]
+      properties:
+        status: {type: string, enum: [pass, warn, fail], description: Whether the service works., examples: [pass]}
+        serviceId: {type: string, description: The service., examples: [inventory-api]}
+        version: {type: string, description: The service's version., examples: [1.0.0]}
+    Problem:
+      type: object
+      description: An RFC 9457 problem.
+      required: [title, status]
+      properties:
+        title: {type: string, description: The status's name., examples: [Bad Request]}
+        status: {type: integer, description: The HTTP status., examples: [400]}
+        detail: {type: string, description: What went wrong., examples: [Send the sku and quantity as JSON.]}
+  responses:
+    Problem:
+      description: The request was wrong.
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+          example: {title: Bad Request, status: 400, detail: Send the sku and quantity as JSON.}

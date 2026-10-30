@@ -54,6 +54,16 @@ jobs:
         run: go test -count=1 -run TestLargeSpecMeetsBudget -v ./pkg/specengine/
       - name: Lint Signalbox's own API spec
         run: go run ./cmd/signalbox lint --fail-on warning --format github api/openapi.yaml
+      - name: Check the demo shop
+        # A module of its own, so its OpenTelemetry SDK never reaches
+        # Signalbox's binaries. Its specs must lint as cleanly as Signalbox's.
+        working-directory: examples/demo-shop
+        run: |
+          go mod tidy -diff
+          go vet ./...
+          go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0 run --config ../../.golangci.yml ./...
+          go test -race ./...
+          for spec in specs/*.yaml; do go -C ../.. run ./cmd/signalbox lint --fail-on warning --format github "examples/demo-shop/$spec"; done
       - name: Report changes to Signalbox's own API
         # Annotates the pull request and summarizes the changes in the job
         # summary. Before 1.0 the API may break, so this reports without
@@ -162,8 +172,9 @@ jobs:
       BASE: http://localhost:8080
       SIGNALBOX_SETUP_CODE: CI-E2E-SETUP-CODE-0001
       # Every docker compose command here runs the stack with Dex, the
-      # identity provider for the single sign-on tests.
-      COMPOSE_FILE: deploy/compose/compose.yaml:deploy/compose/compose.e2e.yaml
+      # identity provider for the single sign-on tests, and the demo shop,
+      # whose seed waits for the tests to complete setup.
+      COMPOSE_FILE: deploy/compose/compose.yaml:deploy/compose/compose.e2e.yaml:deploy/compose/compose.demo.yaml
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -216,6 +227,14 @@ jobs:
             VERSION=0.0.0-ci
             COMMIT=${{ github.sha }}
             BINARY=${{ github.event_name == 'pull_request' && 'prebuilt' || 'built' }}
+      - name: Build the demo shop's image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: examples/demo-shop
+          tags: signalbox-demo-shop:dev
+          load: true
+          cache-from: type=gha,scope=demo-shop
+          cache-to: type=gha,scope=demo-shop,mode=max
       - name: Start the Compose stack
         run: docker compose up -d --no-build --wait --wait-timeout 180
       - name: Check the running server
