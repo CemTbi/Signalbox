@@ -15,6 +15,7 @@ import (
 
 	"github.com/CemTbi/Signalbox/internal/app"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
+	"github.com/CemTbi/Signalbox/internal/platform/clickhouse/clickhousetest"
 	"github.com/CemTbi/Signalbox/internal/platform/postgres/postgrestest"
 )
 
@@ -24,6 +25,8 @@ func testConfig(databaseURL string) app.Config {
 	cfg.OpsAddr = "127.0.0.1:0"
 	cfg.ShutdownTimeout = 5 * time.Second
 	cfg.DatabaseURL = databaseURL
+	// Nothing listens here: tests that start the server set a real one.
+	cfg.ClickHouseURL = "clickhouse://u:p@127.0.0.1:1/db"
 	cfg.DatabaseWait = 10 * time.Second
 	cfg.SetupCode = "TEST-SETU-PCOD-E123"
 	cfg.Identity.Argon2 = identity.Argon2Params{Memory: 64, Iterations: 1, Parallelism: 1, SaltLength: 16, KeyLength: 32}
@@ -44,7 +47,11 @@ func readyStatus(t *testing.T, url string) (int, string) {
 
 func TestServerStartsServesAndStops(t *testing.T) {
 	_, url := postgrestest.NewWithURL(t)
-	srv, err := app.New(context.Background(), testConfig(url), slog.New(slog.DiscardHandler))
+	ch, chURL := clickhousetest.NewWithURL(t)
+	cfg := testConfig(url)
+	cfg.ClickHouseURL = chURL
+	cfg.TraceRetentionDays = 3
+	srv, err := app.New(context.Background(), cfg, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,6 +72,17 @@ func TestServerStartsServesAndStops(t *testing.T) {
 	}
 	if code, status := readyStatus(t, "http://"+srv.HTTPAddr()+"/readyz"); code != http.StatusOK || status != "pass" {
 		t.Errorf("api /readyz = %d %q, want 200 pass", code, status)
+	}
+	if ready := get(t, "http://"+srv.OpsAddr()+"/readyz"); !strings.Contains(ready, "clickhouse:responseTime") {
+		t.Errorf("readiness doesn't check ClickHouse: %s", ready)
+	}
+	// Startup migrated ClickHouse and set the retention.
+	var engine string
+	if err := ch.QueryRow(context.Background(), `SELECT engine_full FROM system.tables WHERE database = currentDatabase() AND name = 'spans'`).Scan(&engine); err != nil {
+		t.Fatalf("no spans table: %v", err)
+	}
+	if !strings.Contains(engine, "toIntervalDay(3)") {
+		t.Errorf("spans = %s, want a 3-day TTL", engine)
 	}
 
 	resp, err := http.Get("http://" + srv.HTTPAddr() + "/api/v1/setup")
@@ -186,6 +204,10 @@ func TestNewValidatesConfiguration(t *testing.T) {
 		{"busy port", func(c *app.Config) { c.HTTPAddr = ln.Addr().String() }, "listen on"},
 		{"unavailable role", func(c *app.Config) { c.Roles = "ingest" }, "not available"},
 		{"no database", func(c *app.Config) { c.DatabaseURL = "" }, "SIGNALBOX_DATABASE_URL"},
+		{"no ClickHouse", func(c *app.Config) { c.ClickHouseURL = "" }, "SIGNALBOX_CLICKHOUSE_URL"},
+		{"bad ClickHouse URL", func(c *app.Config) { c.ClickHouseURL = "clickhouse://u:p@[::1/db" }, "ClickHouse URL"},
+		{"no retention", func(c *app.Config) { c.TraceRetentionDays = 0 }, "retention"},
+		{"too long a retention", func(c *app.Config) { c.TraceRetentionDays = 3651 }, "retention"},
 		{"public URL with a path", func(c *app.Config) { c.PublicURL = "https://example.com/signalbox" }, "root of its host"},
 		{"bad trusted proxy", func(c *app.Config) { c.TrustedProxies = "10.0.0.0/33" }, "trusted proxies"},
 		{"weak setup code", func(c *app.Config) { c.SetupCode = "abc" }, "setup code"},

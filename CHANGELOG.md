@@ -46,6 +46,7 @@ All notable changes to Signalbox are recorded here. The format follows [Keep a C
 
 ### Changed
 
+- The server now needs ClickHouse, besides PostgreSQL, for spans and what's built from them. Set `SIGNALBOX_CLICKHOUSE_URL` before upgrading; the Compose stack already runs ClickHouse. The server migrates ClickHouse at startup like PostgreSQL, and `signalbox-server migrate` migrates both. `SIGNALBOX_TRACE_RETENTION_DAYS` sets how long spans are kept, 7 days by default. `make dev-db` now starts ClickHouse too.
 - `POST /api/v1/spec-checks` now needs a signed-in session.
 - The server now needs PostgreSQL. `make dev-db` starts one for development.
 

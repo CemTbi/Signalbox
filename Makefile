@@ -21,14 +21,15 @@ help: ## List the available tasks
 build: ## Build bin/signalbox and bin/signalbox-server
 	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o bin/ ./cmd/...
 
-# The database that `make dev-db` starts. Override it to use another one.
+# The databases that `make dev-db` starts. Override them to use others.
 SIGNALBOX_DATABASE_URL ?= postgres://signalbox:signalbox@localhost:5432/signalbox?sslmode=disable
-export SIGNALBOX_DATABASE_URL
+SIGNALBOX_CLICKHOUSE_URL ?= clickhouse://signalbox:signalbox@localhost:9000/signalbox
+export SIGNALBOX_DATABASE_URL SIGNALBOX_CLICKHOUSE_URL
 COMPOSE := docker compose -f deploy/compose/compose.yaml
 
 .PHONY: dev-db
-dev-db: ## Start PostgreSQL on localhost:5432 for `make run`
-	$(COMPOSE) -f deploy/compose/compose.dev.yaml up -d --wait postgres
+dev-db: ## Start PostgreSQL on localhost:5432 and ClickHouse on localhost:9000 for `make run`
+	$(COMPOSE) -f deploy/compose/compose.dev.yaml up -d --wait postgres clickhouse
 
 .PHONY: run
 run: ## Run the server on :8080 with readable logs (needs `make dev-db`)
