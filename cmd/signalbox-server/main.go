@@ -111,10 +111,7 @@ environment, or name a file that holds one with the variable plus _FILE:
 		"code that unlocks first-run setup; by default a random one is logged [SIGNALBOX_SETUP_CODE]")
 	addOIDCFlags(f, &cfg.OIDC)
 	addDatabaseFlags(f, &cfg.DatabaseURL, &cfg.ClickHouseURL, &cfg.DatabaseWait)
-	// app.New refuses days out of range; clamping only keeps the conversion
-	// from overflowing.
-	retention := envInt("SIGNALBOX_TRACE_RETENTION_DAYS", int64(cfg.TraceRetentionDays))
-	f.IntVar(&cfg.TraceRetentionDays, "trace-retention-days", int(min(max(retention, -1), 100_000)),
+	f.IntVar(&cfg.TraceRetentionDays, "trace-retention-days", envSmallInt("SIGNALBOX_TRACE_RETENTION_DAYS", cfg.TraceRetentionDays),
 		"how many days spans are kept, from 1 to 3650 [SIGNALBOX_TRACE_RETENTION_DAYS]")
 	f.BoolVar(&cfg.Migrate, "migrate", envBool("SIGNALBOX_MIGRATE", cfg.Migrate),
 		"apply pending database migrations at startup [SIGNALBOX_MIGRATE]")
@@ -176,7 +173,10 @@ deployment step.`,
 				return err
 			}
 			defer conn.Close() //nolint:errcheck // nothing to do about a failed close at exit
-			if err := clickhouse.WaitReady(waitCtx, conn, logger); err != nil {
+			// ClickHouse gets the whole wait too, as at server startup.
+			chCtx, cancelCH := context.WithTimeout(ctx, wait)
+			defer cancelCH()
+			if err := clickhouse.WaitReady(chCtx, conn, logger); err != nil {
 				return err
 			}
 			return clickhouse.Migrate(ctx, clickHouseURL, func(ctx context.Context, f func() error) error {
@@ -301,6 +301,18 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 			return d
 		}
 		fmt.Fprintf(os.Stderr, "signalbox-server: ignoring %s=%q: not a duration such as 5s\n", key, v)
+	}
+	return fallback
+}
+
+// envSmallInt reads a whole number that fits an int, such as a count of
+// days; range checks are the setting's own.
+func envSmallInt(key string, fallback int) int {
+	if v, ok := os.LookupEnv(key); ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+		fmt.Fprintf(os.Stderr, "signalbox-server: ignoring %s=%q: not a whole number\n", key, v)
 	}
 	return fallback
 }
