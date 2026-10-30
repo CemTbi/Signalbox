@@ -109,6 +109,8 @@ type FailureJSON struct {
 type HistoryEntryJSON struct {
 	ID            string `json:"id"`
 	EnvironmentID string `json:"environmentId,omitempty"`
+	// Agent names the agent that sent it; absent when the server did.
+	Agent string `json:"agent,omitempty"`
 	// Unresolved lists the {{names}} that had no value.
 	Unresolved []string           `json:"unresolved,omitempty"`
 	Method     string             `json:"method"`
@@ -186,6 +188,7 @@ func historyEntryJSON(e client.Entry) HistoryEntryJSON {
 		Request:    SentRequestJSON{Auth: authJSON(e.Auth), Headers: headersJSON(e.Headers), Body: string(e.Body), BodyTruncated: e.BodyTruncated},
 		Timings:    TimingsJSON{ms(t.DNS), ms(t.Connect), ms(t.TLS), ms(t.FirstByte), ms(t.Download), ms(t.Total)},
 		Unresolved: e.Unresolved,
+		Agent:      e.Agent,
 	}
 	if e.EnvironmentID != uuid.Nil {
 		out.EnvironmentID = id.Format(id.Environment, e.EnvironmentID)

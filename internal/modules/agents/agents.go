@@ -42,7 +42,12 @@ const (
 	// pickUp is how long a job waits for its agent to take it.
 	pickUp = 15 * time.Second
 	// grace is how long past the request's own timeout a result may take.
-	grace = 15 * time.Second
+	// With pickUp and the default timeout, a send gets its answer within
+	// 55 seconds, inside the server's 60-second write timeout.
+	grace = 10 * time.Second
+	// defaultTimeout is the server runner's, which jobs carry so the agent
+	// gives up when the server would.
+	defaultTimeout = 30 * time.Second
 	// queued bounds the jobs waiting for one agent.
 	queued = 64
 )
@@ -90,8 +95,9 @@ type Module struct {
 	db     *pgxpool.Pool
 	logger *slog.Logger
 	now    func() time.Time
-	// pickUp is how long a job waits for its agent to take it.
-	pickUp time.Duration
+	// pickUp is how long a job waits for its agent to take it, and grace
+	// how long past the request's timeout its result may take.
+	pickUp, grace time.Duration
 
 	mu sync.Mutex
 	// queues hold each agent's jobs waiting to be taken.
@@ -109,7 +115,7 @@ type takenJob struct {
 
 // New returns the module.
 func New(db *pgxpool.Pool, logger *slog.Logger) *Module {
-	return &Module{db: db, logger: logger, now: time.Now, pickUp: pickUp,
+	return &Module{db: db, logger: logger, now: time.Now, pickUp: pickUp, grace: grace,
 		queues: map[uuid.UUID]chan *Job{}, polled: map[uuid.UUID]time.Time{}, taken: map[uuid.UUID]takenJob{}}
 }
 
@@ -193,7 +199,10 @@ func (m *Module) Delete(ctx context.Context, userID, agentID uuid.UUID) error {
 	}
 	m.mu.Lock()
 	delete(m.polled, agentID)
+	// Jobs still in the old queue fail as not taken.
+	delete(m.queues, agentID)
 	m.mu.Unlock()
+	m.logger.InfoContext(ctx, "agent deleted", id.LogAttr("agent_id", id.Agent, agentID), id.LogAttr("user_id", id.User, userID))
 	return nil
 }
 
@@ -206,6 +215,44 @@ func (m *Module) queue(agentID uuid.UUID) chan *Job {
 		m.queues[agentID] = q
 	}
 	return q
+}
+
+// enqueue adds a job to an agent's queue. A full queue first drops the
+// jobs whose senders gave up, which pile up while the agent is offline.
+func (m *Module) enqueue(agentID uuid.UUID, j *Job) bool {
+	q := m.queue(agentID)
+	select {
+	case q <- j:
+		return true
+	default:
+	}
+	for range cap(q) {
+		var old *Job
+		select {
+		case old = <-q:
+		default:
+		}
+		if old == nil {
+			break
+		}
+		select {
+		case <-old.gone:
+			continue
+		default:
+		}
+		// Still wanted: back in the queue, behind newer jobs at worst.
+		select {
+		case q <- old:
+		default:
+			old.giveUp()
+		}
+	}
+	select {
+	case q <- j:
+		return true
+	default:
+		return false
+	}
 }
 
 // Next waits up to wait for a job for one of the user's agents, and
@@ -300,21 +347,18 @@ type AgentRunner struct {
 // Run hands the request to the agent and waits for its result. An agent
 // that doesn't take it in time is reported as offline.
 func (r *AgentRunner) Run(ctx context.Context, req runner.Request) runner.Result {
+	if req.Timeout <= 0 || req.Timeout > defaultTimeout {
+		req.Timeout = defaultTimeout
+	}
 	j := &Job{ID: id.New(), Request: req, result: make(chan runner.Result, 1), gone: make(chan struct{})}
 	defer j.giveUp()
 	m := r.m
-	select {
-	case m.queue(r.agent.ID) <- j:
-	default:
+	if !m.enqueue(r.agent.ID, j) {
 		return failure("agent-busy", fmt.Sprintf("The agent %s has too many requests waiting. Try again in a moment.", r.agent.Name))
-	}
-	timeout := req.Timeout
-	if timeout <= 0 {
-		timeout = 30 * time.Second
 	}
 	picked := time.NewTimer(m.pickUp)
 	defer picked.Stop()
-	done := time.NewTimer(m.pickUp + timeout + grace)
+	done := time.NewTimer(m.pickUp + req.Timeout + m.grace)
 	defer done.Stop()
 	for {
 		select {

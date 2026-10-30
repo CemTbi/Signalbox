@@ -73,9 +73,9 @@ can't run: a bad flag, or a server that refuses the token.`,
 
 // agentJob is a request the server hands the agent.
 type agentJob struct {
-	ID        string `json:"id"`
-	Method    string `json:"method"`
-	URL       string `json:"url"`
+	ID        string          `json:"id"`
+	Method    string          `json:"method"`
+	URL       string          `json:"url"`
 	Headers   []runner.Header `json:"headers"`
 	Body      string          `json:"body"`
 	TimeoutMs int64           `json:"timeoutMs"`
@@ -241,7 +241,13 @@ func (a *agent) handle(ctx context.Context, j agentJob) {
 	// isn't left waiting.
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
-	if err := a.api.do(rctx, http.MethodPut, "/api/v1/agents/"+url.PathEscape(a.id)+"/jobs/"+url.PathEscape(j.ID), result, nil); err != nil {
+	err := a.api.do(rctx, http.MethodPut, "/api/v1/agents/"+url.PathEscape(a.id)+"/jobs/"+url.PathEscape(j.ID), result, nil)
+	var ae *apiError
+	switch {
+	case err == nil:
+	case errors.As(err, &ae) && ae.Status == http.StatusNotFound:
+		a.print("The result came too late: whoever sent the request stopped waiting.")
+	default:
 		fmt.Fprintf(a.stderr, "signalbox: couldn't return a result: %v\n", err)
 	}
 }
@@ -260,9 +266,14 @@ func (a *agent) log(j agentJob, result map[string]any) {
 	} else if f, ok := result["failure"].(map[string]any); ok {
 		outcome = fmt.Sprint(f["code"])
 	}
+	a.print(fmt.Sprintf("%s %s → %s", j.Method, where, outcome))
+}
+
+// print writes a timestamped line; requests finish on several goroutines.
+func (a *agent) print(line string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	fmt.Fprintf(a.stdout, "%s %s %s → %s\n", time.Now().Format("15:04:05"), j.Method, where, outcome)
+	fmt.Fprintf(a.stdout, "%s %s\n", time.Now().Format("15:04:05"), line)
 }
 
 func resultJSON(res runner.Result) map[string]any {

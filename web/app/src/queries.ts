@@ -315,3 +315,14 @@ export function collectionQuery(client: ApiClient, collectionId: string) {
     queryFn: () => unwrap(client.GET("/api/v1/collections/{collectionId}", { params: { path: { collectionId } } })),
   });
 }
+
+export const agentsKey = ["agents"] as const;
+
+/** Your agents. Asked again often, so whether each is online stays current. */
+export function agentsQuery(client: ApiClient) {
+  return queryOptions({
+    queryKey: agentsKey,
+    queryFn: () => unwrap(client.GET("/api/v1/agents")),
+    refetchInterval: 15_000,
+  });
+}

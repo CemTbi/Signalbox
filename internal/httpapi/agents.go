@@ -31,6 +31,9 @@ type Agents interface {
 // resultLimit bounds a job's result: a 10 MiB body in base64, and headers.
 const resultLimit = 16 << 20
 
+// agentFailures are the failures an agent may report: the runner's own.
+var agentFailures = map[string]bool{"invalid-request": true, "blocked": true, "dns": true, "connect": true, "tls": true, "timeout": true, "network": true}
+
 // AgentJSON is an agent in API responses.
 type AgentJSON struct {
 	ID         string `json:"id"`
@@ -206,6 +209,12 @@ func (a *api) completeAgentJob(w http.ResponseWriter, r *http.Request, s *identi
 			res.Response.Headers = append(res.Response.Headers, runner.Header(h))
 		}
 	case body.Failure != nil:
+		if !agentFailures[body.Failure.Code] {
+			fields.Add("/failure/code", "enum", "Use invalid-request, blocked, dns, connect, tls, timeout or network.")
+		}
+		if body.Failure.Message == "" || len(body.Failure.Message) > 1000 {
+			fields.Add("/failure/message", "length", "Say what went wrong in 1 to 1,000 characters.")
+		}
 		res.Failure = &runner.Failure{Code: body.Failure.Code, Message: body.Failure.Message}
 	default:
 		fields.Add("/response", "required", "Send the response, or why there's none as failure.")

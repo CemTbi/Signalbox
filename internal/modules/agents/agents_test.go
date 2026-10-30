@@ -105,6 +105,10 @@ func TestRunThroughAnAgent(t *testing.T) {
 				t.Errorf("next = %v, %v", j, err)
 				return
 			}
+			// The agent gives up when the server would.
+			if j.Request.Timeout != 30*time.Second {
+				t.Errorf("a job's timeout is %s", j.Request.Timeout)
+			}
 			res := runner.Result{Response: &runner.Response{Status: 200, Body: []byte(j.Request.URL)}}
 			if err := mod.Complete(ctx, ada, a.ID, j.ID, res); err != nil {
 				t.Error(err)
@@ -148,5 +152,77 @@ func TestAnOfflineAgent(t *testing.T) {
 	cancel()
 	if res := r.Run(cctx, runner.Request{Method: "GET", URL: "http://localhost/"}); res.Failure == nil || res.Failure.Code != "timeout" {
 		t.Errorf("cancelled = %+v", res)
+	}
+}
+
+func TestAnAgentThatTakesAJobButNeverAnswers(t *testing.T) {
+	ctx, mod, ada, _ := setup(t)
+	agents.SetPickUp(mod, time.Second)
+	agents.SetGrace(mod, 0)
+	a, err := mod.Connect(ctx, ada, agents.Input{Name: "laptop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := mod.Runner(ctx, ada, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	taken := make(chan *agents.Job, 1)
+	go func() {
+		j, err := mod.Next(ctx, ada, a.ID, time.Second)
+		if err != nil || j == nil {
+			t.Errorf("next = %v, %v", j, err)
+		}
+		taken <- j
+	}()
+	res := r.Run(ctx, runner.Request{Method: "GET", URL: "http://localhost/", Timeout: 50 * time.Millisecond})
+	if res.Failure == nil || res.Failure.Code != "agent-timeout" {
+		t.Fatalf("result = %+v", res)
+	}
+	// Its result, when it comes, has no one to go to.
+	if j := <-taken; j != nil {
+		if err := mod.Complete(ctx, ada, a.ID, j.ID, runner.Result{}); !errors.Is(err, agents.ErrNotFound) {
+			t.Errorf("a late result: %v", err)
+		}
+	}
+}
+
+func TestABusyAgent(t *testing.T) {
+	ctx, mod, ada, _ := setup(t)
+	agents.SetPickUp(mod, time.Minute)
+	a, err := mod.Connect(ctx, ada, agents.Input{Name: "laptop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := mod.Runner(ctx, ada, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Fill the agent's queue with sends that wait; none is taken.
+	cctx, cancel := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	for range agents.Queued {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r.Run(cctx, runner.Request{Method: "GET", URL: "http://localhost/"})
+		}()
+	}
+	for deadline := time.Now().Add(5 * time.Second); agents.Waiting(mod, a.ID) < agents.Queued; {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d jobs queued", agents.Waiting(mod, a.ID))
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if res := r.Run(ctx, runner.Request{Method: "GET", URL: "http://localhost/"}); res.Failure == nil || res.Failure.Code != "agent-busy" {
+		t.Errorf("a full queue gave %+v", res)
+	}
+	// Once those senders give up, their jobs make no room problem: the
+	// next send waits for the agent as usual.
+	cancel()
+	wg.Wait()
+	agents.SetPickUp(mod, 50*time.Millisecond)
+	if res := r.Run(ctx, runner.Request{Method: "GET", URL: "http://localhost/"}); res.Failure == nil || res.Failure.Code != "agent-offline" {
+		t.Errorf("after the senders gave up: %+v", res)
 	}
 }

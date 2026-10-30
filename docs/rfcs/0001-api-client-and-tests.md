@@ -104,7 +104,7 @@ The result holds the response (status, headers, at most 10 MiB of body), timings
 ### The local agent
 
 `signalbox agent` runs on a developer's machine:
-- **Connecting:** it signs in with a personal access token, then holds an outbound WebSocket to `/api/v1/agents/connect`. No inbound port is opened.
+- **Connecting:** it signs in with a personal access token, then holds an outbound WebSocket to `/api/v1/agents/connect`. No inbound port is opened. (Built with HTTPS long polling instead: see [ADR-0037](../adr/0037-local-agent.md).)
 - **Whose requests it runs:** only its owner's. The web app's "Run on: My agent" sends the request to it; the server never sends anyone else's request to an agent.
 - **Network:** the agent uses its own network, so `localhost` and VPN-only hosts work. The egress policy doesn't apply on the agent's side; it's the owner's machine.
 - **What travels to it:** secrets reach the agent decrypted, over TLS, only for requests its owner runs.
