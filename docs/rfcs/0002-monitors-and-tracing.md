@@ -1,8 +1,8 @@
 # 0002. Monitors, alerts, tracing and the live canvas (v0.3 beta)
 
-- Status: In discussion
+- Status: Accepted
 - Authors: project lead, Claude
-- Discussion: the pull request that adds this file
+- Discussion: https://github.com/CemTbi/Signalbox/pull/42
 
 ## Summary
 
@@ -295,6 +295,8 @@ New endpoints, added to `api/openapi.yaml` as they're built:
 - **Wait for NATS before the scheduler and worker.** They coordinate through PostgreSQL rows, as runs already do, so NATS isn't needed for correctness, only to run roles apart.
 
 ## Unresolved questions
+
+The maintainer accepted every proposal below on 30 October 2026.
 
 1. **Metrics endpoint:** should v0.3 add `/metrics` in the Prometheus text format to the ops listener? Proposed: yes, as the first pull request, written by hand rather than with `prometheus/client_golang`, which is a large tree for a text format. The deferred metrics from RFC 0001 (requests run, script time, connected agents) join it.
 2. **Confirming from a second location:** proposed for before 1.0, with NATS and runners in more than one place. In v0.3 a failure is confirmed by a second check from the same runner.
