@@ -25,6 +25,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/testruns/report"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/id"
+	"github.com/CemTbi/Signalbox/internal/platform/metrics"
 	"github.com/CemTbi/Signalbox/internal/platform/postgres/postgrestest"
 	"github.com/CemTbi/Signalbox/internal/platform/secretbox"
 	"github.com/CemTbi/Signalbox/internal/platform/validate"
@@ -368,6 +369,8 @@ func TestStartChecks(t *testing.T) {
 
 func TestCancelQueueAndShutdown(t *testing.T) {
 	f := setup(t)
+	reg := metrics.NewRegistry()
+	f.runs.UseMetrics(reg)
 	col, _ := f.shop(t)
 	f.run.gate = make(chan struct{})
 	// Two runs take both slots and wait on their first request.
@@ -389,6 +392,12 @@ func TestCancelQueueAndShutdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for !strings.Contains(scrape(reg), "signalbox_test_runs_queued 1\n") {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := scrape(reg); !strings.Contains(got, "signalbox_test_runs_running 2\n") {
+		t.Errorf("while two run:\n%s", got)
+	}
 	if got, err := f.runs.Cancel(f.ctx, f.owner, c.ID); err != nil || got.Status != report.Canceled {
 		t.Errorf("cancel queued = %s, %v", got.Status, err)
 	}
@@ -405,6 +414,18 @@ func TestCancelQueueAndShutdown(t *testing.T) {
 	f.runs.Close()
 	if got := f.wait(t, b.ID); got.Status != report.Interrupted || got.Stopped != testruns.StoppedRestart {
 		t.Errorf("after close = %s %s", got.Status, got.Stopped)
+	}
+	// The run cancelled while it waited counts once its turn comes.
+	got := scrape(reg)
+	for _, want := range []string{
+		`signalbox_test_runs_total{status="canceled"} 2`,
+		`signalbox_test_runs_total{status="interrupted"} 1`,
+		"signalbox_test_runs_running 0",
+		"signalbox_test_runs_queued 0",
+	} {
+		if !strings.Contains(got, want+"\n") {
+			t.Errorf("lacks %s:\n%s", want, got)
+		}
 	}
 
 	// A process that died leaves runs that Recover marks.
@@ -446,3 +467,9 @@ func TestNoRunner(t *testing.T) {
 }
 
 func ptr(s string) *string { return &s }
+
+func scrape(reg *metrics.Registry) string {
+	var b bytes.Buffer
+	reg.WriteTo(&b)
+	return b.String()
+}

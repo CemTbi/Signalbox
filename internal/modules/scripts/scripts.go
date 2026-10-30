@@ -18,13 +18,15 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"runtime/metrics"
+	rtmetrics "runtime/metrics"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/grafana/sobek"
+
+	"github.com/CemTbi/Signalbox/internal/platform/metrics"
 )
 
 // sandboxJS is pm.js and the libraries, bundled by sandbox/build.mjs.
@@ -178,6 +180,49 @@ type Options struct {
 	// watches the whole process: it is exact only when one script runs at
 	// a time, as in a runner process. Default 256 MB; -1 turns it off.
 	MaxMemory int64
+	// Metrics counts the scripts sessions run; nil counts nothing.
+	Metrics *Metrics
+}
+
+// Metrics counts scripts and how long they take.
+type Metrics struct {
+	runs     *metrics.Counter
+	duration *metrics.Histogram
+}
+
+// NewMetrics registers the script metrics. A nil registry counts nothing.
+func NewMetrics(r *metrics.Registry) *Metrics {
+	return &Metrics{
+		runs: r.NewCounter("signalbox_scripts_total",
+			`Scripts run, by event ("prerequest" or "test") and outcome: "ok", "error" for a script that threw, "timeout", "memory", or "failed" when it couldn't run.`,
+			"event", "outcome"),
+		duration: r.NewHistogram("signalbox_script_duration_seconds",
+			"How long scripts took, including the requests and timers they waited for, by event.",
+			metrics.DurationBuckets, "event"),
+	}
+}
+
+func (m *Metrics) observe(event string, res *Result, err error, d time.Duration) {
+	if m == nil {
+		return
+	}
+	outcome := "ok"
+	switch {
+	case errors.Is(err, ErrTimeout):
+		outcome = "timeout"
+	case errors.Is(err, ErrMemory):
+		outcome = "memory"
+	case err != nil:
+		outcome = "failed"
+	case res.Error != nil:
+		outcome = "error"
+	}
+	// Events come from code, but only these two are counted by name.
+	if event != "prerequest" && event != "test" {
+		event = "other"
+	}
+	m.runs.Inc(event, outcome)
+	m.duration.Observe(d.Seconds(), event)
 }
 
 // ErrMemory means the script used more memory than its limit.
@@ -185,8 +230,8 @@ var ErrMemory = errors.New("scripts: the script used too much memory")
 
 // heapBytes reads the live heap cheaply, without stopping the world.
 func heapBytes() int64 {
-	sample := []metrics.Sample{{Name: "/memory/classes/heap/objects:bytes"}}
-	metrics.Read(sample)
+	sample := []rtmetrics.Sample{{Name: "/memory/classes/heap/objects:bytes"}}
+	rtmetrics.Read(sample)
 	return int64(min(sample[0].Value.Uint64(), math.MaxInt64)) //nolint:gosec // G115: clamped above.
 }
 
@@ -275,6 +320,13 @@ func (s *Session) warm() error {
 // Run returns an error only if the script ran out of time or couldn't run
 // at all.
 func (s *Session) Run(ctx context.Context, in Input) (*Result, error) {
+	start := time.Now()
+	res, err := s.run(ctx, in)
+	s.opts.Metrics.observe(in.Event, res, err, time.Since(start))
+	return res, err
+}
+
+func (s *Session) run(ctx context.Context, in Input) (*Result, error) {
 	deadline := time.Now().Add(s.opts.Timeout)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d

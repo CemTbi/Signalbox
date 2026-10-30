@@ -3,6 +3,7 @@
 package agents_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/agents"
 	"github.com/CemTbi/Signalbox/internal/modules/runner"
 	"github.com/CemTbi/Signalbox/internal/platform/id"
+	"github.com/CemTbi/Signalbox/internal/platform/metrics"
 	"github.com/CemTbi/Signalbox/internal/platform/postgres/postgrestest"
 	"github.com/CemTbi/Signalbox/internal/platform/validate"
 )
@@ -86,6 +88,11 @@ func TestConnectAndList(t *testing.T) {
 
 func TestRunThroughAnAgent(t *testing.T) {
 	ctx, mod, ada, _ := setup(t)
+	reg := metrics.NewRegistry()
+	mod.UseMetrics(reg, runner.NewMetrics(reg))
+	if got := scrape(reg); !strings.Contains(got, "signalbox_agents_online 0\n") {
+		t.Errorf("before connecting:\n%s", got)
+	}
 	a, err := mod.Connect(ctx, ada, agents.Input{Name: "laptop"})
 	if err != nil {
 		t.Fatal(err)
@@ -126,6 +133,18 @@ func TestRunThroughAnAgent(t *testing.T) {
 		}
 	}
 	wg.Wait()
+	got := scrape(reg)
+	for _, want := range []string{`signalbox_runner_requests_total{where="agent",outcome="response"} 2`, "signalbox_agents_online 1"} {
+		if !strings.Contains(got, want+"\n") {
+			t.Errorf("lacks %s:\n%s", want, got)
+		}
+	}
+}
+
+func scrape(reg *metrics.Registry) string {
+	var b bytes.Buffer
+	reg.WriteTo(&b)
+	return b.String()
 }
 
 func TestAnOfflineAgent(t *testing.T) {

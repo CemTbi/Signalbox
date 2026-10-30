@@ -3,6 +3,7 @@
 package runner_test
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/CemTbi/Signalbox/internal/modules/runner"
 	"github.com/CemTbi/Signalbox/internal/platform/egress"
+	"github.com/CemTbi/Signalbox/internal/platform/metrics"
 )
 
 // loopback lets tests reach their own servers, which the policy refuses
@@ -119,4 +121,35 @@ type nxdomain struct{}
 
 func (nxdomain) LookupNetIP(_ context.Context, _, host string) ([]netip.Addr, error) {
 	return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
+}
+
+func TestCountsRequests(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	defer srv.Close()
+	reg := metrics.NewRegistry()
+	m := runner.NewMetrics(reg)
+	open := newRunner(loopback, runner.Limits{})
+	open.UseMetrics(m)
+	// The default policy refuses loopback.
+	closed := newRunner(egress.Policy{}, runner.Limits{})
+	closed.UseMetrics(m)
+	ctx := context.Background()
+	open.Run(ctx, runner.Request{Method: "GET", URL: srv.URL})
+	open.Run(ctx, runner.Request{Method: "GET", URL: srv.URL})
+	closed.Run(ctx, runner.Request{Method: "GET", URL: srv.URL})
+	m.Observe("agent", runner.Result{Failure: &runner.Failure{Code: "agent-offline"}}, time.Second)
+
+	var b bytes.Buffer
+	reg.WriteTo(&b)
+	for _, want := range []string{
+		`signalbox_runner_requests_total{where="agent",outcome="agent-offline"} 1`,
+		`signalbox_runner_requests_total{where="server",outcome="blocked"} 1`,
+		`signalbox_runner_requests_total{where="server",outcome="response"} 2`,
+		`signalbox_runner_request_duration_seconds_count{where="server"} 3`,
+		`signalbox_runner_request_duration_seconds_bucket{where="agent",le="1"} 1`,
+	} {
+		if !strings.Contains(b.String(), want+"\n") {
+			t.Errorf("lacks %s:\n%s", want, b.String())
+		}
+	}
 }

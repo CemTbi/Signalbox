@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
 	"github.com/CemTbi/Signalbox/internal/platform/id"
+	"github.com/CemTbi/Signalbox/internal/platform/metrics"
 )
 
 type contextKey int
@@ -144,6 +146,62 @@ func logRequests(logger *slog.Logger) func(http.Handler) http.Handler {
 				attrs = append(attrs, id.LogAttr("token_id", id.AccessToken, who.tokenID))
 			}
 			logger.Log(r.Context(), level, "http request", attrs...)
+		})
+	}
+}
+
+// requestMetrics count the API's requests by route, for the ops listener's
+// /metrics.
+type requestMetrics struct {
+	requests *metrics.Counter
+	duration *metrics.Histogram
+	inFlight *metrics.Gauge
+}
+
+func newRequestMetrics(r *metrics.Registry) requestMetrics {
+	return requestMetrics{
+		requests: r.NewCounter("signalbox_http_requests_total", "HTTP requests the api role answered, by route pattern, method and status code.",
+			"route", "method", "code"),
+		duration: r.NewHistogram("signalbox_http_request_duration_seconds", "How long the api role took to answer, by route pattern and method.",
+			metrics.DurationBuckets, "route", "method"),
+		inFlight: r.NewGauge("signalbox_http_requests_in_flight", "HTTP requests the api role is answering now."),
+	}
+}
+
+// measured are the methods counted by name; others count as "other", so
+// clients can't add series by inventing methods.
+var measured = map[string]bool{
+	http.MethodGet: true, http.MethodHead: true, http.MethodPost: true, http.MethodPut: true,
+	http.MethodPatch: true, http.MethodDelete: true, http.MethodOptions: true,
+}
+
+// measureRequests counts requests by the route pattern that served them,
+// such as /api/v1/projects/{projectId}, never by the path, whose IDs
+// would make a series per resource. It runs inside logRequests, which
+// records the status.
+func measureRequests(m requestMetrics) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			m.inFlight.Inc()
+			defer m.inFlight.Dec()
+			rec := &statusRecorder{ResponseWriter: w}
+			next.ServeHTTP(rec, r)
+			// The mux sets the pattern on the request it was handed.
+			route := r.Pattern
+			if route == "" {
+				route = "unmatched"
+			}
+			method := r.Method
+			if !measured[method] {
+				method = "other"
+			}
+			status := rec.status
+			if status == 0 {
+				status = http.StatusOK
+			}
+			m.requests.Inc(route, method, strconv.Itoa(status))
+			m.duration.Observe(time.Since(start).Seconds(), route, method)
 		})
 	}
 }

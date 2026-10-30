@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/CemTbi/Signalbox/internal/platform/egress"
+	"github.com/CemTbi/Signalbox/internal/platform/metrics"
 )
 
 // Header is one header, in the order it was sent or received.
@@ -104,6 +105,7 @@ type Runner struct {
 	client    *http.Client
 	limits    Limits
 	userAgent string
+	metrics   *Metrics
 }
 
 // New returns a runner that sends requests through dialer.
@@ -124,9 +126,50 @@ func New(dialer *egress.Dialer, limits Limits, userAgent string) *Runner {
 	return &Runner{client: client, limits: limits, userAgent: userAgent}
 }
 
+// Metrics counts the requests runners send, wherever they go out from.
+type Metrics struct {
+	requests *metrics.Counter
+	duration *metrics.Histogram
+}
+
+// NewMetrics registers the request metrics. A nil registry counts nothing.
+func NewMetrics(r *metrics.Registry) *Metrics {
+	return &Metrics{
+		requests: r.NewCounter("signalbox_runner_requests_total",
+			`Requests sent, by where they went out from ("server" or "agent") and outcome: "response", or the failure code, such as "dns" or "agent-offline".`,
+			"where", "outcome"),
+		duration: r.NewHistogram("signalbox_runner_request_duration_seconds",
+			"How long requests took, from handing them over to their result, by where they went out from.",
+			metrics.DurationBuckets, "where"),
+	}
+}
+
+// Observe records one request's result, sent from where, which took d.
+func (m *Metrics) Observe(where string, res Result, d time.Duration) {
+	if m == nil {
+		return
+	}
+	outcome := "response"
+	if res.Failure != nil {
+		outcome = res.Failure.Code
+	}
+	m.requests.Inc(where, outcome)
+	m.duration.Observe(d.Seconds(), where)
+}
+
+// UseMetrics counts the requests this runner sends as "server".
+func (r *Runner) UseMetrics(m *Metrics) { r.metrics = m }
+
 // Run sends one request. It never returns an error: what went wrong is in
 // the Result's Failure.
 func (r *Runner) Run(ctx context.Context, req Request) Result {
+	start := time.Now()
+	res := r.run(ctx, req)
+	r.metrics.Observe("server", res, time.Since(start))
+	return res
+}
+
+func (r *Runner) run(ctx context.Context, req Request) Result {
 	httpReq, failure := r.build(ctx, req)
 	if failure != nil {
 		return Result{Failure: failure}

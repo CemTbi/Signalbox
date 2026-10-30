@@ -3,6 +3,7 @@
 package scripts_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/CemTbi/Signalbox/internal/modules/scripts"
+	"github.com/CemTbi/Signalbox/internal/platform/metrics"
 )
 
 var orderResponse = &scripts.Response{
@@ -387,5 +389,38 @@ func TestLateInterruptsDontLeak(t *testing.T) {
 			t.Fatalf("run %d: a quick script failed after a script at its deadline: %v", i, err)
 		}
 		passed(t, res, "quick")
+	}
+}
+
+func TestCountsScripts(t *testing.T) {
+	reg := metrics.NewRegistry()
+	m := scripts.NewMetrics(reg)
+	// Only the endless loop gets a short timeout: a cold session under the
+	// race detector can take longer than that for its first script.
+	s := session(t, scripts.Options{Metrics: m})
+	short := session(t, scripts.Options{Timeout: 200 * time.Millisecond, Metrics: m})
+	ctx := context.Background()
+	for _, run := range []struct {
+		s  *scripts.Session
+		in scripts.Input
+	}{
+		{s, scripts.Input{Event: "prerequest", Source: `pm.variables.set("a", 1);`}},
+		{s, scripts.Input{Event: "test", Source: `throw new Error("no");`}},
+		{short, scripts.Input{Event: "test", Source: "while (true) {}"}},
+	} {
+		run.in.Info.RequestName = "Create order"
+		_, _ = run.s.Run(ctx, run.in)
+	}
+	var b bytes.Buffer
+	reg.WriteTo(&b)
+	for _, want := range []string{
+		`signalbox_scripts_total{event="prerequest",outcome="ok"} 1`,
+		`signalbox_scripts_total{event="test",outcome="error"} 1`,
+		`signalbox_scripts_total{event="test",outcome="timeout"} 1`,
+		`signalbox_script_duration_seconds_count{event="test"} 2`,
+	} {
+		if !strings.Contains(b.String(), want+"\n") {
+			t.Errorf("lacks %s:\n%s", want, b.String())
+		}
 	}
 }

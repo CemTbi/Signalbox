@@ -77,6 +77,27 @@ func TestServerStartsServesAndStops(t *testing.T) {
 		t.Errorf("a new installation should need setup: %s", b)
 	}
 
+	// The ops listener serves metrics, which count the request above by
+	// its route; the api listener doesn't serve them.
+	metrics := get(t, "http://"+srv.OpsAddr()+"/metrics")
+	for _, want := range []string{
+		`signalbox_http_requests_total{route="/api/v1/setup",method="GET",code="200"} 1`,
+		`signalbox_build_info{version="`,
+		"# TYPE signalbox_runner_requests_total counter",
+		"# TYPE signalbox_scripts_total counter",
+		"signalbox_agents_online 0",
+		"signalbox_test_runs_running 0",
+		"signalbox_db_connections_max ",
+		"go_goroutines ",
+	} {
+		if !strings.Contains(metrics, want) {
+			t.Errorf("/metrics lacks %q:\n%s", want, metrics)
+		}
+	}
+	if strings.Contains(get(t, "http://"+srv.HTTPAddr()+"/metrics"), "go_goroutines") {
+		t.Error("the api listener serves metrics")
+	}
+
 	cancel()
 	select {
 	case err := <-done:
@@ -86,6 +107,20 @@ func TestServerStartsServesAndStops(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("server did not stop")
 	}
+}
+
+func get(t *testing.T, url string) string {
+	t.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 func TestRunFailsWhenTheDatabaseRejectsCredentials(t *testing.T) {

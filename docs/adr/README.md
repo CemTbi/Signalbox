@@ -43,3 +43,4 @@ Write a new ADR by copying [template.md](template.md) to the next number. Propos
 | [0035](0035-contract-tests.md) | Contract tests from published versions | Accepted |
 | [0036](0036-ci-templates.md) | CI templates for test suites | Accepted |
 | [0037](0037-local-agent.md) | The local agent asks for work over HTTPS | Accepted |
+| [0038](0038-metrics.md) | Metrics in the Prometheus text format, written by hand | Accepted |

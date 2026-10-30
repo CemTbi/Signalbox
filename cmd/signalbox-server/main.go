@@ -97,7 +97,7 @@ environment, or name a file that holds one with the variable plus _FILE:
 	f.StringVar(&cfg.HTTPAddr, "http-addr", env("SIGNALBOX_HTTP_ADDR", cfg.HTTPAddr),
 		"address for the web app and REST API [SIGNALBOX_HTTP_ADDR]")
 	f.StringVar(&cfg.OpsAddr, "ops-addr", env("SIGNALBOX_OPS_ADDR", cfg.OpsAddr),
-		"address for health endpoints; keep it off the public network [SIGNALBOX_OPS_ADDR]")
+		"address for health endpoints and /metrics; keep it off the public network [SIGNALBOX_OPS_ADDR]")
 	f.StringVar(&cfg.PublicURL, "public-url", env("SIGNALBOX_PUBLIC_URL", cfg.PublicURL),
 		"the address people open Signalbox at, such as https://signalbox.example.com [SIGNALBOX_PUBLIC_URL]")
 	f.StringVar(&cfg.EgressAllow, "egress-allow", env("SIGNALBOX_EGRESS_ALLOW", cfg.EgressAllow),

@@ -33,6 +33,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/testruns"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/egress"
+	"github.com/CemTbi/Signalbox/internal/platform/metrics"
 	"github.com/CemTbi/Signalbox/internal/platform/postgres"
 	"github.com/CemTbi/Signalbox/internal/platform/secretbox"
 	"github.com/CemTbi/Signalbox/internal/roles"
@@ -46,8 +47,8 @@ type Config struct {
 	Roles string
 	// HTTPAddr is where the api role serves the web app and the REST API.
 	HTTPAddr string
-	// OpsAddr serves /livez and /readyz for every role. Keep it off the
-	// public network.
+	// OpsAddr serves /livez, /readyz and /metrics for every role. Keep it
+	// off the public network.
 	OpsAddr string
 	// DrainDelay is how long readiness fails before listeners close, so
 	// load balancers stop routing traffic first. Use about 5s on Kubernetes.
@@ -173,8 +174,9 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 	}
 
 	build := buildinfo.Get()
+	started := time.Now()
 	checker := health.New("signalbox-server", build.Version)
-	checker.Add(health.Uptime(time.Now()))
+	checker.Add(health.Uptime(started))
 	checker.Add(postgres.Check(db, logger))
 	checker.SetStarting("waiting for the database")
 
@@ -183,9 +185,16 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 		db: db, identity: ids, workspaces: workspaces.New(db, logger),
 	}
 
+	reg := metrics.NewRegistry()
+	reg.RegisterRuntime(started)
+	reg.NewGauge("signalbox_build_info", "The running build: always 1, with the version and commit as labels.", "version", "commit").
+		Set(1, build.Version, build.Commit)
+	postgres.RegisterMetrics(reg, db)
+
 	ops := http.NewServeMux()
 	ops.Handle("GET /livez", checker.LiveHandler())
 	ops.Handle("GET /readyz", checker.ReadyHandler())
+	ops.Handle("GET /metrics", reg.Handler())
 	if s.ops, err = s.bind(ctx, cfg.OpsAddr, ops); err != nil {
 		db.Close()
 		return nil, err
@@ -194,6 +203,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 	// The api role hands requests to a runner in the same process. Runners
 	// in their own processes need NATS, which comes with high availability.
 	var run client.Runner
+	sends := runner.NewMetrics(reg)
 	if slices.Contains(names, roles.Runner) {
 		if !slices.Contains(names, roles.API) {
 			db.Close()
@@ -206,7 +216,9 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 			_ = s.ops.ln.Close()
 			return nil, err
 		}
-		run = runner.New(&egress.Dialer{Policy: policy}, runner.Limits{}, "Signalbox/"+build.Version)
+		r := runner.New(&egress.Dialer{Policy: policy}, runner.Limits{}, "Signalbox/"+build.Version)
+		r.UseMetrics(sends)
+		run = r
 	}
 
 	for _, n := range names {
@@ -217,12 +229,14 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 		s.client = client.New(db, logger, s.workspaces, run)
 		s.client.UseContracts(mods, mods)
 		ag := agents.New(db, logger)
+		ag.UseMetrics(reg, sends)
 		s.client.UseAgents(ag)
 		// Scripts run where requests are sent: in this process, for now.
 		if run != nil {
-			s.client.UseScripts(scripts.NewPool(2, scripts.Options{Send: s.client.ScriptSender()}))
+			s.client.UseScripts(scripts.NewPool(2, scripts.Options{Send: s.client.ScriptSender(), Metrics: scripts.NewMetrics(reg)}))
 		}
 		s.runs = testruns.New(db, logger, s.workspaces, s.client)
+		s.runs.UseMetrics(reg)
 		if kek != nil {
 			s.client.UseSecretKey(kek)
 		} else {
@@ -248,6 +262,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 			Agents:         ag,
 			PublicURL:      publicURL,
 			TrustedProxies: trusted,
+			Metrics:        reg,
 		})
 		if s.api, err = s.bind(ctx, cfg.HTTPAddr, handler); err != nil {
 			_ = s.ops.ln.Close()
