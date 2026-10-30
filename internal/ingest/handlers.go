@@ -27,6 +27,9 @@ const (
 func (s *Server) OTLPHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/traces", func(w http.ResponseWriter, r *http.Request) {
+		// Answers echo what senders sent, such as why a span was refused:
+		// browsers must take them as the type they say they are.
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		if !onlyPost(w, r) {
 			return
 		}
@@ -133,7 +136,7 @@ func writeOTLPResponse(w http.ResponseWriter, res result, asJSON bool) {
 		return
 	}
 	w.Header().Set("Content-Type", mediaProtobuf)
-	_, _ = w.Write(exportResponse(res))
+	_, _ = w.Write(exportResponse(res)) //nolint:gosec // G705: protobuf, served as application/x-protobuf with nosniff
 }
 
 // exportResponse encodes an ExportTraceServiceResponse: empty, or with
@@ -157,6 +160,7 @@ func exportResponse(res result) []byte {
 func (s *Server) ZipkinHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v2/spans", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		if !onlyPost(w, r) {
 			return
 		}
