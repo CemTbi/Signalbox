@@ -394,15 +394,22 @@ func TestLateInterruptsDontLeak(t *testing.T) {
 
 func TestCountsScripts(t *testing.T) {
 	reg := metrics.NewRegistry()
-	s := session(t, scripts.Options{Timeout: 200 * time.Millisecond, Metrics: scripts.NewMetrics(reg)})
+	m := scripts.NewMetrics(reg)
+	// Only the endless loop gets a short timeout: a cold session under the
+	// race detector can take longer than that for its first script.
+	s := session(t, scripts.Options{Metrics: m})
+	short := session(t, scripts.Options{Timeout: 200 * time.Millisecond, Metrics: m})
 	ctx := context.Background()
-	for _, in := range []scripts.Input{
-		{Event: "prerequest", Source: `pm.variables.set("a", 1);`},
-		{Event: "test", Source: `throw new Error("no");`},
-		{Event: "test", Source: "while (true) {}"},
+	for _, run := range []struct {
+		s  *scripts.Session
+		in scripts.Input
+	}{
+		{s, scripts.Input{Event: "prerequest", Source: `pm.variables.set("a", 1);`}},
+		{s, scripts.Input{Event: "test", Source: `throw new Error("no");`}},
+		{short, scripts.Input{Event: "test", Source: "while (true) {}"}},
 	} {
-		in.Info.RequestName = "Create order"
-		_, _ = s.Run(ctx, in)
+		run.in.Info.RequestName = "Create order"
+		_, _ = run.s.Run(ctx, run.in)
 	}
 	var b bytes.Buffer
 	reg.WriteTo(&b)
