@@ -51,8 +51,9 @@ services:
       SIGNALBOX_CLICKHOUSE_URL: clickhouse://signalbox:${CLICKHOUSE_PASSWORD:-signalbox}@clickhouse:9000/signalbox
     ports:
       - "8080:8080"
-      # The ingest role: spans over OTLP/HTTP and Zipkin v2, with an ingest
-      # key from a project's Ingest keys page.
+      # The ingest role: spans over OTLP/gRPC, OTLP/HTTP and Zipkin v2, with
+      # an ingest key from a project's Ingest keys page.
+      - "4317:4317"
       - "4318:4318"
       - "9411:9411"
     depends_on:

@@ -58,7 +58,7 @@ FROM binary-${BINARY} AS binary
 FROM gcr.io/distroless/static-debian13:nonroot
 COPY --from=binary /signalbox-server /signalbox-server
 USER nonroot:nonroot
-EXPOSE 8080 9090 4318 9411
+EXPOSE 8080 9090 4317 4318 9411
 HEALTHCHECK --interval=10s --timeout=4s --start-period=10s --retries=3 CMD ["/signalbox-server", "healthcheck"]
 ENTRYPOINT ["/signalbox-server"]
 CMD ["serve"]
