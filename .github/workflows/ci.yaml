@@ -75,6 +75,49 @@ jobs:
       - name: Check for known vulnerabilities
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
+  action:
+    name: The test action
+    # Runs actions/test as people use it, with a CLI built from this
+    # commit instead of a released one, against a small local API.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Build the CLI
+        run: go build -o "$RUNNER_TEMP/signalbox" ./cmd/signalbox
+      - name: Serve the test API
+        working-directory: actions/test/testdata
+        run: |
+          python3 -m http.server 8000 --bind 127.0.0.1 > /dev/null 2>&1 &
+          curl --retry 10 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:8000/api/status.json
+      - name: A passing suite passes
+        uses: ./actions/test
+        with:
+          collection: actions/test/testdata/status.postman_collection.json
+          signalbox-path: ${{ runner.temp }}/signalbox
+          artifact-name: action-passing
+      - name: A failing suite fails
+        id: failing
+        uses: ./actions/test
+        continue-on-error: true
+        with:
+          collection: actions/test/testdata/status.postman_collection.json
+          env-vars: |
+            expected=down
+          # Without github, so the failure it expects isn't annotated.
+          reporters: cli,junit
+          signalbox-path: ${{ runner.temp }}/signalbox
+          artifact-name: action-failing
+      - name: Check that it failed as expected
+        env:
+          CODE: ${{ steps.failing.outputs.exit-code }}
+          OUTCOME: ${{ steps.failing.outcome }}
+        run: |
+          test "$CODE" = 1 || { echo "::error::The failing suite exited with '$CODE', not 1."; exit 1; }
+          test "$OUTCOME" = failure || { echo "::error::The failing suite's step ended in '$OUTCOME'."; exit 1; }
+
   web:
     name: Web app
     runs-on: ubuntu-latest

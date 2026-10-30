@@ -108,7 +108,7 @@ start: a bad flag, an unreadable file or a server that refused.`,
 	f.IntVar(&opts.delayMs, "delay-request", 0, "milliseconds to wait between requests")
 	f.BoolVar(&opts.bail, "bail", false, "stop at the first request that fails or has a failing test")
 	f.StringArrayVar(&opts.envVars, "env-var", nil, "offline: set an environment variable, as key=value (repeatable)")
-	f.StringVarP(&opts.reporters, "reporter", "r", "cli", "reporters: cli, junit, json and html, comma-separated")
+	f.StringVarP(&opts.reporters, "reporter", "r", "cli", "reporters, comma-separated: cli; github, for annotations and a job summary in GitHub Actions; and junit, json and html files")
 	f.StringVarP(&opts.out, "out", "o", ".", "the directory for junit, json and html reports")
 	f.IntVar(&opts.timeoutMs, "timeout-request", 30000, "offline: milliseconds each request may take")
 	f.StringArrayVar(&opts.allow, "allow", nil, "offline: let requests reach this address range, such as 169.254.0.0/16 (repeatable)")
@@ -162,23 +162,23 @@ func readData(path string) ([]map[string]any, error) {
 	return rows, nil
 }
 
-func checkCommon(opts testRunOptions) (cliOut bool, files []string, err error) {
+func checkCommon(opts testRunOptions) (reporting, error) {
 	if opts.iterations < 0 || opts.iterations > client.MaxIterations {
-		return false, nil, usage("--iterations must be from 1 to %d", client.MaxIterations)
+		return reporting{}, usage("--iterations must be from 1 to %d", client.MaxIterations)
 	}
 	if opts.delayMs < 0 || opts.delayMs > int(client.MaxRunDelay.Milliseconds()) {
-		return false, nil, usage("--delay-request must be from 0 to 60000 milliseconds")
+		return reporting{}, usage("--delay-request must be from 0 to 60000 milliseconds")
 	}
-	cliOut, files, err = reporters(opts.reporters)
+	rep, err := reporters(opts.reporters)
 	if err != nil {
-		return false, nil, usage("%v", err)
+		return reporting{}, usage("%v", err)
 	}
-	return cliOut, files, nil
+	return rep, nil
 }
 
 // runOffline runs a Postman collection file on this machine.
 func runOffline(ctx context.Context, stdout, stderr io.Writer, path string, opts testRunOptions) error {
-	cliOut, files, err := checkCommon(opts)
+	rep, err := checkCommon(opts)
 	if err != nil {
 		return err
 	}
@@ -205,11 +205,11 @@ func runOffline(ctx context.Context, stdout, stderr io.Writer, path string, opts
 	if err != nil {
 		return err
 	}
-	col, rep, err := convert.ReadPostmanCollection(content)
+	col, conversion, err := convert.ReadPostmanCollection(content)
 	if err != nil {
 		return usage("%s: %v", path, err)
 	}
-	for _, n := range rep.Notes {
+	for _, n := range conversion.Notes {
 		if n.Level != convert.Info {
 			where := ""
 			if n.Item != "" {
@@ -277,10 +277,11 @@ func runOffline(ctx context.Context, stdout, stderr io.Writer, path string, opts
 	engine = client.NewEngine(run, pool)
 
 	out := io.Discard
-	if cliOut {
+	if rep.cli {
 		out = stdout
 	}
 	printer := newStepPrinter(out, plan.Name, envName, iterations)
+	gh := &githubReporter{w: stdout, iterations: iterations}
 	r := report.Run{Name: plan.Name, Environment: envName, Iterations: iterations, StartedAt: time.Now()}
 	stopped, err := engine.Run(ctx, plan, client.RunOptions{
 		Iterations: iterations, Data: data, Environment: env, Secrets: secrets,
@@ -290,6 +291,9 @@ func runOffline(ctx context.Context, stdout, stderr io.Writer, path string, opts
 		r.Steps = append(r.Steps, s)
 		r.Totals.Add(s)
 		printer.step(s)
+		if rep.github {
+			gh.step(s)
+		}
 		return nil
 	})
 	r.Duration = time.Since(r.StartedAt)
@@ -308,7 +312,18 @@ func runOffline(ctx context.Context, stdout, stderr io.Writer, path string, opts
 		r.Steps = []report.Step{}
 	}
 	printer.summary(r, stoppedWhy(stopped))
-	paths, werr := writeReports(opts.out, plan.Name, files, func(w io.Writer, format string) error { return report.Write(w, format, r) })
+	if rep.github {
+		var failed []report.Step
+		for _, s := range r.Steps {
+			if s.Failed {
+				failed = append(failed, s)
+			}
+		}
+		if err := appendSummary(githubSummary(r, failed)); err != nil {
+			fmt.Fprintf(stderr, "signalbox: couldn't write the job summary: %v\n", err)
+		}
+	}
+	paths, werr := writeReports(opts.out, plan.Name, rep.files, func(w io.Writer, format string) error { return report.Write(w, format, r) })
 	for _, p := range paths {
 		fmt.Fprintf(out, "Wrote %s\n", p)
 	}

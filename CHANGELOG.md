@@ -7,6 +7,7 @@ All notable changes to Signalbox are recorded here. The format follows [Keep a C
 ### Added
 
 - Spec engine (`pkg/specengine`): parses Swagger 2.0 and OpenAPI 3.0, 3.1 and 3.2; validates against the official JSON Schema for each version; resolves `$ref`s and detects circular references that can never end; lints with the recommended and OWASP API Security rule sets. Every diagnostic carries a line and column.
+- CI templates for test suites: a GitHub Action, `CemTbi/Signalbox/actions/test`, installs a released CLI after checking its checksum, runs a Postman collection or a stored collection with `signalbox test run`, annotates failed requests and tests, adds a summary to the job's page and uploads the reports. A GitLab CI include, `ci/gitlab/signalbox-test.yml`, does the same with its JUnit report in merge requests. `signalbox test run --reporter github` writes the annotations and the summary.
 - Contract tests: a spec page's Contract tests panel, or `POST /api/v1/versions/{versionId}/contract-tests`, makes a collection with a request per operation of a published version, filled from its examples, with a folder per tag. Each checks that its response has a documented status and a body matching the schema, as tests from `Contract`, wherever it runs, against any base URL. `baseUrl` defaults to the spec's server or the version's hosted mock. Generating again for a newer version replaces the generated requests and keeps the items, scripts and variable values people added.
 - `signalbox test run` runs a collection's requests and tests. Offline, it runs a Postman collection file with an optional Postman environment file (`-e`), data file (`-d`) and `--env-var` overrides, and needs no server; requests may reach this machine and private networks, but not cloud metadata addresses unless `--allow` opens them. With `--server`, `--token` and `--collection`, it runs a stored collection on the server and follows it, and Ctrl-C cancels it there. Both print each request as it ends, write JUnit, JSON and HTML reports with `-r` and `-o`, and exit with 1 when something failed.
 - The history list now shows why a request got no response.
@@ -45,3 +46,10 @@ All notable changes to Signalbox are recorded here. The format follows [Keep a C
 
 - `POST /api/v1/spec-checks` now needs a signed-in session.
 - The server now needs PostgreSQL. `make dev-db` starts one for development.
+
+### Security
+
+- go-jose 4.1.6 fixes a denial of service when parsing a JSON Web Key Set with RSA keys (GHSA-mgcc-cww5-fp2q), which an identity provider's keys endpoint could send. golang.org/x/net 0.62.0 fixes two flaws in its HTML parser.
+- Adding a spec no longer freezes the browser tab on YAML whose `info` block holds many blank, indented lines. Finding the title took twice as long with each such line.
+- The script sandbox's faker, which `postman-collection` depends on but which was never bundled, is overridden to 10.6.0, past GHSA-qxc2-j82w-r537.
+- seroval 1.7.3, which the web app's router depends on, fixes two flaws that let crafted values inject script into serialized output (GHSA-9wx9-5pv9-3349, GHSA-f86p-h4j2-7qgj).
