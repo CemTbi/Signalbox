@@ -87,12 +87,14 @@ test("a service's spec is checked, edited, kept in revisions and published", asy
 
   // The docs show the published version, and try it against the mock.
   await versions.getByRole("link", { name: "Read the docs" }).click();
-  // The spec page has the same heading, so wait for the docs to open.
+  // The spec page has the same heading and two Version fields of its own,
+  // and can stay on screen a moment after the URL changes: wait for an
+  // operation, which only the docs show.
   await expect(page).toHaveURL(/\/docs(\?|$)/);
-  await expect(page.getByRole("heading", { level: 1, name: "Orders API" })).toBeVisible();
-  await expect(page.getByLabel("Version", { exact: true })).toHaveValue("1.0.1");
   const operation = page.getByRole("region", { name: "GET /orders/{id}" });
   await expect(operation.getByText("The order.").first()).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Orders API" })).toBeVisible();
+  await expect(page.getByLabel("Version", { exact: true })).toHaveValue("1.0.1");
   await operation.getByRole("button", { name: "Try it against the mock" }).click();
   await operation.getByLabel(/^id/).fill("42");
   await operation.getByRole("button", { name: "Send" }).click();
