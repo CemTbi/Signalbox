@@ -22,6 +22,7 @@ import (
 
 	"github.com/CemTbi/Signalbox/internal/modules/runner"
 	"github.com/CemTbi/Signalbox/internal/platform/id"
+	"github.com/CemTbi/Signalbox/internal/platform/metrics"
 	"github.com/CemTbi/Signalbox/internal/platform/validate"
 )
 
@@ -106,6 +107,8 @@ type Module struct {
 	polled map[uuid.UUID]time.Time
 	// taken are jobs an agent took, by job, waiting for their results.
 	taken map[uuid.UUID]takenJob
+
+	metrics *runner.Metrics
 }
 
 type takenJob struct {
@@ -117,6 +120,31 @@ type takenJob struct {
 func New(db *pgxpool.Pool, logger *slog.Logger) *Module {
 	return &Module{db: db, logger: logger, now: time.Now, pickUp: pickUp, grace: grace,
 		queues: map[uuid.UUID]chan *Job{}, polled: map[uuid.UUID]time.Time{}, taken: map[uuid.UUID]takenJob{}}
+}
+
+// UseMetrics counts the requests agents send in m, and reports how many
+// agents are online in reg.
+func (m *Module) UseMetrics(reg *metrics.Registry, rm *runner.Metrics) {
+	m.metrics = rm
+	reg.NewGaugeFunc("signalbox_agents_online", "Agents that asked this process for work in the last 45 seconds, or are sending requests they took from it.",
+		func() float64 { return float64(m.onlineCount()) })
+}
+
+// onlineCount counts the agents online, as online decides it.
+func (m *Module) onlineCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	agents := map[uuid.UUID]bool{}
+	now := m.now()
+	for a, at := range m.polled {
+		if now.Sub(at) < online {
+			agents[a] = true
+		}
+	}
+	for _, t := range m.taken {
+		agents[t.agent] = true
+	}
+	return len(agents)
 }
 
 const columns = `id, user_id, name, hostname, os, version, created_at, last_seen_at`
@@ -361,6 +389,13 @@ type AgentRunner struct {
 // Run hands the request to the agent and waits for its result. An agent
 // that doesn't take it in time is reported as offline.
 func (r *AgentRunner) Run(ctx context.Context, req runner.Request) runner.Result {
+	start := time.Now()
+	res := r.run(ctx, req)
+	r.m.metrics.Observe("agent", res, time.Since(start))
+	return res
+}
+
+func (r *AgentRunner) run(ctx context.Context, req runner.Request) runner.Result {
 	if req.Timeout <= 0 || req.Timeout > defaultTimeout {
 		req.Timeout = defaultTimeout
 	}

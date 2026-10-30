@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,6 +24,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/testruns/report"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/id"
+	"github.com/CemTbi/Signalbox/internal/platform/metrics"
 	"github.com/CemTbi/Signalbox/internal/platform/validate"
 )
 
@@ -77,6 +79,9 @@ type Module struct {
 	access Access
 	client Client
 	slots  chan struct{}
+	// waiting counts runs waiting for a slot.
+	waiting  atomic.Int64
+	finished *metrics.Counter
 	// ctx ends when the module closes, which interrupts runs.
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -87,6 +92,16 @@ type Module struct {
 func New(db *pgxpool.Pool, logger *slog.Logger, access Access, c Client) *Module {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Module{db: db, logger: logger, access: access, client: c, slots: make(chan struct{}, concurrentRuns), ctx: ctx, cancel: cancel}
+}
+
+// UseMetrics counts the runs this process runs in reg.
+func (m *Module) UseMetrics(reg *metrics.Registry) {
+	m.finished = reg.NewCounter("signalbox_test_runs_total",
+		"Test runs this process ran to the end, by status: passed, failed, canceled or interrupted.", "status")
+	reg.NewGaugeFunc("signalbox_test_runs_running", "Test runs running in this process.",
+		func() float64 { return float64(len(m.slots)) })
+	reg.NewGaugeFunc("signalbox_test_runs_queued", "Test runs in this process waiting for one of its run slots.",
+		func() float64 { return float64(m.waiting.Load()) })
 }
 
 // Recover marks runs whose process stopped, leaving them queued or
@@ -338,10 +353,13 @@ func (m *Module) beat(runID uuid.UUID) (stop func()) {
 func (m *Module) execute(runID uuid.UUID, engine *client.Engine, plan client.Plan, opts client.RunOptions) {
 	ctx := m.ctx
 	log := m.logger.With(id.LogAttr("run_id", id.Run, runID))
+	m.waiting.Add(1)
 	select {
 	case m.slots <- struct{}{}:
+		m.waiting.Add(-1)
 		defer func() { <-m.slots }()
 	case <-ctx.Done():
+		m.waiting.Add(-1)
 		m.finish(runID, report.Interrupted, StoppedRestart)
 		return
 	}
@@ -351,6 +369,8 @@ func (m *Module) execute(runID uuid.UUID, engine *client.Engine, plan client.Pla
 		if err != nil {
 			log.ErrorContext(ctx, "couldn't start a test run", "error", err)
 			m.finish(runID, report.Failed, StoppedError)
+		} else {
+			m.finished.Inc(report.Canceled) // while it waited
 		}
 		return
 	}
@@ -434,10 +454,15 @@ func (m *Module) saveStep(ctx context.Context, runID, itemID uuid.UUID, s report
 func (m *Module) finish(runID uuid.UUID, status, stopped string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(m.ctx), 10*time.Second)
 	defer cancel()
-	if _, err := m.db.Exec(ctx, `
+	tag, err := m.db.Exec(ctx, `
 		UPDATE test_runs SET status = $2, stopped = $3, finished_at = now()
-		WHERE id = $1 AND status IN ('queued', 'running')`, runID, status, stopped); err != nil {
+		WHERE id = $1 AND status IN ('queued', 'running')`, runID, status, stopped)
+	if err != nil {
 		m.logger.ErrorContext(ctx, "couldn't record how a test run ended", "error", err, id.LogAttr("run_id", id.Run, runID))
+		return
+	}
+	if tag.RowsAffected() > 0 {
+		m.finished.Inc(status)
 	}
 }
 

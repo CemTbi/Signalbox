@@ -17,6 +17,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/health"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
+	"github.com/CemTbi/Signalbox/internal/platform/metrics"
 	"github.com/CemTbi/Signalbox/internal/platform/ratelimit"
 	"github.com/CemTbi/Signalbox/internal/roles"
 	"github.com/CemTbi/Signalbox/pkg/mockengine"
@@ -110,6 +111,8 @@ type Deps struct {
 	// TrustedProxies are the reverse proxies whose X-Forwarded-For header
 	// is believed.
 	TrustedProxies []netip.Prefix
+	// Metrics receives the API's request counts; nil counts nothing.
+	Metrics *metrics.Registry
 }
 
 // api holds the handlers' shared state.
@@ -318,6 +321,7 @@ func NewHandler(d Deps) http.Handler {
 	return chain(mux,
 		withRequestID,
 		logRequests(d.Logger),
+		measureRequests(newRequestMetrics(d.Metrics)),
 		recoverPanics(d.Logger),
 		securityHeaders,
 	)
