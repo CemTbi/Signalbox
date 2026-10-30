@@ -226,3 +226,53 @@ func TestABusyAgent(t *testing.T) {
 		t.Errorf("after the senders gave up: %+v", res)
 	}
 }
+
+func TestAnAgentSendingIsBusyNotOffline(t *testing.T) {
+	ctx, mod, ada, _ := setup(t)
+	agents.SetPickUp(mod, 100*time.Millisecond)
+	a, err := mod.Connect(ctx, ada, agents.Input{Name: "laptop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := mod.Runner(ctx, ada, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The agent takes one request and is still sending it.
+	taken := make(chan *agents.Job, 1)
+	go func() {
+		j, err := mod.Next(ctx, ada, a.ID, time.Second)
+		if err != nil || j == nil {
+			t.Errorf("next = %v, %v", j, err)
+		}
+		taken <- j
+	}()
+	first := make(chan runner.Result, 1)
+	go func() {
+		first <- r.Run(ctx, runner.Request{Method: "GET", URL: "http://localhost/slow", Timeout: 5 * time.Second})
+	}()
+	j := <-taken
+	if j == nil {
+		t.FailNow()
+	}
+
+	// It asks for no more work meanwhile, yet counts as online.
+	agents.ForgetPolls(mod)
+	if got, err := mod.Get(ctx, ada, a.ID); err != nil || !got.Online {
+		t.Errorf("while sending: %+v, %v", got, err)
+	}
+	res := r.Run(ctx, runner.Request{Method: "GET", URL: "http://localhost/next"})
+	if res.Failure == nil || res.Failure.Code != "agent-busy" || !strings.Contains(res.Failure.Message, "sending 1 other") {
+		t.Errorf("a request it had no room for: %+v", res)
+	}
+
+	if err := mod.Complete(ctx, ada, a.ID, j.ID, runner.Result{Response: &runner.Response{Status: 200}}); err != nil {
+		t.Fatal(err)
+	}
+	if res := <-first; res.Response == nil {
+		t.Errorf("first = %+v", res)
+	}
+	if got, _ := mod.Get(ctx, ada, a.ID); got.Online {
+		t.Error("an agent that neither asks nor sends is online")
+	}
+}

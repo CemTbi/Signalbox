@@ -19,3 +19,10 @@ const Queued = queued
 
 // Waiting counts the jobs in an agent's queue, given up or not.
 func Waiting(m *Module, agentID uuid.UUID) int { return len(m.queue(agentID)) }
+
+// ForgetPolls makes every agent look as if it never asked for work.
+func ForgetPolls(m *Module) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	clear(m.polled)
+}

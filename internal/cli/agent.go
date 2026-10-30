@@ -164,7 +164,17 @@ func (a *agent) connect(ctx context.Context, in map[string]string) error {
 func (a *agent) serve(ctx context.Context, in map[string]string) error {
 	wait := agentRetryMin
 	for ctx.Err() == nil {
+		// Only ask for work it can start now; the server holds jobs for
+		// it meanwhile, and counts it online while it sends.
+		select {
+		case a.slots <- struct{}{}:
+		case <-ctx.Done():
+			return nil
+		}
 		job, err := a.next(ctx)
+		if err != nil || job == nil {
+			<-a.slots
+		}
 		var ae *apiError
 		switch {
 		case err == nil:
@@ -212,13 +222,9 @@ func (a *agent) next(ctx context.Context) (*agentJob, error) {
 	return &j, nil
 }
 
-// start sends a job's request in the background, when a slot is free.
+// start sends a job's request in the background, in the slot serve took
+// for it.
 func (a *agent) start(ctx context.Context, j agentJob) {
-	select {
-	case a.slots <- struct{}{}:
-	case <-ctx.Done():
-		return
-	}
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()

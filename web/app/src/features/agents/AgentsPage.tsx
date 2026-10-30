@@ -93,7 +93,7 @@ function AgentRow({ agent: a, deleting, onDelete }: { agent: Agent; deleting: bo
         </span>
         <span className="row-sub">
           {details ? `${details} · ` : ""}
-          {a.online ? "asking for work now" : `last seen ${timeFormat.format(new Date(a.lastSeenAt))}`}
+          {a.online ? "ready for your requests" : `last seen ${timeFormat.format(new Date(a.lastSeenAt))}`}
         </span>
       </span>
       <span className="row-actions">

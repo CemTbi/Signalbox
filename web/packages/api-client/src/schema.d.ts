@@ -300,7 +300,7 @@ export interface paths {
         };
         /**
          * List your agents
-         * @description Lists your agents by name, and whether each asked for work in the last 45 seconds. People see only their own agents.
+         * @description Lists your agents by name, and whether each is online. People see only their own agents.
          */
         get: operations["listAgents"];
         put?: never;
@@ -1832,7 +1832,7 @@ export interface components {
         /** @description Why a request got no response. */
         RunnerFailure: {
             /**
-             * @description The kind of failure. `script`: a pre-request script failed, so the request wasn't sent. `skipped`: a pre-request script skipped it. `too-large`: in a run, the request was too large once its variables were filled in. `agent-offline`: the agent didn't take the request within 15 seconds. `agent-busy`: 64 requests were already waiting for the agent. `agent-timeout`: the agent took the request but didn't return its result.
+             * @description The kind of failure. `script`: a pre-request script failed, so the request wasn't sent. `skipped`: a pre-request script skipped it. `too-large`: in a run, the request was too large once its variables were filled in. `agent-offline`: the agent didn't take the request within 15 seconds. `agent-busy`: 64 requests were already waiting for the agent, or it was sending as many as it may and didn't take this one within 15 seconds. `agent-timeout`: the agent took the request but didn't return its result.
              * @example timeout
              * @enum {string}
              */
@@ -1910,7 +1910,7 @@ export interface components {
              */
             version?: string;
             /**
-             * @description Whether it asked for work in the last 45 seconds.
+             * @description Whether it asked for work in the last 45 seconds, or is sending requests it took.
              * @example true
              */
             online: boolean;

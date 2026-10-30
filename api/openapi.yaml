@@ -616,7 +616,7 @@ paths:
     get:
       operationId: listAgents
       summary: List your agents
-      description: Lists your agents by name, and whether each asked for work in the last 45 seconds. People see only their own agents.
+      description: Lists your agents by name, and whether each is online. People see only their own agents.
       tags: [Agents]
       responses:
         '200':
@@ -3623,7 +3623,7 @@ components:
       description: Why a request got no response.
       required: [code, message]
       properties:
-        code: {type: string, enum: [invalid-request, blocked, dns, connect, tls, timeout, network, script, skipped, too-large, agent-offline, agent-busy, agent-timeout], description: 'The kind of failure. `script`: a pre-request script failed, so the request wasn''t sent. `skipped`: a pre-request script skipped it. `too-large`: in a run, the request was too large once its variables were filled in. `agent-offline`: the agent didn''t take the request within 15 seconds. `agent-busy`: 64 requests were already waiting for the agent. `agent-timeout`: the agent took the request but didn''t return its result.', examples: [timeout]}
+        code: {type: string, enum: [invalid-request, blocked, dns, connect, tls, timeout, network, script, skipped, too-large, agent-offline, agent-busy, agent-timeout], description: 'The kind of failure. `script`: a pre-request script failed, so the request wasn''t sent. `skipped`: a pre-request script skipped it. `too-large`: in a run, the request was too large once its variables were filled in. `agent-offline`: the agent didn''t take the request within 15 seconds. `agent-busy`: 64 requests were already waiting for the agent, or it was sending as many as it may and didn''t take this one within 15 seconds. `agent-timeout`: the agent took the request but didn''t return its result.', examples: [timeout]}
         message: {type: string, description: What went wrong, in words a person can act on., examples: ["The server didn't answer in time."]}
     RunnerTimings:
       type: object
@@ -3656,7 +3656,7 @@ components:
         hostname: {type: string, description: The machine's hostname., examples: [ada-laptop.local]}
         os: {type: string, description: The machine's system and architecture., examples: [darwin/arm64]}
         version: {type: string, description: The agent's version., examples: [0.2.0]}
-        online: {type: boolean, description: Whether it asked for work in the last 45 seconds., examples: [true]}
+        online: {type: boolean, description: 'Whether it asked for work in the last 45 seconds, or is sending requests it took.', examples: [true]}
         createdAt: {$ref: '#/components/schemas/Timestamp'}
         lastSeenAt: {$ref: '#/components/schemas/Timestamp'}
     AgentList:

@@ -127,10 +127,24 @@ func readAgent(row pgx.Row) (Agent, error) {
 	return a, err
 }
 
+// online says whether an agent asked for work recently, or is sending
+// requests it took: a busy agent doesn't ask for more.
 func (m *Module) online(a *Agent) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	a.Online = m.now().Sub(m.polled[a.ID]) < online
+	a.Online = m.now().Sub(m.polled[a.ID]) < online || m.sendingLocked(a.ID) > 0
+}
+
+// sendingLocked counts the jobs an agent took and hasn't answered. m.mu
+// must be held.
+func (m *Module) sendingLocked(agentID uuid.UUID) int {
+	n := 0
+	for _, t := range m.taken {
+		if t.agent == agentID {
+			n++
+		}
+	}
+	return n
 }
 
 // Connect registers an agent of the user, or finds the one with its name:
@@ -369,10 +383,15 @@ func (r *AgentRunner) Run(ctx context.Context, req runner.Request) runner.Result
 			// in between.
 			m.mu.Lock()
 			_, taken := m.taken[j.ID]
+			sending := 0
 			if !taken {
 				j.giveUp()
+				sending = m.sendingLocked(r.agent.ID)
 			}
 			m.mu.Unlock()
+			if !taken && sending > 0 {
+				return failure("agent-busy", fmt.Sprintf("The agent %s is sending %d other requests and didn't take this one in time. Try again in a moment, or start it with a higher --concurrency.", r.agent.Name, sending))
+			}
 			if !taken {
 				return failure("agent-offline", fmt.Sprintf("The agent %s didn't take the request. Check that `signalbox agent` is running on %s.", r.agent.Name, orName(r.agent.Hostname, "its machine")))
 			}
