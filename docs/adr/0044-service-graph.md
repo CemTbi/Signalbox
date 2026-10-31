@@ -28,7 +28,10 @@ A call is a pair of spans: the caller's client span, and the callee's server spa
 - **Delay:** a minute is built 90 seconds after it ends, so its last calls' handlers have been sent. Lines appear about two minutes after the calls.
 
 **The worker role** is available, and runs the job.
-- **Taking turns:** every process with the role runs it. A minute is claimed by locking a row in PostgreSQL (`telemetry_jobs`), and released with the minute built, so processes take turns and never build a minute twice.
+- **Taking turns:** every process with the role runs it. A minute is claimed by locking a row in PostgreSQL (`telemetry_jobs`), and released with the minute built, so processes take turns.
+- **Building a minute again is harmless.** If ClickHouse takes a minute's rows but PostgreSQL then can't record the minute as built, the minute is built again.
+  - **Why it's safe:** a minute's rows are computed whole, so the table is a `ReplacingMergeTree` versioned by build time, read with `FINAL`. A new build replaces the old rows instead of adding to them.
+  - **What didn't work:** ClickHouse's insert deduplication by token was tried first. It dropped a repeated one-row insert, but not this query's several rows, so it isn't relied on.
 - **Catching up:** a worker that was stopped catches up on at most the last hour; older minutes stay without lines.
 - **Dependencies:** like ingest, the worker needs only PostgreSQL and ClickHouse, so it can run alone.
 - **Metrics:** minutes built, minutes failed, how long a minute takes, and how far the job is behind.

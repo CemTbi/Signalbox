@@ -292,7 +292,7 @@ func (t *Traces) Graph(ctx context.Context, userID, environmentID uuid.UUID, fro
 	rows, err := t.conn.Query(ctx, `
 		SELECT client_service, target, toString(target_kind), target_system, sum(calls), sum(errors), sum(duration_ns_sum),
 		       tupleElement(sumMap(latency_histogram), 1), tupleElement(sumMap(latency_histogram), 2)
-		FROM service_edges_1m
+		FROM service_edges_1m FINAL
 		WHERE environment_id = {env:UUID} AND minute >= toStartOfMinute({from:DateTime64(9)}) AND minute < {to:DateTime64(9)}
 		GROUP BY client_service, target, target_kind, target_system`,
 		clickhouse.Named("env", environmentID), clickhouse.Named("from", from), clickhouse.Named("to", to))

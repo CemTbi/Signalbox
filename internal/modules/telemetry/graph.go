@@ -141,6 +141,9 @@ func (j *GraphJob) next(ctx context.Context) (bool, error) {
 // Children may start up to 30 seconds before their parent, for clocks
 // that disagree, and up to 90 seconds after the minute.
 func BuildGraphMinute(ctx context.Context, conn clickhouse.Conn, minute time.Time) error {
+	minute = minute.UTC().Truncate(time.Minute)
+	// A minute built again replaces its rows (a ReplacingMergeTree by
+	// built_at, read with FINAL), so its calls never count twice.
 	err := conn.Exec(ctx, `
 		INSERT INTO service_edges_1m
 		WITH
@@ -176,7 +179,8 @@ func BuildGraphMinute(ctx context.Context, conn clickhouse.Conn, minute time.Tim
 			count() AS calls,
 			countIf(c.status_code = 'error') AS errors,
 			sum(c.duration_ns) AS duration_ns_sum,
-			sumMap([toUInt8(least(255, greatest(0, floor(4 * log2(greatest(c.duration_ns, 1000) / 1000)))))], [toUInt64(1)]) AS latency_histogram
+			sumMap([toUInt8(least(255, greatest(0, floor(4 * log2(greatest(c.duration_ns, 1000) / 1000)))))], [toUInt64(1)]) AS latency_histogram,
+			now64(3) AS built_at
 		FROM calls AS c
 		LEFT JOIN handlers AS h
 			ON c.environment_id = h.environment_id AND c.trace_id = h.trace_id AND c.span_id = h.parent_span_id
@@ -185,7 +189,7 @@ func BuildGraphMinute(ctx context.Context, conn clickhouse.Conn, minute time.Tim
 		WHERE (h.service_name != '' AND h.service_name != c.service_name)
 		   OR (h.service_name = '' AND c.server_address != c.service_name AND (c.db_system != '' OR c.server_address != ''))
 		GROUP BY c.environment_id, client_service, target_kind, target, target_system`,
-		clickhouse.Named("minute", minute.UTC().Truncate(time.Minute)))
+		clickhouse.Named("minute", minute))
 	if err != nil {
 		return fmt.Errorf("build the service graph for %s: %w", minute.Format(time.RFC3339), err)
 	}

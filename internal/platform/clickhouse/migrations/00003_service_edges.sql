@@ -6,7 +6,10 @@
 -- (database, with its system in target_system), or a host outside the
 -- traced services (external). Calls are counted from the caller's client
 -- or producer spans, with their durations: what the caller waited.
--- A worker fills it a minute at a time; see telemetry.GraphJob.
+-- A worker fills it a minute at a time; see telemetry.GraphJob. Each
+-- minute's rows are computed whole, so building a minute again, as after a
+-- failed commit, replaces them rather than adding to them: the table keeps
+-- the newest build of each row, and reads use FINAL.
 
 -- +goose NO TRANSACTION
 -- +goose Up
@@ -18,12 +21,13 @@ CREATE TABLE IF NOT EXISTS service_edges_1m
     target_kind       Enum8('service' = 1, 'database' = 2, 'external' = 3),
     target            LowCardinality(String),
     target_system     LowCardinality(String),
-    calls             SimpleAggregateFunction(sum, UInt64) CODEC(T64, ZSTD(1)),
-    errors            SimpleAggregateFunction(sum, UInt64) CODEC(T64, ZSTD(1)),
-    duration_ns_sum   SimpleAggregateFunction(sum, UInt64) CODEC(T64, ZSTD(1)),
-    latency_histogram SimpleAggregateFunction(sumMap, Tuple(Array(UInt8), Array(UInt64))) CODEC(ZSTD(1))
+    calls             UInt64 CODEC(T64, ZSTD(1)),
+    errors            UInt64 CODEC(T64, ZSTD(1)),
+    duration_ns_sum   UInt64 CODEC(T64, ZSTD(1)),
+    latency_histogram Tuple(Array(UInt8), Array(UInt64)) CODEC(ZSTD(1)),
+    built_at          DateTime64(3) CODEC(ZSTD(1))
 )
-ENGINE = AggregatingMergeTree
+ENGINE = ReplacingMergeTree(built_at)
 PARTITION BY toDate(minute)
 ORDER BY (environment_id, client_service, target_kind, target, target_system, minute)
 TTL toDate(minute) + INTERVAL 7 DAY

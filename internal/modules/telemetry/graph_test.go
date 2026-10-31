@@ -130,6 +130,20 @@ func TestServiceGraph(t *testing.T) {
 		t.Errorf("%d lines, want 4: %+v", len(edges), edges)
 	}
 
+	// Building the minute again, as after a failed commit, counts nothing
+	// twice.
+	if err := telemetry.BuildGraphMinute(ctx, conn, minute); err != nil {
+		t.Fatal(err)
+	}
+	again, err := telemetry.NewTraces(conn, ws).Graph(ctx, owner, env, minute.Add(-time.Hour), minute.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range again {
+		if e.From == "web" && e.Target == "orders" && e.Calls != 2 {
+			t.Errorf("built twice: %+v", e)
+		}
+	}
 	// The next minute is built once it's due, and the job doesn't repeat a
 	// minute.
 	at = at.Add(time.Minute)
