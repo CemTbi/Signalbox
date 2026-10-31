@@ -8,7 +8,7 @@ import { api, describeError, unwrap } from "../../api";
 import { LoadError, Loading, PageHeader } from "../../components/Page";
 import { collectionQuery, projectQuery, runKey, runQuery, running, runsKey, workspaceQuery } from "../../queries";
 import { contentType, formatMs, formatSize, prettyBody } from "../requests/model";
-import { ConsoleList, ScriptErrors, TestList } from "../requests/ResponseView";
+import { ConsoleList, OpenTrace, ScriptErrors, TestList } from "../requests/ResponseView";
 import { appendSteps, reportUrl, statusLabel, stepState, stepTests, stoppedReason } from "./model";
 
 const runRoute = getRouteApi("/_app/runs/$runId");
@@ -75,7 +75,7 @@ export function RunPage() {
       ) : null}
       <RunSummary run={r} />
       {steps.error ? <LoadError message={describeError(steps.error)} /> : null}
-      <StepList runId={r.id} steps={steps.steps} live={live} />
+      <StepList runId={r.id} projectId={r.projectId} steps={steps.steps} live={live} />
     </div>
   );
 }
@@ -161,7 +161,7 @@ function useRunSteps(runId: string, finished: boolean) {
 }
 
 /** A run's steps, in order, each opening to its details. */
-export function StepList({ runId, steps, live }: { runId: string; steps: RunStep[]; live: boolean }) {
+export function StepList({ runId, projectId, steps, live }: { runId: string; projectId?: string; steps: RunStep[]; live: boolean }) {
   const [failedOnly, setFailedOnly] = useState(false);
   const filterId = useId();
   const shown = failedOnly ? steps.filter((s) => s.failed) : steps;
@@ -181,7 +181,7 @@ export function StepList({ runId, steps, live }: { runId: string; steps: RunStep
       {steps.length > 0 && shown.length === 0 ? <p className="field-hint">No request failed.</p> : null}
       <ol className="steps" aria-label="Requests of the run">
         {shown.map((s) => (
-          <StepRow key={s.seq} runId={runId} step={s} showIteration={iterations > 1} />
+          <StepRow key={s.seq} runId={runId} projectId={projectId} step={s} showIteration={iterations > 1} />
         ))}
       </ol>
       {live && steps.length > 0 ? <p className="field-hint">More requests appear as the run goes on.</p> : null}
@@ -189,7 +189,7 @@ export function StepList({ runId, steps, live }: { runId: string; steps: RunStep
   );
 }
 
-function StepRow({ runId, step: s, showIteration }: { runId: string; step: RunStep; showIteration: boolean }) {
+function StepRow({ runId, projectId, step: s, showIteration }: { runId: string; projectId?: string; step: RunStep; showIteration: boolean }) {
   const [open, setOpen] = useState(false);
   const detailId = useId();
   const state = stepState(s);
@@ -211,14 +211,14 @@ function StepRow({ runId, step: s, showIteration }: { runId: string; step: RunSt
       </button>
       {open ? (
         <div id={detailId} className="step-detail">
-          <StepDetail runId={runId} seq={s.seq} />
+          <StepDetail runId={runId} seq={s.seq} projectId={projectId} />
         </div>
       ) : null}
     </li>
   );
 }
 
-function StepDetail({ runId, seq }: { runId: string; seq: number }) {
+function StepDetail({ runId, seq, projectId }: { runId: string; seq: number; projectId?: string }) {
   const step = useQuery({
     queryKey: ["runs", runId, "steps", "detail", seq],
     queryFn: () => unwrap(api.GET("/api/v1/runs/{runId}/steps/{seq}", { params: { path: { runId, seq } } })),
@@ -226,17 +226,17 @@ function StepDetail({ runId, seq }: { runId: string; seq: number }) {
   });
   if (step.isPending) return <Loading label="Loading the request…" />;
   if (step.isError) return <LoadError message={describeError(step.error)} onRetry={() => void step.refetch()} />;
-  return <StepView step={step.data} />;
+  return <StepView step={step.data} projectId={projectId} />;
 }
 
 /** One step in full: what was sent, what came back, and what the scripts did. */
-export function StepView({ step: s }: { step: RunStep }) {
+export function StepView({ step: s, projectId }: { step: RunStep; projectId?: string }) {
   const [tab, setTab] = useState<"tests" | "console" | "response" | "request">(s.scripts?.tests.length ? "tests" : "response");
   const r = s.response;
   return (
     <div className="stack-tight">
       <p className="mono step-url">
-        {s.method} {s.url}
+        {s.method} {s.url} <OpenTrace projectId={projectId} traceId={s.traceId} />
       </p>
       {s.failure ? (
         <p className={s.failure.code === "skipped" ? "notice" : "response-failure"}>

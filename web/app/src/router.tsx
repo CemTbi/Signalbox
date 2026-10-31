@@ -31,6 +31,8 @@ import { RunSetupPage } from "./features/runs/RunSetupPage";
 import { ServicePage } from "./features/services/ServicePage";
 import { SpecPage } from "./features/services/SpecPage";
 import { SpecCheck } from "./features/spec-check/SpecCheck";
+import { TracePage } from "./features/traces/TracePage";
+import { TracesPage, validateTracesSearch } from "./features/traces/TracesPage";
 import { WorkspaceLayout, WorkspaceProjects, WorkspacesPage } from "./features/workspaces/pages";
 import { safeRedirect, sessionQuery, setupStatusQuery } from "./session";
 
@@ -153,6 +155,19 @@ const ingestKeysRoute = createRoute({
   component: IngestKeysPage,
 });
 
+const tracesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/projects/$projectId/traces",
+  validateSearch: validateTracesSearch,
+  component: TracesPage,
+});
+
+const traceRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/projects/$projectId/traces/$traceId",
+  component: TracePage,
+});
+
 const runSetupRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/collections/$collectionId/runs",
@@ -224,6 +239,8 @@ const routeTree = rootRoute.addChildren([
     projectRoute,
     requestsRoute,
     ingestKeysRoute,
+    tracesRoute,
+    traceRoute,
     runSetupRoute,
     runRoute,
     serviceRoute,

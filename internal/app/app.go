@@ -259,6 +259,12 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 		run = r
 	}
 
+	// The pool connects when it's first used, after startup waits for it.
+	if s.ch, err = clickhouse.Open(cfg.ClickHouseURL); err != nil {
+		return nil, s.abort(err)
+	}
+	checker.Add(clickhouse.Check(s.ch, logger))
+
 	keys := telemetry.NewKeys(db, logger, s.workspaces)
 	for _, n := range names {
 		if n != roles.API {
@@ -300,21 +306,15 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 			Contracts:      s.client,
 			Agents:         ag,
 			IngestKeys:     keys,
+			Traces:         telemetry.NewTraces(s.ch, s.workspaces),
 			PublicURL:      publicURL,
 			TrustedProxies: trusted,
 			Metrics:        reg,
 		})
 		if s.api, err = s.bind(ctx, cfg.HTTPAddr, handler); err != nil {
-			_ = s.ops.ln.Close()
-			db.Close()
-			return nil, err
+			return nil, s.abort(err)
 		}
 	}
-	// The pool connects when it's first used, after startup waits for it.
-	if s.ch, err = clickhouse.Open(cfg.ClickHouseURL); err != nil {
-		return nil, s.abort(err)
-	}
-	checker.Add(clickhouse.Check(s.ch, logger))
 
 	if slices.Contains(names, roles.Ingest) {
 		if cfg.IngestSpansPerSecond < 1 {

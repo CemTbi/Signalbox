@@ -2350,3 +2350,245 @@ pre.code {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* Traces */
+:root {
+  /* Services in a trace, told apart by hue; never by color alone, since
+     each row also names its service. */
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --s4: #c98500;
+  --s5: #d6578a;
+  --s6: #7b5bd6;
+  --s7: #0096a6;
+  --s8: #8a6d3b;
+  --critical: #10181b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --s4: #e0a020;
+    --s5: #d55181;
+    --s6: #9a80ef;
+    --s7: #1fb3c2;
+    --s8: #b08f58;
+    --critical: #e2e9eb;
+  }
+}
+
+.trace-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+}
+
+.trace-filters .field {
+  margin: 0;
+}
+
+.trace-filters input:not([type="checkbox"]) {
+  width: 11rem;
+}
+
+.trace-filters .checkbox-field {
+  padding-bottom: 6px;
+}
+
+table.traces,
+table.waterfall {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+table.traces th,
+table.traces td {
+  padding: 8px 10px 8px 0;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--rule);
+}
+
+table.traces .badge {
+  margin-left: 6px;
+}
+
+.badge.bad {
+  /* Small text in red is too faint to read; the fill and border carry
+     the color. */
+  color: var(--ink);
+  background: var(--bad-soft);
+  border-color: var(--bad);
+}
+
+.duration-bar {
+  display: block;
+  height: 4px;
+  margin-bottom: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0.6;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  display: inline-block;
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.swatch.critical {
+  background: transparent;
+  border: 2px solid var(--critical);
+}
+
+table.waterfall {
+  table-layout: fixed;
+}
+
+table.waterfall thead th {
+  padding: 6px 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--muted);
+  border-bottom: 1px solid var(--rule-strong);
+}
+
+table.waterfall th:first-child {
+  width: 38%;
+}
+
+table.waterfall tbody th {
+  padding: 2px 8px 2px 0;
+  font-weight: 400;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+table.waterfall tbody tr {
+  border-bottom: 1px solid var(--rule);
+}
+
+table.waterfall tbody tr.selected {
+  background: var(--accent-soft);
+}
+
+.timeline-head,
+.timeline {
+  position: relative;
+}
+
+.timeline-head .tick {
+  position: absolute;
+  top: 6px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.timeline-head .tick:first-of-type {
+  transform: none;
+}
+
+.timeline-head .tick:last-of-type {
+  transform: translateX(-100%);
+}
+
+.timeline {
+  height: 28px;
+}
+
+.timeline .bar {
+  position: absolute;
+  top: 8px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.timeline .bar.critical {
+  outline: 2px solid var(--critical);
+  outline-offset: 1px;
+}
+
+.span-duration {
+  margin-left: auto;
+  padding-left: 12px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+.span-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 4px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.span-name:hover {
+  background: var(--surface-2);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 8px 20px;
+  margin: 0;
+}
+
+.facts dt {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.subsection-title {
+  margin: 12px 0 6px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.open-trace {
+  margin-left: 8px;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+}

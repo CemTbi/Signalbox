@@ -169,6 +169,7 @@ type SearchFilter struct {
 	From, To       time.Time
 	Service        string
 	Name           string
+	Operation      string
 	OnlyErrors     bool
 	MinDuration    time.Duration
 	HTTPRoute      string
@@ -252,6 +253,9 @@ func searchConditions(env uuid.UUID, f SearchFilter) ([]string, []any, error) {
 	}
 	if f.Name != "" {
 		add("span_name = {name:String}", "name", f.Name)
+	}
+	if f.Operation != "" {
+		add("operation = {operation:String}", "operation", f.Operation)
 	}
 	if f.OnlyErrors {
 		where = append(where, "status_code = 'error'")

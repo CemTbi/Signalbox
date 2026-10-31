@@ -1,11 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { HistoryEntry } from "@signalbox/api-client";
+import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { contentType, formatMs, formatSize, phases, prettyBody } from "./model";
 
+/** Opens the trace a request was sent in, when the project is known. */
+export function OpenTrace({ projectId, traceId }: { projectId?: string; traceId?: string }) {
+  if (!projectId || !traceId) return null;
+  return (
+    <Link to="/projects/$projectId/traces/$traceId" params={{ projectId, traceId }} className="open-trace">
+      Open trace
+    </Link>
+  );
+}
+
 /** What came of a request: the response, or why there was none. */
-export function ResponseView({ entry }: { entry: HistoryEntry }) {
+export function ResponseView({ entry, projectId }: { entry: HistoryEntry; projectId?: string }) {
   const scripts = entry.scripts;
   const [tab, setTab] = useState<"body" | "headers" | "timings" | "tests" | "console">(scripts?.tests.length ? "tests" : "body");
   const r = entry.response;
@@ -37,7 +48,8 @@ export function ResponseView({ entry }: { entry: HistoryEntry }) {
           {r.truncated ? " (cut)" : ""}
           {r.redirects > 0 ? ` · ${r.redirects} redirect${r.redirects === 1 ? "" : "s"}` : ""}
           {entry.agent ? ` · from ${entry.agent}` : ""}
-        </span>
+        </span>{" "}
+        <OpenTrace projectId={projectId} traceId={entry.traceId} />
       </p>
       <div className="tabs" role="tablist" aria-label="Response parts">
         <button type="button" role="tab" aria-selected={tab === "body"} onClick={() => setTab("body")}>

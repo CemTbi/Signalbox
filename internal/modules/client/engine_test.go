@@ -84,8 +84,12 @@ func TestRunCarriesVariablesAcrossStepsAndIterations(t *testing.T) {
 	}
 	// The token a script set fills in auth, and is sent, but isn't secret:
 	// only environment variables marked secret are masked.
-	if h := run.got[2].Headers; len(h) != 1 || h[0].Value != "Bearer tok-from-login" {
+	if h := run.got[2].Headers; len(h) != 2 || h[0].Value != "Bearer tok-from-login" || h[1].Key != "traceparent" {
 		t.Errorf("profile headers = %v", h)
+	}
+	// Each request is in a trace of its own, which its entry names.
+	if id := got[2].Entry.TraceID; len(id) != 32 || run.got[2].Headers[1].Value[3:35] != id || got[1].Entry.TraceID == id {
+		t.Errorf("trace IDs = %q, %q", got[1].Entry.TraceID, id)
 	}
 	if h := got[2].Entry.Headers; h[0].Value != "•••" {
 		t.Errorf("kept profile headers = %v", h)

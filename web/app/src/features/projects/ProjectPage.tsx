@@ -45,6 +45,9 @@ export function ProjectPage() {
             <Link to="/projects/$projectId/ingest-keys" params={{ projectId: p.id }} className="button ghost">
               Ingest keys
             </Link>
+            <Link to="/projects/$projectId/traces" params={{ projectId: p.id }} className="button secondary">
+              Traces
+            </Link>
             <Link to="/projects/$projectId/requests" params={{ projectId: p.id }} className="button secondary">
               Requests
             </Link>

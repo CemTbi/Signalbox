@@ -48,3 +48,4 @@ Write a new ADR by copying [template.md](template.md) to the next number. Propos
 | [0040](0040-span-ingest.md) | Receiving spans: ingest keys, OTLP/HTTP and Zipkin | Accepted |
 | [0041](0041-otlp-grpc.md) | OTLP over gRPC, without the generated service | Accepted |
 | [0042](0042-demo-shop.md) | The demo shop | Accepted |
+| [0043](0043-reading-traces.md) | Reading traces, and opening a request's trace | Accepted |
