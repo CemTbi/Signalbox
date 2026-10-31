@@ -2007,6 +2007,77 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '404': {$ref: '#/components/responses/NotFound'}
         default: {$ref: '#/components/responses/Error'}
+  /api/v1/environments/{environmentId}/graph:
+    parameters:
+      - $ref: '#/components/parameters/EnvironmentId'
+    get:
+      operationId: getServiceGraph
+      summary: Get the service graph
+      description: |
+        Returns who called whom in the environment over a time range, the last hour by default: a line for each pair, with its calls, errors and latency as the caller saw them. A target is another service, a database that isn't traced, named by its address and `db.system`, or a host outside the traced services.
+
+        The graph is built from the spans a minute at a time, about two minutes after each minute ends. Every member of the workspace may read it.
+      tags: [Tracing]
+      parameters:
+        - name: from
+          in: query
+          description: The start of the time range, RFC 3339. An hour before `to` by default.
+          schema: {type: string, format: date-time, examples: ['2026-10-31T11:00:00Z']}
+        - name: to
+          in: query
+          description: The end of the time range, RFC 3339. Now by default.
+          schema: {type: string, format: date-time, examples: ['2026-10-31T12:00:00Z']}
+      responses:
+        '200':
+          description: The lines of the graph, busiest first.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ServiceGraph'}
+              example:
+                edges:
+                  - {from: orders-api, to: shop-db, toKind: database, system: postgresql, calls: 1200, errors: 0, meanMs: 3.1, p50Ms: 2.4, p95Ms: 8, p99Ms: 13.5}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/environments/{environmentId}/operations:
+    parameters:
+      - $ref: '#/components/parameters/EnvironmentId'
+    get:
+      operationId: listOperations
+      summary: List operations
+      description: Lists the operations of a service, or of every service, seen in the environment's spans over a time range, the last hour by default, busiest first, with their calls, errors and latency. Percentiles are within 19%. Every member of the workspace may.
+      tags: [Tracing]
+      parameters:
+        - name: service
+          in: query
+          description: Only this service's operations.
+          schema: {type: string, examples: [orders-api]}
+        - name: from
+          in: query
+          description: The start of the time range, RFC 3339. An hour before `to` by default.
+          schema: {type: string, format: date-time, examples: ['2026-10-31T11:00:00Z']}
+        - name: to
+          in: query
+          description: The end of the time range, RFC 3339. Now by default.
+          schema: {type: string, format: date-time, examples: ['2026-10-31T12:00:00Z']}
+      responses:
+        '200':
+          description: The operations.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/OperationStatsList'}
+              example:
+                data:
+                  - {service: orders-api, operation: POST /orders, kind: server, calls: 400, errors: 3, meanMs: 61.2, p50Ms: 54, p95Ms: 128, p99Ms: 181}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
   /api/v1/projects/{projectId}/traces/{traceId}:
     parameters:
       - $ref: '#/components/parameters/ProjectId'
@@ -3855,6 +3926,67 @@ components:
           description: The services, busiest first.
           items: {$ref: '#/components/schemas/ServiceStats'}
           examples: [[{service: storefront-web, calls: 10800, errors: 12, meanMs: 41.2, p50Ms: 32, p95Ms: 128, p99Ms: 304.4}]]
+    ServiceEdge:
+      type: object
+      description: A line of the service graph, with its calls as the caller saw them.
+      required: [from, to, toKind, calls, errors, meanMs, p50Ms, p95Ms, p99Ms]
+      examples: [{from: orders-api, to: payments-api, toKind: service, calls: 400, errors: 3, meanMs: 41.2, p50Ms: 32, p95Ms: 128, p99Ms: 181}]
+      properties:
+        from: {type: string, description: 'The calling service, by its `service.name`.', examples: [orders-api]}
+        to: {type: string, description: 'What it called: a service by its `service.name`, or a database or host by its address.', examples: [payments-api]}
+        toKind:
+          type: string
+          enum: [service, database, external]
+          description: 'What the target is: a traced service, a database that isn''t traced, or a host outside the traced services.'
+          examples: [service]
+          x-enum-varnames: [EdgeToService, EdgeToDatabase, EdgeToExternal]
+        system: {type: string, description: 'A database''s `db.system`.', examples: [postgresql]}
+        calls: {type: integer, minimum: 0, description: The calls in the time range., examples: [400]}
+        errors: {type: integer, minimum: 0, description: 'Of them, how many failed.', examples: [3]}
+        meanMs: {type: number, minimum: 0, description: Their mean duration., examples: [41.2]}
+        p50Ms: {type: number, minimum: 0, description: 'The median, within 19%.', examples: [32]}
+        p95Ms: {type: number, minimum: 0, description: 'The 95th percentile, within 19%.', examples: [128]}
+        p99Ms: {type: number, minimum: 0, description: 'The 99th percentile, within 19%.', examples: [181]}
+    ServiceGraph:
+      type: object
+      description: Who called whom in an environment.
+      required: [edges]
+      properties:
+        edges:
+          type: array
+          description: The lines, busiest first.
+          items: {$ref: '#/components/schemas/ServiceEdge'}
+          examples: [[{from: orders-api, to: payments-api, toKind: service, calls: 400, errors: 3, meanMs: 41.2, p50Ms: 32, p95Ms: 128, p99Ms: 181}]]
+    OperationStats:
+      type: object
+      description: An operation's traffic over a time range.
+      required: [service, operation, kind, calls, errors, meanMs, p50Ms, p95Ms, p99Ms]
+      examples: [{service: orders-api, operation: POST /orders, kind: server, calls: 400, errors: 3, meanMs: 61.2, p50Ms: 54, p95Ms: 128, p99Ms: 181}]
+      properties:
+        service: {type: string, description: The service., examples: [orders-api]}
+        operation: {type: string, description: 'The operation: `METHOD /route` for a server span with a route, otherwise the span name. A service''s operations past 1,000 are counted as `(other)`.', examples: [POST /orders]}
+        kind:
+          type: string
+          enum: [unspecified, internal, server, client, producer, consumer]
+          description: The kind of its spans.
+          examples: [server]
+          x-enum-varnames: [OperationKindUnspecified, OperationKindInternal, OperationKindServer, OperationKindClient, OperationKindProducer, OperationKindConsumer]
+        calls: {type: integer, minimum: 0, description: Its spans in the time range., examples: [400]}
+        errors: {type: integer, minimum: 0, description: 'Of them, how many failed.', examples: [3]}
+        meanMs: {type: number, minimum: 0, description: Their mean duration., examples: [61.2]}
+        p50Ms: {type: number, minimum: 0, description: 'The median, within 19%.', examples: [54]}
+        p95Ms: {type: number, minimum: 0, description: 'The 95th percentile, within 19%.', examples: [128]}
+        p99Ms: {type: number, minimum: 0, description: 'The 99th percentile, within 19%.', examples: [181]}
+    OperationStatsList:
+      type: object
+      description: Operations seen in an environment's spans.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The operations, busiest first.
+          items: {$ref: '#/components/schemas/OperationStats'}
+          examples: [[{service: orders-api, operation: POST /orders, kind: server, calls: 400, errors: 3, meanMs: 61.2, p50Ms: 54, p95Ms: 128, p99Ms: 181}]]
     IngestKeyId:
       type: string
       description: An ingest key's ID.

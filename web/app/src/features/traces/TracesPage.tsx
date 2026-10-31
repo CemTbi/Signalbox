@@ -8,11 +8,14 @@ import { api, describeError } from "../../api";
 import { LoadError, Loading, PageHeader } from "../../components/Page";
 import { environmentsQuery, projectQuery, type TraceSearch, tracedServicesQuery, tracesQuery, workspaceQuery } from "../../queries";
 import { formatDuration, ranges } from "./model";
+import { ServicesView } from "./ServicesView";
 
 const route = getRouteApi("/_app/projects/$projectId/traces");
 
 /** What the page's address says to search for. */
 export interface TracesSearch {
+  /** "services" shows the services and their calls instead of traces. */
+  view?: "services";
   environment?: string;
   range?: string;
   service?: string;
@@ -25,6 +28,7 @@ export interface TracesSearch {
 export function validateTracesSearch(s: Record<string, unknown>): TracesSearch {
   const text = (v: unknown) => (typeof v === "string" && v !== "" ? v : undefined);
   const out: TracesSearch = {
+    view: s.view === "services" ? "services" : undefined,
     environment: text(s.environment),
     range: ranges.some((r) => r.value === s.range) ? (s.range as string) : undefined,
     service: text(s.service),
@@ -63,7 +67,8 @@ export function TracesPage() {
     minDurationMs: search.minMs,
     attribute: search.attribute,
   };
-  const traces = useQuery({ ...tracesQuery(api, environmentId, query), enabled: environmentId !== "" });
+  const showServices = search.view === "services";
+  const traces = useQuery({ ...tracesQuery(api, environmentId, query), enabled: environmentId !== "" && !showServices });
   const services = useQuery({ ...tracedServicesQuery(api, environmentId, period.from, period.to), enabled: environmentId !== "" });
 
   const update = (patch: Partial<TracesSearch>) => {
@@ -93,15 +98,27 @@ export function TracesPage() {
           </button>
         }
       />
+      <div className="tabs" role="tablist" aria-label="What to show">
+        <button type="button" role="tab" aria-selected={!showServices} onClick={() => update({ view: undefined })}>
+          Traces
+        </button>
+        <button type="button" role="tab" aria-selected={showServices} onClick={() => update({ view: "services" })}>
+          Services
+        </button>
+      </div>
       <Filters
         key={JSON.stringify(search)}
+        traceFilters={!showServices}
         search={search}
         environments={envList.map((e) => ({ id: e.id, name: e.name }))}
         environmentId={environmentId}
         services={(services.data?.data ?? []).map((s) => s.service)}
         onChange={update}
       />
-      <section aria-labelledby="results" className="stack-tight">
+      {showServices && environmentId ? (
+        <ServicesView projectId={projectId} environmentId={environmentId} services={services} from={period.from} to={period.to} />
+      ) : null}
+      <section aria-labelledby="results" className="stack-tight" hidden={showServices}>
         <h2 id="results" className="section-title">
           {range.label}
         </h2>
@@ -126,12 +143,15 @@ export function TracesPage() {
 }
 
 function Filters({
+  traceFilters,
   search,
   environments,
   environmentId,
   services,
   onChange,
 }: {
+  /** Whether to show the filters that only searches use. */
+  traceFilters: boolean;
   search: TracesSearch;
   environments: { id: string; name: string }[];
   environmentId: string;
@@ -169,36 +189,40 @@ function Filters({
           ))}
         </select>
       </div>
-      <div className="field">
-        <label htmlFor={ids.service}>Service</label>
-        <select id={ids.service} value={search.service ?? ""} onChange={(e) => onChange({ service: e.target.value || undefined })}>
-          <option value="">Any service</option>
-          {choices.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="field">
-        <label htmlFor={ids.operation}>Operation</label>
-        <input id={ids.operation} value={operation} onChange={(e) => setOperation(e.target.value)} placeholder="POST /orders" />
-      </div>
-      <div className="field">
-        <label htmlFor={ids.min}>At least (ms)</label>
-        <input id={ids.min} inputMode="decimal" value={minMs} onChange={(e) => setMinMs(e.target.value)} placeholder="250" />
-      </div>
-      <div className="field">
-        <label htmlFor={ids.attribute}>Attribute</label>
-        <input id={ids.attribute} value={attribute} onChange={(e) => setAttribute(e.target.value)} placeholder="http.route=/orders" />
-      </div>
-      <div className="checkbox-field">
-        <input id={ids.errors} type="checkbox" checked={search.errors ?? false} onChange={(e) => onChange({ errors: e.target.checked || undefined })} />
-        <label htmlFor={ids.errors}>Only with errors</label>
-      </div>
-      <button type="submit" className="button primary">
-        Search
-      </button>
+      {traceFilters ? (
+        <>
+          <div className="field">
+            <label htmlFor={ids.service}>Service</label>
+            <select id={ids.service} value={search.service ?? ""} onChange={(e) => onChange({ service: e.target.value || undefined })}>
+              <option value="">Any service</option>
+              {choices.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor={ids.operation}>Operation</label>
+            <input id={ids.operation} value={operation} onChange={(e) => setOperation(e.target.value)} placeholder="POST /orders" />
+          </div>
+          <div className="field">
+            <label htmlFor={ids.min}>At least (ms)</label>
+            <input id={ids.min} inputMode="decimal" value={minMs} onChange={(e) => setMinMs(e.target.value)} placeholder="250" />
+          </div>
+          <div className="field">
+            <label htmlFor={ids.attribute}>Attribute</label>
+            <input id={ids.attribute} value={attribute} onChange={(e) => setAttribute(e.target.value)} placeholder="http.route=/orders" />
+          </div>
+          <div className="checkbox-field">
+            <input id={ids.errors} type="checkbox" checked={search.errors ?? false} onChange={(e) => onChange({ errors: e.target.checked || undefined })} />
+            <label htmlFor={ids.errors}>Only with errors</label>
+          </div>
+          <button type="submit" className="button primary">
+            Search
+          </button>
+        </>
+      ) : null}
     </form>
   );
 }

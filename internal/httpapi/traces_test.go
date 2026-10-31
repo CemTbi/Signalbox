@@ -120,4 +120,35 @@ func TestTraces(t *testing.T) {
 		t.Errorf("services = %+v", services.Data)
 	}
 	h.do(call{method: http.MethodGet, path: "/api/v1/environments/env_01h455vb4pex5vsknk084sn02q/traces"}).expect(t, http.StatusNotFound, "not-found")
+
+	// The minute's graph: orders-api calls a database it names by its
+	// system, since the span has no address.
+	// Both minutes, in case the database span began just after the first
+	// ended.
+	for _, m := range []time.Time{start.Truncate(time.Minute), start.Truncate(time.Minute).Add(time.Minute)} {
+		if err := telemetry.BuildGraphMinute(context.Background(), ch, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var graph struct {
+		Edges []httpapi.EdgeJSON `json:"edges"`
+	}
+	h.do(call{method: http.MethodGet, path: "/api/v1/environments/" + envs.Data[2].ID + "/graph"}).decode(t, &graph)
+	if len(graph.Edges) != 1 || graph.Edges[0].From != "orders-api" || graph.Edges[0].To != "postgresql" || graph.Edges[0].ToKind != "database" ||
+		graph.Edges[0].System != "postgresql" || graph.Edges[0].Errors != 1 || graph.Edges[0].MeanMs != 30 {
+		t.Errorf("graph = %+v", graph.Edges)
+	}
+	var ops struct {
+		Data []httpapi.OperationStatsJSON `json:"data"`
+	}
+	h.do(call{method: http.MethodGet, path: "/api/v1/environments/" + envs.Data[2].ID + "/operations?service=orders-api"}).decode(t, &ops)
+	if len(ops.Data) != 2 {
+		t.Errorf("operations = %+v", ops.Data)
+	}
+	for _, o := range ops.Data {
+		if o.Operation == "POST /orders" && (o.Kind != "server" || o.Calls != 1) {
+			t.Errorf("POST /orders = %+v", o)
+		}
+	}
+	h.do(call{method: http.MethodGet, path: "/api/v1/environments/" + envs.Data[2].ID + "/graph?from=soon", invalid: true}).expect(t, http.StatusBadRequest, "validation-failed")
 }

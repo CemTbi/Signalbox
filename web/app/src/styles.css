@@ -2592,3 +2592,19 @@ table.waterfall tbody tr.selected {
   font-size: 13px;
   font-weight: 600;
 }
+
+.link-button {
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+table.operations {
+  width: 100%;
+  margin: 4px 0 8px;
+}

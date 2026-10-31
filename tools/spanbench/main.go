@@ -8,6 +8,7 @@
 //	spanbench paced -rate 5000 -for 15m  write spans as they happen
 //	spanbench bulk -rate 5000 -hours 6   fill hours of history quickly
 //	spanbench queries -window 6h         time the trace UI's queries
+//	spanbench graph -minutes 10          time building the service graph
 //	spanbench stats                      sizes on disk
 //	spanbench drop                       remove the tables
 //
@@ -45,7 +46,7 @@ func main() {
 
 func run(ctx context.Context, args []string, out io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("name a command: schema, paced, bulk, queries, stats or drop")
+		return errors.New("name a command: schema, paced, bulk, queries, graph, stats or drop")
 	}
 	cmd, args := args[0], args[1:]
 	fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
@@ -59,6 +60,7 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 	batch := fs.Int("batch", 200_000, "spans per bulk insert")
 	window := fs.Duration("window", time.Hour, "time range queries search")
 	iterations := fs.Int("iterations", 20, "runs of each query after the first")
+	minutes := fs.Int("minutes", 10, "minutes of the service graph to build")
 	fs.Float64Var(&wildNames, "wild-names", 0, "share of server spans named after their URL path instead of their route")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -96,10 +98,12 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 		return bulk(ctx, conn, out, *seed, env, *rate, from, end, *workers, *batch)
 	case "queries":
 		return queries(ctx, conn, out, env, end, *window, *iterations)
+	case "graph":
+		return graph(ctx, conn, out, end, *minutes)
 	case "stats":
 		return stats(ctx, conn, out)
 	case "drop":
-		for _, t := range []string{"span_metrics_1m_mv", "trace_ids_mv", "span_metrics_1m", "trace_ids", "spans", "goose_db_version"} {
+		for _, t := range []string{"service_edges_1m", "span_metrics_1m_mv", "trace_ids_mv", "span_metrics_1m", "trace_ids", "spans", "goose_db_version"} {
 			if err := conn.Exec(ctx, "DROP TABLE IF EXISTS "+t+" SYNC"); err != nil {
 				return err
 			}
