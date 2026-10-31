@@ -112,6 +112,7 @@ type RunStepJSON struct {
 	Response   *RunResponseJSON   `json:"response,omitempty"`
 	Scripts    *ScriptOutcomeJSON `json:"scripts,omitempty"`
 	Note       string             `json:"note,omitempty"`
+	TraceID    string             `json:"traceId,omitempty"`
 }
 
 // RunResponseJSON is what a step got back.
@@ -128,6 +129,7 @@ func runStepJSON(s report.Step) RunStepJSON {
 	out := RunStepJSON{
 		Seq: s.Seq, Iteration: s.Iteration, ItemID: s.ItemID, Name: s.Name, Path: s.Path, Method: s.Method, URL: s.URL,
 		Failed: s.Failed, DurationMs: ms(s.Duration), Unresolved: s.Unresolved, Scripts: scriptOutcomeJSON(s.Scripts), Note: s.Note,
+		TraceID: s.TraceID,
 	}
 	if len(s.Headers) > 0 {
 		out.Headers = headersJSON(s.Headers)

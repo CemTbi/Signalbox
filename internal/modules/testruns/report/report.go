@@ -91,6 +91,8 @@ type Step struct {
 	Response   *Response             `json:"response,omitempty"`
 	Scripts    *client.ScriptOutcome `json:"scripts,omitempty"`
 	Note       string                `json:"note,omitempty"`
+	// TraceID is the W3C trace the request was sent in, in hex.
+	TraceID string `json:"traceId,omitempty"`
 }
 
 // Response is what a step got back, without its body.
@@ -113,7 +115,7 @@ func FromResult(seq int, r client.StepResult, p client.Plan) Step {
 	s := Step{
 		Seq: seq, Iteration: r.Iteration, Name: ps.Name, Path: ps.Path, Method: e.Method, URL: e.URL,
 		Failed: r.Failed(), Duration: e.Result.Timings.Total, Headers: e.Headers, Unresolved: e.Unresolved,
-		Failure: e.Result.Failure, Scripts: e.Scripts, Note: r.Note,
+		Failure: e.Result.Failure, Scripts: e.Scripts, Note: r.Note, TraceID: e.TraceID,
 	}
 	if ps.ItemID != uuid.Nil {
 		s.ItemID = id.Format(id.Item, ps.ItemID)

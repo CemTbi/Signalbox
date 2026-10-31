@@ -42,3 +42,52 @@ test("the demo shop sends its traces to Signalbox", async ({ page, request }) =>
   const health = await request.get("http://localhost:8091/health");
   expect(health.headers()["content-type"]).toBe("application/health+json");
 });
+
+test("a request's trace opens from its response, and traces can be searched", async ({ page, request }) => {
+  test.setTimeout(180_000);
+  await openAsAdmin(page, request);
+  await expect(async () => {
+    await page.reload();
+    await expect(page.getByRole("link", { name: "Demo shop" })).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 90_000 });
+  await page.getByRole("link", { name: "Demo shop" }).click();
+  await page.getByRole("link", { name: /^Shop\b/ }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Shop" })).toBeVisible();
+  const projectURL = page.url();
+
+  // Signalbox sends the request with a traceparent, and the shop's
+  // services continue the trace.
+  await page.goto(`${projectURL}/requests`);
+  await page.getByLabel("URL").fill("http://storefront-web:8080/api/products");
+  await page.getByRole("button", { name: "Send" }).click();
+  const response = page.getByRole("region", { name: "Response" });
+  await expect(response.getByText("TEA-01").first()).toBeVisible();
+  await response.getByRole("link", { name: "Open trace" }).click();
+  await expect(page).toHaveURL(/\/traces\/[0-9a-f]{32}$/);
+  // Each service sends its spans every few seconds, in batches of its own.
+  const waterfall = page.getByRole("table", { name: /Spans of the trace/ });
+  await expect(async () => {
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 1, name: "storefront-web: GET /api/products" })).toBeVisible({ timeout: 2_000 });
+    await expect(waterfall.getByRole("button", { name: /inventory-api GET \/products/ })).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 60_000 });
+  // Its root's parent is the request Signalbox sent, which isn't a span.
+  await expect(waterfall.getByText("Parent not received")).toBeVisible();
+  await waterfall.getByRole("button", { name: /inventory-api GET \/products/ }).click();
+  await expect(page.getByRole("region", { name: "inventory-api: GET /products" }).getByText("http.route")).toBeVisible();
+  await expectAccessible(page);
+
+  // Searching finds the shop's checkouts, with their database work.
+  await page.getByRole("link", { name: "Search traces" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Traces" })).toBeVisible();
+  await page.getByLabel("Service").selectOption("orders-api");
+  // Some checkouts find a product out of stock and save nothing; searching
+  // by the insert finds those that did.
+  await page.getByLabel("Operation").fill("INSERT orders");
+  await page.getByRole("button", { name: "Search" }).click();
+  const results = page.getByRole("table");
+  await expect(results.getByRole("link", { name: /storefront-web: POST \/api\/checkout/ }).first()).toBeVisible();
+  await expectAccessible(page);
+  await results.getByRole("link", { name: /storefront-web: POST \/api\/checkout/ }).first().click();
+  await expect(page.getByRole("table", { name: /Spans of the trace/ }).getByRole("button", { name: /orders-api INSERT orders/ })).toBeVisible();
+});

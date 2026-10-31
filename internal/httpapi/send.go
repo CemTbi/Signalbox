@@ -121,6 +121,8 @@ type HistoryEntryJSON struct {
 	Scripts    *ScriptOutcomeJSON `json:"scripts,omitempty"`
 	Failure    *FailureJSON       `json:"failure,omitempty"`
 	Timings    TimingsJSON        `json:"timings"`
+	// TraceID is the W3C trace the request was sent in, for Open trace.
+	TraceID string `json:"traceId,omitempty"`
 }
 
 // ScriptOutcomeJSON is what a send's scripts did.
@@ -189,6 +191,7 @@ func historyEntryJSON(e client.Entry) HistoryEntryJSON {
 		Timings:    TimingsJSON{ms(t.DNS), ms(t.Connect), ms(t.TLS), ms(t.FirstByte), ms(t.Download), ms(t.Total)},
 		Unresolved: e.Unresolved,
 		Agent:      e.Agent,
+		TraceID:    e.TraceID,
 	}
 	if e.EnvironmentID != uuid.Nil {
 		out.EnvironmentID = id.Format(id.Environment, e.EnvironmentID)

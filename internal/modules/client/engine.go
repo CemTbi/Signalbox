@@ -192,6 +192,8 @@ type stepOut struct {
 	credentials []string
 	// values are the variables the request was filled in with.
 	values map[string]string
+	// traceID is the W3C trace the request belongs to, in hex, or "".
+	traceID string
 	// next is what setNextRequest named, or nil.
 	next *string
 }
@@ -323,6 +325,7 @@ func (e *Engine) step(ctx context.Context, st *state, s Step) (stepOut, error) {
 	out := stepOut{auth: auth, credentials: auth.apply(&req), unresolved: res.Unresolved(), values: values}
 	switch {
 	case send:
+		out.traceID = withTraceparent(&req)
 		out.result = e.runner.Run(ctx, req)
 		if run != nil && out.result.Response != nil {
 			if err := run.test(ctx, req, out.result.Response, out.result.Timings.Total.Milliseconds()); err != nil {
@@ -363,7 +366,7 @@ func (o stepOut) entry() Entry {
 	e := Entry{
 		Unresolved: o.unresolved, Auth: o.auth.kept(), Scripts: o.scripts,
 		Method: strings.ToUpper(strings.TrimSpace(o.req.Method)), URL: strings.TrimSpace(o.req.URL),
-		Headers: redact(o.req.Headers), Body: o.req.Body, Result: o.result,
+		Headers: redact(o.req.Headers), Body: o.req.Body, Result: o.result, TraceID: o.traceID,
 	}
 	return e
 }

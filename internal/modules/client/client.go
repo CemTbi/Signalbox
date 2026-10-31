@@ -124,6 +124,9 @@ type Entry struct {
 	BodyTruncated bool
 	Result        runner.Result
 	SentAt        time.Time
+	// TraceID is the W3C trace the request started or joined, in hex: the
+	// traceparent it was sent with. "" when it was sent without one.
+	TraceID string
 }
 
 // Summary is an entry without its bodies and headers, for lists.
@@ -317,6 +320,7 @@ type stored struct {
 	Failure       *runner.Failure `json:"failure,omitempty"`
 	Response      *storedResponse `json:"response,omitempty"`
 	Timings       storedTimings   `json:"timings"`
+	TraceID       string          `json:"traceId,omitempty"`
 }
 
 type storedResponse struct {
@@ -336,7 +340,8 @@ type storedTimings struct {
 }
 
 func (m *Module) save(ctx context.Context, e *Entry) error {
-	s := stored{Headers: e.Headers, Agent: e.Agent, Unresolved: e.Unresolved, Auth: e.Auth, Scripts: e.Scripts, BodyTruncated: e.BodyTruncated, Failure: e.Result.Failure, Timings: timingsOut(e.Result.Timings)}
+	s := stored{Headers: e.Headers, Agent: e.Agent, Unresolved: e.Unresolved, Auth: e.Auth, Scripts: e.Scripts, BodyTruncated: e.BodyTruncated,
+		Failure: e.Result.Failure, Timings: timingsOut(e.Result.Timings), TraceID: e.TraceID}
 	if e.EnvironmentID != uuid.Nil {
 		s.EnvironmentID = &e.EnvironmentID
 	}
@@ -465,7 +470,7 @@ func (m *Module) HistoryEntry(ctx context.Context, userID, entryID uuid.UUID) (E
 		return Entry{}, fmt.Errorf("read history entry: %w", err)
 	}
 	e.Headers, e.Body, e.BodyTruncated, e.Unresolved, e.Auth = s.Headers, []byte(s.Body), s.BodyTruncated, s.Unresolved, s.Auth
-	e.Scripts, e.Agent = s.Scripts, s.Agent
+	e.Scripts, e.Agent, e.TraceID = s.Scripts, s.Agent, s.TraceID
 	if s.EnvironmentID != nil {
 		e.EnvironmentID = *s.EnvironmentID
 	}

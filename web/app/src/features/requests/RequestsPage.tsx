@@ -306,7 +306,7 @@ export function RequestsPage() {
               </p>
             ) : null,
           )}
-          {shown ? <ResponseView key={shown.id} entry={shown} /> : <p className="field-hint">Send a request to see its response here.</p>}
+          {shown ? <ResponseView key={shown.id} entry={shown} projectId={projectId} /> : <p className="field-hint">Send a request to see its response here.</p>}
         </div>
       </div>
     </div>

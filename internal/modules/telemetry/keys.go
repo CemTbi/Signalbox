@@ -80,6 +80,7 @@ type Sender struct {
 // *workspaces.Service is one.
 type Access interface {
 	GetEnvironment(ctx context.Context, userID, environmentID uuid.UUID) (workspaces.Environment, workspaces.Role, error)
+	ListEnvironments(ctx context.Context, userID, projectID uuid.UUID) ([]workspaces.Environment, error)
 }
 
 // Keys keeps ingest keys and checks the keys that requests carry.

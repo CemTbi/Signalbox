@@ -962,6 +962,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/environments/{environmentId}/traces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The environment's ID. */
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Search traces
+         * @description Finds the newest traces with a span that matches every filter given, newest first. Every member of the workspace may.
+         *
+         *     Without `from` and `to`, it searches the last hour. One search covers at most 31 days.
+         */
+        get: operations["searchTraces"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/environments/{environmentId}/services": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The environment's ID. */
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List services seen in traces
+         * @description Lists the services that sent spans to the environment in a time range, the last hour by default, busiest first, with the requests they handled. Counts and latencies come from server and consumer spans; percentiles are within 19%. Every member of the workspace may.
+         */
+        get: operations["listTracedServices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/traces/{traceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+                /** @description The trace's W3C trace ID, 32 lowercase hex digits. */
+                traceId: components["schemas"]["TraceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a trace
+         * @description Returns every span of a trace, in the order they started, from whichever of the project's environments its spans were sent to. A request's response names its trace, so this opens it. Every member of the workspace may.
+         */
+        get: operations["getTrace"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/environments/{environmentId}/ingest-keys": {
         parameters: {
             query?: never;
@@ -1664,6 +1737,335 @@ export interface components {
          */
         AccessTokenId: string;
         /**
+         * @description A W3C trace ID: 32 lowercase hex digits. Requests are sent with a `traceparent` header in this trace, unless they set their own.
+         * @example 4bf92f3577b34da6a3ce929d0e0e4736
+         */
+        TraceId: string;
+        /**
+         * @description A trace, as a search lists it.
+         * @example {
+         *       "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+         *       "start": "2026-10-31T12:00:00.123456789Z",
+         *       "durationMs": 312.5,
+         *       "spans": 9,
+         *       "errors": 1,
+         *       "services": [
+         *         "orders-api",
+         *         "storefront-web"
+         *       ],
+         *       "rootService": "storefront-web",
+         *       "rootName": "POST /api/checkout",
+         *       "rootMissing": false
+         *     }
+         */
+        TraceSummary: {
+            traceId: components["schemas"]["TraceId"];
+            /**
+             * Format: date-time
+             * @description When its first span started.
+             * @example 2026-10-31T12:00:00.123456789Z
+             */
+            start: string;
+            /**
+             * @description From its first span's start to its last span's end.
+             * @example 312.5
+             */
+            durationMs: number;
+            /**
+             * @description How many spans have arrived.
+             * @example 9
+             */
+            spans: number;
+            /**
+             * @description How many of them have the error status.
+             * @example 1
+             */
+            errors: number;
+            /**
+             * @description The services with spans in it, by name.
+             * @example [
+             *       "orders-api",
+             *       "storefront-web"
+             *     ]
+             */
+            services: string[];
+            /**
+             * @description The service of the span that started it, or of its earliest span when that one hasn't arrived.
+             * @example storefront-web
+             */
+            rootService: string;
+            /**
+             * @description The name of that span.
+             * @example POST /api/checkout
+             */
+            rootName: string;
+            /**
+             * @description Whether the span that started it hasn't arrived.
+             * @example false
+             */
+            rootMissing: boolean;
+        };
+        /** @description Traces a search found. */
+        TraceSummaryList: {
+            /**
+             * @description The traces, newest first.
+             * @example [
+             *       {
+             *         "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+             *         "start": "2026-10-31T12:00:00.123456789Z",
+             *         "durationMs": 312.5,
+             *         "spans": 9,
+             *         "errors": 1,
+             *         "services": [
+             *           "storefront-web"
+             *         ],
+             *         "rootService": "storefront-web",
+             *         "rootName": "POST /api/checkout",
+             *         "rootMissing": false
+             *       }
+             *     ]
+             */
+            data: components["schemas"]["TraceSummary"][];
+        };
+        /** @description A whole trace. */
+        Trace: {
+            traceId: components["schemas"]["TraceId"];
+            environmentId: components["schemas"]["EnvironmentId"];
+            /**
+             * @description Its spans, in the order they started.
+             * @example [
+             *       {
+             *         "spanId": "00f067aa0ba902b7",
+             *         "name": "GET",
+             *         "operation": "GET /orders/{id}",
+             *         "kind": "server",
+             *         "service": "orders-api",
+             *         "start": "2026-10-31T12:00:00.123456789Z",
+             *         "durationMs": 12.5,
+             *         "status": "unset",
+             *         "attributes": {},
+             *         "resource": {},
+             *         "events": [],
+             *         "links": []
+             *       }
+             *     ]
+             */
+            spans: components["schemas"]["Span"][];
+        };
+        /** @description One operation of a trace. Credentials in attributes were replaced by ••• when it arrived. */
+        Span: {
+            /**
+             * @description The span's ID.
+             * @example 00f067aa0ba902b7
+             */
+            spanId: string;
+            /**
+             * @description The span it's part of; absent for a trace's root.
+             * @example b7ad6b7169203331
+             */
+            parentSpanId?: string;
+            /**
+             * @description The span's name.
+             * @example GET
+             */
+            name: string;
+            /**
+             * @description What statistics group it by: `METHOD /route` for a server span with a route, otherwise its name.
+             * @example GET /orders/{id}
+             */
+            operation: string;
+            /**
+             * @description What the span describes.
+             * @example server
+             * @enum {string}
+             */
+            kind: "unspecified" | "internal" | "server" | "client" | "producer" | "consumer";
+            /**
+             * @description Its service, from `service.name`.
+             * @example orders-api
+             */
+            service: string;
+            /**
+             * Format: date-time
+             * @description When it started
+             * @example 2026-10-31T12:00:00.123456789Z
+             */
+            start: string;
+            /**
+             * @description How long it took.
+             * @example 12.5
+             */
+            durationMs: number;
+            /**
+             * @description Its status.
+             * @example unset
+             * @enum {string}
+             */
+            status: "unset" | "ok" | "error";
+            /**
+             * @description Why it failed, when it says.
+             * @example connection refused
+             */
+            statusMessage?: string;
+            /**
+             * @description Its attributes, as text.
+             * @example {
+             *       "http.route": "/orders/{id}",
+             *       "http.response.status_code": "200"
+             *     }
+             */
+            attributes: {
+                [key: string]: string;
+            };
+            /**
+             * @description What sent it, such as `service.name` and `service.version`.
+             * @example {
+             *       "service.name": "orders-api",
+             *       "service.version": "1.0.0"
+             *     }
+             */
+            resource: {
+                [key: string]: string;
+            };
+            /** @description The instrumentation that made it. */
+            scope?: {
+                /**
+                 * @description The instrumentation's name.
+                 * @example go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
+                 */
+                name: string;
+                /**
+                 * @description Its version.
+                 * @example 0.72.0
+                 */
+                version?: string;
+            };
+            /**
+             * @description What happened during it, such as exceptions.
+             * @example [
+             *       {
+             *         "time": "2026-10-31T12:00:00.130Z",
+             *         "name": "exception",
+             *         "attributes": {
+             *           "exception.message": "timeout"
+             *         }
+             *       }
+             *     ]
+             */
+            events: {
+                /**
+                 * Format: date-time
+                 * @description When it happened.
+                 * @example 2026-10-31T12:00:00.130Z
+                 */
+                time: string;
+                /**
+                 * @description What happened.
+                 * @example exception
+                 */
+                name: string;
+                /**
+                 * @description Its attributes.
+                 * @example {
+                 *       "exception.message": "timeout"
+                 *     }
+                 */
+                attributes: {
+                    [key: string]: string;
+                };
+            }[];
+            /**
+             * @description Spans in other traces it relates to.
+             * @example []
+             */
+            links: {
+                /**
+                 * @description The other trace.
+                 * @example 4bf92f3577b34da6a3ce929d0e0e4736
+                 */
+                traceId: string;
+                /**
+                 * @description The span in it.
+                 * @example 00f067aa0ba902b7
+                 */
+                spanId: string;
+                /**
+                 * @description The link's attributes.
+                 * @example {}
+                 */
+                attributes: {
+                    [key: string]: string;
+                };
+            }[];
+        };
+        /**
+         * @description The requests a service handled in a time range.
+         * @example {
+         *       "service": "storefront-web",
+         *       "calls": 10800,
+         *       "errors": 12,
+         *       "meanMs": 41.2,
+         *       "p50Ms": 32,
+         *       "p95Ms": 128,
+         *       "p99Ms": 304.4
+         *     }
+         */
+        ServiceStats: {
+            /**
+             * @description The service, by its `service.name`.
+             * @example storefront-web
+             */
+            service: string;
+            /**
+             * @description Requests it handled, from server and consumer spans.
+             * @example 10800
+             */
+            calls: number;
+            /**
+             * @description Of them, how many failed.
+             * @example 12
+             */
+            errors: number;
+            /**
+             * @description Their mean duration.
+             * @example 41.2
+             */
+            meanMs: number;
+            /**
+             * @description The median, within 19%.
+             * @example 32
+             */
+            p50Ms: number;
+            /**
+             * @description The 95th percentile, within 19%.
+             * @example 128
+             */
+            p95Ms: number;
+            /**
+             * @description The 99th percentile, within 19%.
+             * @example 304.4
+             */
+            p99Ms: number;
+        };
+        /** @description Services seen in an environment's traces. */
+        ServiceStatsList: {
+            /**
+             * @description The services, busiest first.
+             * @example [
+             *       {
+             *         "service": "storefront-web",
+             *         "calls": 10800,
+             *         "errors": 12,
+             *         "meanMs": 41.2,
+             *         "p50Ms": 32,
+             *         "p95Ms": 128,
+             *         "p99Ms": 304.4
+             *       }
+             *     ]
+             */
+            data: components["schemas"]["ServiceStats"][];
+        };
+        /**
          * @description An ingest key's ID.
          * @example ing_01j9z3w5y7a9c1e3g5j7m9p1r3
          */
@@ -2190,6 +2592,7 @@ export interface components {
              * @example ada-laptop
              */
             agent?: string;
+            traceId?: components["schemas"]["TraceId"];
             /**
              * @description The `{{names}}` that had no value, and were sent as they are.
              * @example [
@@ -2763,6 +3166,7 @@ export interface components {
              * @example setNextRequest named "Pay", which isn't in this run, so the iteration ended.
              */
             note?: string;
+            traceId?: components["schemas"]["TraceId"];
         };
         /** @description A page of a run's steps, in order. */
         RunStepPage: {
@@ -7946,6 +8350,198 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    searchTraces: {
+        parameters: {
+            query?: {
+                /** @description The start of the time range, RFC 3339. An hour before `to` by default. */
+                from?: string;
+                /** @description The end of the time range, RFC 3339. Now by default. */
+                to?: string;
+                /** @description A span's service, its `service.name`. */
+                service?: string;
+                /** @description A span's operation, such as `POST /orders` for a server span with that route. */
+                operation?: string;
+                /** @description Only traces with a span whose status is error. */
+                errors?: boolean;
+                /** @description Only traces with a span at least this long, in milliseconds. */
+                minDurationMs?: number;
+                /** @description Only traces with a span that has this attribute, as `key=value`. */
+                attribute?: string;
+                /** @description How many traces, from 1 to 100. Default 20. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The environment's ID. */
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The traces, newest first. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                     *           "start": "2026-10-31T12:00:00.123456789Z",
+                     *           "durationMs": 312.5,
+                     *           "spans": 9,
+                     *           "errors": 1,
+                     *           "services": [
+                     *             "orders-api",
+                     *             "payments-api",
+                     *             "storefront-web"
+                     *           ],
+                     *           "rootService": "storefront-web",
+                     *           "rootName": "POST /api/checkout",
+                     *           "rootMissing": false
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["TraceSummaryList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listTracedServices: {
+        parameters: {
+            query?: {
+                /** @description The start of the time range, RFC 3339. An hour before `to` by default. */
+                from?: string;
+                /** @description The end of the time range, RFC 3339. Now by default. */
+                to?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The environment's ID. */
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The services. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "service": "storefront-web",
+                     *           "calls": 10800,
+                     *           "errors": 12,
+                     *           "meanMs": 41.2,
+                     *           "p50Ms": 32,
+                     *           "p95Ms": 128,
+                     *           "p99Ms": 304.4
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ServiceStatsList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getTrace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+                /** @description The trace's W3C trace ID, 32 lowercase hex digits. */
+                traceId: components["schemas"]["TraceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The trace. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+                     *       "environmentId": "env_01j9z3n5q7s9v1w3y5a7c9e1g3",
+                     *       "spans": [
+                     *         {
+                     *           "spanId": "00f067aa0ba902b7",
+                     *           "name": "POST /api/checkout",
+                     *           "operation": "POST /api/checkout",
+                     *           "kind": "server",
+                     *           "service": "storefront-web",
+                     *           "start": "2026-10-31T12:00:00.123456789Z",
+                     *           "durationMs": 312.5,
+                     *           "status": "unset",
+                     *           "attributes": {
+                     *             "http.route": "/api/checkout"
+                     *           },
+                     *           "resource": {
+                     *             "service.name": "storefront-web"
+                     *           },
+                     *           "scope": {
+                     *             "name": "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp",
+                     *             "version": "0.72.0"
+                     *           },
+                     *           "events": [],
+                     *           "links": []
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Trace"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description There's no such project, or no spans of the trace have arrived (`trace-not-found`). */
+            404: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "about:blank",
+                     *       "title": "Not Found",
+                     *       "status": 404,
+                     *       "code": "trace-not-found",
+                     *       "detail": "No spans of this trace have arrived in the project's environments, or they are older than the retention period."
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             default: components["responses"]["Error"];
         };
     };

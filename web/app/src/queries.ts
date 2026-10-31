@@ -336,3 +336,47 @@ export function ingestKeysQuery(client: ApiClient, environmentId: string) {
     queryFn: () => unwrap(client.GET("/api/v1/environments/{environmentId}/ingest-keys", { params: { path: { environmentId } } })),
   });
 }
+
+/** What a trace search asks for; from and to are RFC 3339. */
+export interface TraceSearch {
+  from: string;
+  to: string;
+  service?: string;
+  operation?: string;
+  errors?: boolean;
+  minDurationMs?: number;
+  attribute?: string;
+}
+
+/** Traces of an environment with a span that matches the search. */
+export function tracesQuery(client: ApiClient, environmentId: string, search: TraceSearch) {
+  return queryOptions({
+    queryKey: ["environments", environmentId, "traces", search],
+    queryFn: () =>
+      unwrap(client.GET("/api/v1/environments/{environmentId}/traces", { params: { path: { environmentId }, query: { ...search, limit: 50 } } })),
+  });
+}
+
+/** The services seen in an environment's traces over a time range. */
+export function tracedServicesQuery(client: ApiClient, environmentId: string, from: string, to: string) {
+  return queryOptions({
+    queryKey: ["environments", environmentId, "services", from, to],
+    queryFn: () => unwrap(client.GET("/api/v1/environments/{environmentId}/services", { params: { path: { environmentId }, query: { from, to } } })),
+  });
+}
+
+/** A trace by its ID, from whichever of the project's environments has it. */
+export function traceQuery(client: ApiClient, projectId: string, traceId: string) {
+  return queryOptions({
+    queryKey: ["projects", projectId, "traces", traceId],
+    queryFn: () => unwrap(client.GET("/api/v1/projects/{projectId}/traces/{traceId}", { params: { path: { projectId, traceId } } })),
+    // Services send spans in batches every few seconds, so a trace that
+    // just ended is asked for again until they all could have arrived.
+    refetchInterval: (q) => {
+      const spans = q.state.data?.spans ?? [];
+      const end = Math.max(0, ...spans.map((s) => Date.parse(s.start) + s.durationMs));
+      return Date.now() - end < 30_000 ? 5_000 : false;
+    },
+    staleTime: 10_000,
+  });
+}

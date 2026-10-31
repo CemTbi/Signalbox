@@ -37,6 +37,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/telemetry"
 	"github.com/CemTbi/Signalbox/internal/modules/testruns"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
+	"github.com/CemTbi/Signalbox/internal/platform/clickhouse"
 	"github.com/CemTbi/Signalbox/internal/platform/egress"
 	"github.com/CemTbi/Signalbox/internal/platform/oidctest"
 	"github.com/CemTbi/Signalbox/internal/platform/postgres/postgrestest"
@@ -122,7 +123,13 @@ func (b *logBuffer) String() string {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	return startHarness(t, nil)
+	return startHarness(t, nil, nil)
+}
+
+// newHarnessWithTraces starts a harness whose trace endpoints read ch.
+func newHarnessWithTraces(t *testing.T, ch clickhouse.Conn) *harness {
+	t.Helper()
+	return startHarness(t, nil, ch)
 }
 
 // newHarnessWithSSO starts a harness whose single sign-on goes to idp.
@@ -134,10 +141,10 @@ func newHarnessWithSSO(t *testing.T, idp *oidctest.Provider) *harness {
 			RedirectURL: public.JoinPath("api/v1/sso/callback").String(),
 		}
 		idp.RegisterRedirectURI(cfg.SSO.RedirectURL)
-	})
+	}, nil)
 }
 
-func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *harness {
+func startHarness(t *testing.T, configure func(*identity.Config, *url.URL), ch clickhouse.Conn) *harness {
 	t.Helper()
 	loadContract(t)
 	pool := postgrestest.New(t)
@@ -175,6 +182,10 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *har
 	sender.UseAgents(ag)
 	runs := testruns.New(pool, logger, ws, sender)
 	t.Cleanup(runs.Close)
+	var traces httpapi.Traces
+	if ch != nil {
+		traces = telemetry.NewTraces(ch, ws)
+	}
 	srv.Config.Handler = httpapi.NewHandler(httpapi.Deps{
 		Logger:      logger,
 		Health:      health.New("signalbox-server", "test"),
@@ -192,6 +203,7 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL)) *har
 		Contracts:   sender,
 		Agents:      ag,
 		IngestKeys:  telemetry.NewKeys(pool, logger, ws),
+		Traces:      traces,
 		PublicURL:   public,
 	})
 	srv.StartTLS()
