@@ -259,3 +259,83 @@ func (t *Traces) Services(ctx context.Context, userID, environmentID uuid.UUID, 
 	})
 	return out, nil
 }
+
+// TargetKind says what a line of the service graph calls.
+type TargetKind string
+
+// The kinds of a call's target.
+const (
+	TargetService  TargetKind = "service"
+	TargetDatabase TargetKind = "database"
+	TargetExternal TargetKind = "external"
+)
+
+// Edge is a line of the service graph: the calls from a service to a
+// target over a time range, as the caller saw them.
+type Edge struct {
+	From       string
+	Target     string
+	TargetKind TargetKind
+	// System is a database's db.system, such as postgresql.
+	System        string
+	Calls, Errors uint64
+	Mean          time.Duration
+	P50, P95, P99 time.Duration
+}
+
+// Graph returns the lines of an environment's service graph over a time
+// range, busiest first. Nodes are the services and targets they name.
+func (t *Traces) Graph(ctx context.Context, userID, environmentID uuid.UUID, from, to time.Time) ([]Edge, error) {
+	if err := t.canRead(ctx, userID, environmentID); err != nil {
+		return nil, err
+	}
+	rows, err := t.conn.Query(ctx, `
+		SELECT client_service, target, toString(target_kind), target_system, sum(calls), sum(errors), sum(duration_ns_sum),
+		       tupleElement(sumMap(latency_histogram), 1), tupleElement(sumMap(latency_histogram), 2)
+		FROM service_edges_1m FINAL
+		WHERE environment_id = {env:UUID} AND minute >= toStartOfMinute({from:DateTime64(9)}) AND minute < {to:DateTime64(9)}
+		GROUP BY client_service, target, target_kind, target_system`,
+		clickhouse.Named("env", environmentID), clickhouse.Named("from", from), clickhouse.Named("to", to))
+	if err != nil {
+		return nil, fmt.Errorf("read the service graph: %w", err)
+	}
+	defer rows.Close()
+	var out []Edge
+	for rows.Next() {
+		var (
+			e       Edge
+			kind    string
+			sumNS   uint64
+			buckets []uint8
+			counts  []uint64
+		)
+		if err := rows.Scan(&e.From, &e.Target, &kind, &e.System, &e.Calls, &e.Errors, &sumNS, &buckets, &counts); err != nil {
+			return nil, fmt.Errorf("read the service graph: %w", err)
+		}
+		e.TargetKind = TargetKind(kind)
+		if e.Calls > 0 {
+			e.Mean = fromNS(sumNS / e.Calls)
+		}
+		e.P50, e.P95, e.P99 = percentiles(buckets, counts)
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read the service graph: %w", err)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Calls != out[j].Calls {
+			return out[i].Calls > out[j].Calls
+		}
+		return out[i].From+out[i].Target < out[j].From+out[j].Target
+	})
+	return out, nil
+}
+
+// Operations returns a service's operations, or every service's when
+// service is "", over a time range, busiest first.
+func (t *Traces) Operations(ctx context.Context, userID, environmentID uuid.UUID, service string, from, to time.Time) ([]OperationStats, error) {
+	if err := t.canRead(ctx, userID, environmentID); err != nil {
+		return nil, err
+	}
+	return Operations(ctx, t.conn, environmentID, service, from, to)
+}

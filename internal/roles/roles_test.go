@@ -16,8 +16,8 @@ func TestParse(t *testing.T) {
 		want    []roles.Name
 		wantErr string
 	}{
-		{"all", []roles.Name{roles.API, roles.Runner, roles.Ingest}, ""},
-		{"", []roles.Name{roles.API, roles.Runner, roles.Ingest}, ""},
+		{"all", []roles.Name{roles.API, roles.Runner, roles.Worker, roles.Ingest}, ""},
+		{"", []roles.Name{roles.API, roles.Runner, roles.Worker, roles.Ingest}, ""},
 		{"ingest", []roles.Name{roles.Ingest}, ""},
 		{"runner,api", []roles.Name{roles.API, roles.Runner}, ""},
 		{" API , api ", []roles.Name{roles.API}, ""},

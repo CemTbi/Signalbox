@@ -380,3 +380,20 @@ export function traceQuery(client: ApiClient, projectId: string, traceId: string
     staleTime: 10_000,
   });
 }
+
+/** Who called whom in an environment over a time range. */
+export function graphQuery(client: ApiClient, environmentId: string, from: string, to: string) {
+  return queryOptions({
+    queryKey: ["environments", environmentId, "graph", from, to],
+    queryFn: () => unwrap(client.GET("/api/v1/environments/{environmentId}/graph", { params: { path: { environmentId }, query: { from, to } } })),
+  });
+}
+
+/** A service's operations over a time range. */
+export function operationsQuery(client: ApiClient, environmentId: string, service: string, from: string, to: string) {
+  return queryOptions({
+    queryKey: ["environments", environmentId, "operations", service, from, to],
+    queryFn: () =>
+      unwrap(client.GET("/api/v1/environments/{environmentId}/operations", { params: { path: { environmentId }, query: { service, from, to } } })),
+  });
+}

@@ -94,7 +94,7 @@ func TestMigrate(t *testing.T) {
 		}
 		tables = append(tables, name)
 	}
-	if got := strings.Join(tables, " "); got != "goose_db_version span_metrics_1m span_metrics_1m_mv spans trace_ids trace_ids_mv" {
+	if got := strings.Join(tables, " "); got != "goose_db_version service_edges_1m span_metrics_1m span_metrics_1m_mv spans trace_ids trace_ids_mv" {
 		t.Errorf("tables = %s", got)
 	}
 	files, err := fs.Glob(clickhouse.Migrations(), "*.sql")

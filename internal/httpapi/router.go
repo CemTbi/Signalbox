@@ -271,6 +271,8 @@ func NewHandler(d Deps) http.Handler {
 	if a.Traces != nil {
 		mux.Handle("/api/v1/environments/{environmentId}/traces", methods{http.MethodGet: a.authenticated(a.searchTraces)})
 		mux.Handle("/api/v1/environments/{environmentId}/services", methods{http.MethodGet: a.authenticated(a.listTracedServices)})
+		mux.Handle("/api/v1/environments/{environmentId}/graph", methods{http.MethodGet: a.authenticated(a.getGraph)})
+		mux.Handle("/api/v1/environments/{environmentId}/operations", methods{http.MethodGet: a.authenticated(a.listOperations)})
 		mux.Handle("/api/v1/projects/{projectId}/traces/{traceId}", methods{http.MethodGet: a.authenticated(a.getTrace)})
 	}
 	if a.Contracts != nil {
