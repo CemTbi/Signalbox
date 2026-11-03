@@ -3,6 +3,7 @@
 import type { ApiClient } from "@signalbox/api-client";
 import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
 import { unwrap, unwrapTagged } from "./api";
+import { applyLive, type LiveState } from "./features/canvas/liveData";
 
 const PAGE_SIZE = 50;
 
@@ -378,6 +379,55 @@ export function traceQuery(client: ApiClient, projectId: string, traceId: string
       return Date.now() - end < 30_000 ? 5_000 : false;
     },
     staleTime: 10_000,
+  });
+}
+
+/** How often an open canvas asks for traffic, as ADR-0018 planned. */
+const LIVE_INTERVAL_MS = 5_000;
+
+/**
+ * What a canvas shows live. Each poll sends the last answer's ETag and gets
+ * back nothing, or what changed of it, or everything. Polling pauses while
+ * the tab is in the background.
+ */
+export function canvasLiveQuery(client: ApiClient, projectId: string, environment: string) {
+  const queryKey = ["projects", projectId, "canvas", "live", environment] as const;
+  return queryOptions({
+    queryKey,
+    queryFn: async ({ client: queries }): Promise<LiveState> => {
+      const last = queries.getQueryData<LiveState>(queryKey);
+      const call = client.GET("/api/v1/projects/{projectId}/canvas/live", {
+        params: { path: { projectId }, query: { environment }, header: last?.tag ? { "If-None-Match": last.tag } : {} },
+      });
+      const { response } = await call;
+      if (response.status === 304 && last) return last;
+      return applyLive(last, await unwrap(call), response.headers.get("ETag") ?? "");
+    },
+    enabled: environment !== "",
+    refetchInterval: LIVE_INTERVAL_MS,
+    // The next poll is the retry.
+    retry: false,
+    gcTime: 60_000,
+  });
+}
+
+export const canvasLayoutKey = (projectId: string) => ["projects", projectId, "canvas", "layout"] as const;
+
+/** Where people placed databases and outside hosts on a canvas. */
+export function canvasLayoutQuery(client: ApiClient, projectId: string) {
+  return queryOptions({
+    queryKey: canvasLayoutKey(projectId),
+    queryFn: () => unwrap(client.GET("/api/v1/projects/{projectId}/canvas", { params: { path: { projectId } } })),
+  });
+}
+
+export const dependenciesKey = (projectId: string) => ["projects", projectId, "dependencies"] as const;
+
+/** The lines people declared between a project's services. */
+export function dependenciesQuery(client: ApiClient, projectId: string) {
+  return queryOptions({
+    queryKey: dependenciesKey(projectId),
+    queryFn: () => unwrap(client.GET("/api/v1/projects/{projectId}/dependencies", { params: { path: { projectId } } })),
   });
 }
 

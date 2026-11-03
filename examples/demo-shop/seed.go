@@ -82,6 +82,9 @@ func runSeed(ctx context.Context) error {
 			return fmt.Errorf("the %s service: %w", svc.slug, err)
 		}
 	}
+	if err := s.placeTargets(ctx, project); err != nil {
+		return fmt.Errorf("the canvas: %w", err)
+	}
 	key, err := s.ingestKey(ctx, project)
 	if err != nil {
 		return fmt.Errorf("the ingest key: %w", err)
@@ -227,6 +230,25 @@ func (s *seeder) find(ctx context.Context, path, field, value string, create map
 		return "", err
 	}
 	return fmt.Sprint(made["id"]), nil
+}
+
+// placeTargets says where the shop's database and payment provider go when
+// their first calls bring them to the canvas, unless someone has placed
+// them already.
+func (s *seeder) placeTargets(ctx context.Context, project string) error {
+	var layout struct {
+		Targets []map[string]any `json:"targets"`
+	}
+	if err := s.do(ctx, http.MethodGet, "/api/v1/projects/"+project+"/canvas", nil, &layout, http.StatusOK); err != nil {
+		return err
+	}
+	if len(layout.Targets) > 0 {
+		return nil
+	}
+	return s.do(ctx, http.MethodPut, "/api/v1/projects/"+project+"/canvas", map[string]any{"targets": []map[string]any{
+		{"kind": "database", "name": "shop-db", "x": 640, "y": 400},
+		{"kind": "external", "name": "psp.example", "x": 960, "y": 220},
+	}}, nil, http.StatusNoContent)
 }
 
 // service makes a service with its spec published as a version, unless

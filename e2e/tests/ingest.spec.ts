@@ -15,6 +15,7 @@ test("a service sends spans with an ingest key", async ({ page, request }) => {
   await page.getByLabel("Name", { exact: true }).fill("Shop");
   await page.getByRole("button", { name: "Create project" }).click();
   await expect(page).toHaveURL(/\/projects\/prj_[0-9a-z]+$/);
+  const projectURL = page.url();
 
   // A key for production, shown once with the exporter settings.
   await page.getByRole("link", { name: "Ingest keys" }).click();
@@ -78,4 +79,16 @@ test("a service sends spans with an ingest key", async ({ page, request }) => {
     data: { resourceSpans: [] },
   });
   expect(afterRevoke.status()).toBe(401);
+
+  // The canvas lists the service its spans came from, and adds it.
+  await page.goto(projectURL);
+  const seen = page.getByRole("region", { name: "Seen in traces" });
+  await expect(seen.getByText("checkout", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expectAccessible(page);
+  await seen.getByRole("button", { name: "Add checkout to the canvas" }).click();
+  await expect(seen).toHaveCount(0);
+  const node = page.locator(".react-flow__node").filter({ hasText: "checkout" });
+  await expect(node).toBeVisible();
+  // Its span matches the moment the service knows its name, with its traffic.
+  await expect(node.getByText(/^p95 .* err · .*\/s$/)).toBeVisible({ timeout: 30_000 });
 });

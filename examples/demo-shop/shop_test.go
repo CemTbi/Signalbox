@@ -225,6 +225,10 @@ func (f *fakeSignalbox) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case key == "POST /api/v1/specs/spec_1/versions":
 		f.published++
 		writeJSON(w, http.StatusCreated, map[string]any{})
+	case key == "GET /api/v1/projects/prj_1/canvas":
+		writeJSON(w, http.StatusOK, map[string]any{"targets": []any{}})
+	case key == "PUT /api/v1/projects/prj_1/canvas":
+		w.WriteHeader(http.StatusNoContent)
 	case key == "GET /api/v1/projects/prj_1/environments":
 		writeJSON(w, http.StatusOK, map[string]any{"data": []map[string]string{{"id": "env_dev", "slug": "development"}, {"id": "env_prod", "slug": "production"}}})
 	case key == "GET /api/v1/environments/env_prod/ingest-keys":

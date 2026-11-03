@@ -13,6 +13,8 @@ export type ServiceData = {
   name: string;
   kind: ServiceKind;
   specVersion?: string;
+  /** A database's system, such as postgresql. */
+  system?: string;
   health: Health;
   p95Ms?: number;
   errorRate?: number; // 0..1

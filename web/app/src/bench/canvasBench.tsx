@@ -94,7 +94,7 @@ function Canvas() {
         } else {
           for (const [nid, d] of nodeData) flow.updateNodeData(nid, d);
         }
-        flow.setEdges(edges.map((e) => ({ ...e, data: { ...e.data, rps: edgeData.get(e.id) } })));
+        flow.setEdges(edges.map((e) => ({ ...e, data: { ...e.data, rps: edgeData.get(e.id)?.rps } })));
       }
       requestAnimationFrame(() => {
         requestAnimationFrame(() => bench.updates.push(performance.now() - t0));

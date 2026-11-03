@@ -4,6 +4,7 @@ import { BaseEdge, type EdgeProps, getBezierPath } from "@xyflow/react";
 import { memo } from "react";
 import { useLiveEdge } from "./LiveContext";
 import type { CallEdge as CallEdgeType } from "./model";
+import { formatPerSecond, formatRate } from "./ServiceNode";
 
 /**
  * A line from caller to callee. Its label is the calls per second seen in
@@ -16,7 +17,9 @@ export const CallEdge = memo(function CallEdge(props: EdgeProps<CallEdgeType>) {
   const live = useLiveEdge(id);
   const rps = live ? live.rps : data?.rps;
   const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
-  const label = data?.declared ? "declared" : rps !== undefined ? `${rps}/s` : undefined;
+  const failing = !data?.declared && (live?.errorRate ?? 0) > 0;
+  const rate = rps !== undefined ? formatPerSecond(rps) : undefined;
+  const label = data?.declared ? "declared" : failing ? `${rate} · ${formatRate(live?.errorRate ?? 0)}` : rate;
   // The label is plain SVG text on a pill sized from its length. React
   // Flow's own labels measure their text with getBBox on every change, which
   // forces a layout per line and was the main cost of a live update.
@@ -25,7 +28,7 @@ export const CallEdge = memo(function CallEdge(props: EdgeProps<CallEdgeType>) {
     <>
       <BaseEdge id={id} path={path} markerEnd={markerEnd} className={data?.declared ? "declared" : undefined} />
       {label ? (
-        <g className="call-label" transform={`translate(${labelX} ${labelY})`}>
+        <g className={failing ? "call-label errors" : "call-label"} transform={`translate(${labelX} ${labelY})`}>
           <rect x={-width / 2} y={-9} width={width} height={18} rx={3} />
           <text textAnchor="middle" dominantBaseline="central">
             {label}

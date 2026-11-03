@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import type { LiveEdge } from "./live";
 import type { CallEdge, Health, ServiceData, ServiceKind, ServiceNode } from "./model";
 
 // A demo shop of any size, for the canvas benchmark and, later, the demo
@@ -90,7 +91,7 @@ export function nextMetrics(nodes: ServiceNode[], edges: CallEdge[], random: () 
       rps: Math.round(5 + random() * 400),
     });
   }
-  const edgeData = new Map<string, number>();
-  for (const e of edges) if (!e.data?.declared) edgeData.set(e.id, Math.round(1 + random() * 200));
+  const edgeData = new Map<string, LiveEdge>();
+  for (const e of edges) if (!e.data?.declared) edgeData.set(e.id, { rps: Math.round(1 + random() * 200) });
   return { nodeData, edgeData };
 }

@@ -40,6 +40,9 @@ var (
 	ErrPreconditionRequired = errors.New("apis: precondition required")
 	// ErrCheckTimeout means checking the document took too long.
 	ErrCheckTimeout = errors.New("apis: checking the document took too long")
+	// ErrDependencyExists means the line between the two services is already
+	// declared.
+	ErrDependencyExists = errors.New("apis: dependency exists")
 )
 
 // UnreadableError means a document couldn't be read as OpenAPI or Swagger
@@ -142,7 +145,7 @@ func isModuleError(err error) bool {
 	if errors.As(err, &hasErrors) {
 		return true
 	}
-	for _, e := range []error{ErrNotFound, ErrForbidden, ErrSlugTaken, ErrVersionMismatch, ErrPreconditionRequired, ErrCheckTimeout, ErrVersionExists} {
+	for _, e := range []error{ErrNotFound, ErrForbidden, ErrSlugTaken, ErrVersionMismatch, ErrPreconditionRequired, ErrCheckTimeout, ErrVersionExists, ErrDependencyExists} {
 		if errors.Is(err, e) {
 			return true
 		}

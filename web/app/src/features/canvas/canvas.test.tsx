@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { demoShop, nextMetrics, rng } from "./demo";
 import { LiveMetricsContext } from "./LiveContext";
 import { LiveMetrics } from "./live";
-import { formatMs, formatRate, ServiceNode } from "./ServiceNode";
+import { formatMs, formatPerSecond, formatRate, ServiceNode } from "./ServiceNode";
 
 describe("demoShop", () => {
   it("builds the same layered shop from the same seed", () => {
@@ -53,8 +53,8 @@ describe("LiveMetrics", () => {
     const a = vi.fn();
     live.subscribe("e:a-b", a);
     live.hold(true);
-    live.update(new Map(), new Map([["a-b", 5]]));
-    live.update(new Map(), new Map([["a-b", 6]]));
+    live.update(new Map(), new Map([["a-b", { rps: 5 }]]));
+    live.update(new Map(), new Map([["a-b", { rps: 6 }]]));
     expect(a).not.toHaveBeenCalled();
     live.hold(false);
     expect(a).toHaveBeenCalledTimes(1);
@@ -98,10 +98,27 @@ describe("CallEdge", () => {
     );
     // Before live metrics, the line shows the rate it came with.
     expect(container.querySelector(".call-label text")?.textContent).toBe("42/s");
-    act(() => live.update(new Map(), new Map([["a-b", 7]])));
+    act(() => live.update(new Map(), new Map([["a-b", { rps: 7 }]])));
     expect(container.querySelector(".call-label text")?.textContent).toBe("7/s");
-    act(() => live.update(new Map(), new Map([["a-b", undefined]])));
+    // Errors show in words, on the line.
+    act(() => live.update(new Map(), new Map([["a-b", { rps: 7, errorRate: 0.031 }]])));
+    expect(container.querySelector(".call-label text")?.textContent).toBe("7/s · 3.1%");
+    expect(container.querySelector(".call-label.errors")).not.toBeNull();
+    act(() => live.update(new Map(), new Map([["a-b", { rps: undefined }]])));
     expect(container.querySelector(".call-label")).toBeNull();
+  });
+});
+
+describe("formats", () => {
+  it("keeps a node's numbers short", () => {
+    expect(formatMs(0.108)).toBe("<1 ms");
+    expect(formatMs(3.14)).toBe("3.1 ms");
+    expect(formatMs(156.4)).toBe("156 ms");
+    expect(formatMs(1200)).toBe("1.2 s");
+    expect(formatPerSecond(0)).toBe("0/s");
+    expect(formatPerSecond(0.004)).toBe("<0.01/s");
+    expect(formatPerSecond(0.537)).toBe("0.54/s");
+    expect(formatPerSecond(123.4)).toBe("123/s");
   });
 });
 
@@ -133,7 +150,7 @@ describe("ServiceNode", () => {
     expect(screen.getByText("orders-api")).toBeInTheDocument();
     expect(screen.getByText("Service · v2.3.0")).toBeInTheDocument();
     expect(screen.getByText("No checks")).toBeInTheDocument();
-    expect(screen.getByText("No traffic yet")).toBeInTheDocument();
+    expect(screen.getByText("No recent traffic")).toBeInTheDocument();
 
     act(() => live.update(new Map([["n1", { health: "warn", p95Ms: 640, errorRate: 0.024, rps: 12 }]]), new Map()));
     expect(screen.getByText("Degraded")).toBeInTheDocument();

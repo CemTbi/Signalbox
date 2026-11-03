@@ -84,6 +84,36 @@ test("services are placed on the canvas by hand and stay where they are put", as
   await expect(payments).toBeVisible();
   expect(await place(payments)).toEqual(arranged);
 
+  // A dependency declared from the list is a dashed line on the canvas.
+  const declaring = page.getByRole("form", { name: "Declare a dependency" });
+  await declaring.getByLabel("From").selectOption({ label: "Orders" });
+  await declaring.getByLabel("To").selectOption({ label: "Payments" });
+  await declaring.getByRole("button", { name: "Declare dependency" }).click();
+  const dashed = page.locator(".react-flow__edge-path.declared");
+  await expect(dashed).toHaveCount(1);
+  await expect(page.locator(".call-label").getByText("declared")).toBeVisible();
+  await expectAccessible(page);
+
+  // One drawn on the canvas, from a service's right edge to another's left.
+  // Clear of the bar stuck to the top of the page.
+  await page.locator(".canvas-frame").evaluate((el) => el.scrollIntoView({ block: "center", behavior: "instant" }));
+  const from = await payments.locator(".react-flow__handle.source").boundingBox();
+  const to = await orders.locator(".react-flow__handle.target").boundingBox();
+  if (!from || !to) throw new Error("the services have no handles");
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect(dashed).toHaveCount(2);
+
+  // Declared lines stay, and are removed from the list.
+  await page.reload();
+  await expect(dashed).toHaveCount(2);
+  await page.getByRole("button", { name: "Remove the dependency from Orders to Payments" }).click();
+  await expect(dashed).toHaveCount(1);
+  await page.getByRole("button", { name: "Remove the dependency from Payments to Orders" }).click();
+  await expect(dashed).toHaveCount(0);
+
   // The project's API client sends a request from the server and keeps it
   // in history. Inside the Compose network, the server is signalbox:8080.
   await page.goto(`${projectURL}/requests`);

@@ -28,6 +28,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/ingest"
 	"github.com/CemTbi/Signalbox/internal/modules/agents"
 	"github.com/CemTbi/Signalbox/internal/modules/apis"
+	"github.com/CemTbi/Signalbox/internal/modules/canvas"
 	"github.com/CemTbi/Signalbox/internal/modules/client"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
 	"github.com/CemTbi/Signalbox/internal/modules/runner"
@@ -308,6 +309,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 			Agents:         ag,
 			IngestKeys:     keys,
 			Traces:         telemetry.NewTraces(s.ch, s.workspaces),
+			Canvas:         canvas.New(s.ch, s.workspaces, mods),
 			PublicURL:      publicURL,
 			TrustedProxies: trusted,
 			Metrics:        reg,
