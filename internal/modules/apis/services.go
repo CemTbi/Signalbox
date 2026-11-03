@@ -64,7 +64,7 @@ const (
 	gridColumns = 4
 	gridX       = 288
 	gridY       = 152
-	// maxPlacements bounds one PlaceServices call, as pages bound lists.
+	// maxPlacements bounds one PlaceOnCanvas call, as pages bound lists.
 	maxPlacements = 500
 )
 
@@ -84,6 +84,7 @@ func telemetryName(errs *validate.Errors, v string) string {
 	if utf8.RuneCountInString(v) > maxTelemetryName {
 		errs.Add("/telemetryServiceName", "maxLength", fmt.Sprintf("Use at most %d characters.", maxTelemetryName))
 	}
+	validate.PlainText(errs, "/telemetryServiceName", v)
 	return v
 }
 
@@ -337,64 +338,5 @@ func (m *Module) DeleteService(ctx context.Context, userID, serviceID uuid.UUID,
 		return fmt.Errorf("delete service: %w", err)
 	}
 	m.logger.InfoContext(ctx, "deleted service", id.LogAttr("service_id", id.Service, serviceID), id.LogAttr("user_id", id.User, userID))
-	return nil
-}
-
-// PlaceServices moves services' nodes on their project's canvas. Owners,
-// admins and editors may. Layout isn't an edit of the services: their
-// versions stay, so moving a node never conflicts with someone renaming
-// it, and the last move wins. ErrNotFound means a service isn't in the
-// project.
-func (m *Module) PlaceServices(ctx context.Context, userID, projectID uuid.UUID, placements []Placement) error {
-	var errs validate.Errors
-	switch {
-	case len(placements) == 0:
-		errs.Add("/positions", "minItems", "Send at least one position.")
-	case len(placements) > maxPlacements:
-		errs.Add("/positions", "maxItems", fmt.Sprintf("Send at most %d positions at once.", maxPlacements))
-	}
-	ids := make([]uuid.UUID, len(placements))
-	xs := make([]float64, len(placements))
-	ys := make([]float64, len(placements))
-	seen := map[uuid.UUID]bool{}
-	for i, p := range placements {
-		pointer := fmt.Sprintf("/positions/%d", i)
-		if seen[p.ServiceID] {
-			errs.Add(pointer+"/serviceId", "uniqueItems", "Send each service once.")
-		}
-		seen[p.ServiceID] = true
-		var perrs validate.Errors
-		position(&perrs, p.Position)
-		for _, e := range perrs {
-			errs.Add(pointer, e.Code, e.Detail)
-		}
-		ids[i], xs[i], ys[i] = p.ServiceID, p.Position.X, p.Position.Y
-	}
-	if err := errs.Err(); err != nil {
-		return err
-	}
-	if err := m.authorize(ctx, userID, projectID, edit); err != nil {
-		return err
-	}
-	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `
-			UPDATE services s SET position_x = p.x, position_y = p.y
-			FROM unnest($2::uuid[], $3::float8[], $4::float8[]) AS p(id, x, y)
-			WHERE s.id = p.id AND s.project_id = $1`, projectID, ids, xs, ys)
-		if err != nil {
-			return err
-		}
-		// All or nothing: a service from elsewhere undoes the rest.
-		if tag.RowsAffected() != int64(len(placements)) {
-			return ErrNotFound
-		}
-		return nil
-	})
-	if errors.Is(err, ErrNotFound) {
-		return err
-	}
-	if err != nil {
-		return fmt.Errorf("place services: %w", err)
-	}
 	return nil
 }

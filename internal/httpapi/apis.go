@@ -157,6 +157,8 @@ func (a *api) apisError(w http.ResponseWriter, r *http.Request, what string, err
 	case errors.Is(err, apis.ErrForbidden):
 		writeProblem(w, r, http.StatusForbidden, "permission-denied",
 			"Your role in this workspace doesn't allow this. Ask a workspace owner or admin.")
+	case errors.Is(err, apis.ErrDependencyExists):
+		writeProblem(w, r, http.StatusConflict, "dependency-exists", "This dependency is already declared.")
 	case errors.Is(err, apis.ErrSlugTaken):
 		writeProblem(w, r, http.StatusConflict, "slug-taken", "Another service in this project already uses this slug. Choose another.")
 	case errors.Is(err, apis.ErrVersionMismatch):
@@ -615,7 +617,11 @@ type APIs interface {
 	ListServices(ctx context.Context, userID, projectID uuid.UUID, p workspaces.PageRequest) (workspaces.Page[apis.Service], error)
 	CreateService(ctx context.Context, userID, projectID uuid.UUID, in apis.ServiceInput) (apis.Service, error)
 	GetService(ctx context.Context, userID, serviceID uuid.UUID) (apis.Service, error)
-	PlaceServices(ctx context.Context, userID, projectID uuid.UUID, placements []apis.Placement) error
+	PlaceOnCanvas(ctx context.Context, userID, projectID uuid.UUID, placements []apis.Placement, targets []apis.TargetPlacement) error
+	CanvasTargets(ctx context.Context, userID, projectID uuid.UUID) ([]apis.TargetPlacement, error)
+	ListDependencies(ctx context.Context, userID, projectID uuid.UUID) ([]apis.Dependency, error)
+	CreateDependency(ctx context.Context, userID, projectID, from, to uuid.UUID) (apis.Dependency, error)
+	DeleteDependency(ctx context.Context, userID, dependencyID uuid.UUID) error
 	UpdateService(ctx context.Context, userID, serviceID uuid.UUID, pre workspaces.Precondition, patch apis.ServicePatch) (apis.Service, error)
 	DeleteService(ctx context.Context, userID, serviceID uuid.UUID, pre workspaces.Precondition) error
 	ListSpecs(ctx context.Context, userID, serviceID uuid.UUID, p workspaces.PageRequest) (workspaces.Page[apis.Spec], error)

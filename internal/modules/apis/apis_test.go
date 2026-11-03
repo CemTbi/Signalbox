@@ -486,7 +486,7 @@ func TestPlacingServices(t *testing.T) {
 	services = services[:2]
 
 	moves := []apis.Placement{{ServiceID: services[0].ID, Position: apis.Position{X: 10, Y: 20}}, {ServiceID: services[1].ID, Position: apis.Position{X: -5, Y: 7.5}}}
-	if err := f.mod.PlaceServices(f.ctx, f.owner, f.project, moves); err != nil {
+	if err := f.mod.PlaceOnCanvas(f.ctx, f.owner, f.project, moves, nil); err != nil {
 		t.Fatal(err)
 	}
 	got, err := f.mod.GetService(f.ctx, f.owner, services[1].ID)
@@ -495,13 +495,13 @@ func TestPlacingServices(t *testing.T) {
 		t.Errorf("moved = %+v, %v", got, err)
 	}
 
-	if err := f.mod.PlaceServices(f.ctx, viewer, f.project, moves); !errors.Is(err, apis.ErrForbidden) {
+	if err := f.mod.PlaceOnCanvas(f.ctx, viewer, f.project, moves, nil); !errors.Is(err, apis.ErrForbidden) {
 		t.Errorf("a viewer moves services: %v", err)
 	}
 	// A service from another project undoes the whole move.
 	other := append(moves[:1:1], apis.Placement{ServiceID: uuid.New(), Position: apis.Position{X: 1, Y: 1}})
 	other[0].Position = apis.Position{X: 999, Y: 999}
-	if err := f.mod.PlaceServices(f.ctx, f.owner, f.project, other); !errors.Is(err, apis.ErrNotFound) {
+	if err := f.mod.PlaceOnCanvas(f.ctx, f.owner, f.project, other, nil); !errors.Is(err, apis.ErrNotFound) {
 		t.Errorf("unknown service: %v", err)
 	}
 	if got, _ := f.mod.GetService(f.ctx, f.owner, services[0].ID); got.Position != (apis.Position{X: 10, Y: 20}) {
@@ -509,10 +509,10 @@ func TestPlacingServices(t *testing.T) {
 	}
 	var verrs validate.Errors
 	twice := []apis.Placement{moves[0], moves[0]}
-	if err := f.mod.PlaceServices(f.ctx, f.owner, f.project, twice); !errors.As(err, &verrs) || verrs[0].Pointer != "/positions/1/serviceId" {
+	if err := f.mod.PlaceOnCanvas(f.ctx, f.owner, f.project, twice, nil); !errors.As(err, &verrs) || verrs[0].Pointer != "/positions/1/serviceId" {
 		t.Errorf("a service twice: %v", err)
 	}
-	if err := f.mod.PlaceServices(f.ctx, f.owner, f.project, nil); !errors.As(err, &verrs) {
+	if err := f.mod.PlaceOnCanvas(f.ctx, f.owner, f.project, nil, nil); !errors.As(err, &verrs) {
 		t.Errorf("nothing to place: %v", err)
 	}
 }

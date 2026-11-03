@@ -2,8 +2,8 @@
 
 import type { ServiceData } from "./model";
 
-/** A line's live value: calls per second, undefined without traffic. */
-export type LiveEdge = { rps: number | undefined };
+/** A line's live values: calls per second, undefined without traffic, and the share that failed. */
+export type LiveEdge = { rps: number | undefined; errorRate?: number };
 
 /** The values of a node that change while the canvas is open. */
 export type LiveNode = Pick<ServiceData, "health" | "p95Ms" | "errorRate" | "rps">;
@@ -23,7 +23,7 @@ export class LiveMetrics {
   private holding = false;
 
   /** Stores new values and shows those that changed, unless held. */
-  update(nodes: Map<string, LiveNode>, edges: Map<string, number | undefined>) {
+  update(nodes: Map<string, LiveNode>, edges: Map<string, LiveEdge>) {
     const changed: string[] = [];
     for (const [id, v] of nodes) {
       const old = this.nodes.get(id);
@@ -32,10 +32,10 @@ export class LiveMetrics {
         changed.push(`n:${id}`);
       }
     }
-    for (const [id, rps] of edges) {
+    for (const [id, v] of edges) {
       const old = this.edges.get(id);
-      if (!old || old.rps !== rps) {
-        this.edges.set(id, { rps });
+      if (!old || old.rps !== v.rps || old.errorRate !== v.errorRate) {
+        this.edges.set(id, v);
         changed.push(`e:${id}`);
       }
     }

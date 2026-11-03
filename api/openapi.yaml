@@ -56,6 +56,8 @@ tags:
     description: Development, staging, production and other environments of a project.
   - name: Services
     description: Services are the nodes on a project's canvas.
+  - name: Canvas
+    description: "What a project's canvas shows: its layout, its live traffic and the dependencies people declare."
   - name: Specs
     description: OpenAPI documents of a service and their revisions.
   - name: Client
@@ -1577,27 +1579,162 @@ paths:
   /api/v1/projects/{projectId}/canvas:
     parameters:
       - $ref: '#/components/parameters/ProjectId'
+    get:
+      operationId: getCanvasLayout
+      summary: Read the canvas's layout
+      description: Returns where people placed databases and outside hosts on the project's canvas. Services carry their own positions. Every member of the workspace may.
+      tags: [Canvas]
+      responses:
+        '200':
+          description: The layout.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CanvasLayout'}
+              example: {targets: [{kind: database, name: shop-db, x: 640, y: 400}]}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
     put:
       operationId: placeServices
-      summary: Move services on the canvas
+      summary: Move nodes on the canvas
       description: |
-        Sets where services' nodes are on the project's canvas, such as after someone drags one or arranges the canvas automatically. Owners, admins and editors may.
+        Sets where nodes are on the project's canvas, such as after someone drags one or arranges the canvas automatically. Owners, admins and editors may.
 
-        Layout isn't an edit of the services: their ETags stay the same, so it needs no `If-Match`, and the last move wins. The move is all or nothing; if a service isn't in the project, nothing moves.
-      tags: [Services]
+        Layout isn't an edit of the services: their ETags stay the same, so it needs no `If-Match`, and the last move wins. The move is all or nothing; if a service isn't in the project, nothing moves. Databases and outside hosts are named as the service graph names them, and needn't have traffic yet.
+      tags: [Canvas]
       requestBody:
         required: true
-        description: The services to move, and where to.
+        description: The nodes to move, and where to.
         content:
           application/json:
             schema: {$ref: '#/components/schemas/CanvasPlacements'}
-            example: {positions: [{serviceId: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, x: 320, y: 120}]}
+            example: {positions: [{serviceId: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, x: 320, y: 120}], targets: [{kind: database, name: shop-db, x: 640, y: 400}]}
       responses:
         '204':
-          description: The services moved.
+          description: The nodes moved.
           headers:
             X-Request-Id: {$ref: '#/components/headers/RequestId'}
         '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/projects/{projectId}/canvas/live:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      operationId: getCanvasLive
+      summary: Read the canvas's live traffic
+      description: |
+        Returns each service's requests, errors and p95 latency over the last 5 minutes in one environment, and each line's calls and errors. Lines are built a minute at a time, so theirs are the 5 minutes that end about 2 minutes ago. A service or line with nothing recent stays for an hour at a rate of 0. Every member of the workspace may.
+
+        Ask every 5 seconds, with the last `ETag` in `If-None-Match`. The answer is `304` if nothing changed, only what changed if the server still knows that state (`changesSince` says so), and otherwise everything. Answers are cached for 5 seconds per environment.
+
+        A span's `service.name` matches a canvas service by its telemetry name, or by its slug if it has none. Services seen in spans that match none are listed with `onCanvas` false, and lines name nodes by ID: a service's own, `seen:` and a name for a service not on the canvas, or the kind and address of a database or host, such as `database:shop-db`.
+      tags: [Canvas]
+      parameters:
+        - name: environment
+          in: query
+          required: true
+          description: The environment whose traffic to show.
+          schema: {$ref: '#/components/schemas/EnvironmentId'}
+        - name: If-None-Match
+          in: header
+          description: The ETag of the answer last received.
+          schema: {type: string, maxLength: 200, examples: ['"6f1d2c3b4a59687766554433"']}
+      responses:
+        '200':
+          description: What the canvas shows, or what changed of it.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            ETag: {$ref: '#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CanvasLive'}
+              example:
+                services:
+                  - {id: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, name: orders-api, onCanvas: true, rate: 12.4, errorRate: 0.008, p95Ms: 128}
+                lines:
+                  - {id: 'svc_01j9z3q1s3v5w7y9a1c3e5g7j9>database:shop-db', from: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, to: 'database:shop-db', fromName: orders-api, toName: shop-db, toKind: database, system: postgresql, rate: 24.8, errorRate: 0}
+                removed: {services: [], lines: []}
+        '304':
+          description: Nothing changed since the ETag in `If-None-Match`.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            ETag: {$ref: '#/components/headers/ETag'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/projects/{projectId}/dependencies:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      operationId: listDependencies
+      summary: List declared dependencies
+      description: Lists the lines people declared between the project's services, oldest first. Every member of the workspace may.
+      tags: [Canvas]
+      responses:
+        '200':
+          description: The dependencies.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DependencyList'}
+              example:
+                data:
+                  - {id: dep_01j9z3w5y7a9c1e3g5j7m9p1r3, fromServiceId: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, toServiceId: svc_01j9z3s7v9x1z3b5d7f9h1k3m5, createdAt: '2026-11-03T12:00:00Z'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createDependency
+      summary: Declare a dependency
+      description: Declares that one service calls another, for calls that traces haven't shown or can't. It shows as a dashed line until traffic shows the same call. A project can declare 1,000. Owners, admins and editors may.
+      tags: [Canvas]
+      requestBody:
+        required: true
+        description: The two services.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DependencyInput'}
+            example: {fromServiceId: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, toServiceId: svc_01j9z3s7v9x1z3b5d7f9h1k3m5}
+      responses:
+        '201':
+          description: The dependency is declared.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            Location: {$ref: '#/components/headers/Location'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Dependency'}
+              example: {id: dep_01j9z3w5y7a9c1e3g5j7m9p1r3, fromServiceId: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, toServiceId: svc_01j9z3s7v9x1z3b5d7f9h1k3m5, createdAt: '2026-11-03T12:00:00Z'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/dependencies/{dependencyId}:
+    parameters:
+      - name: dependencyId
+        in: path
+        required: true
+        description: The dependency's ID.
+        schema: {$ref: '#/components/schemas/DependencyId'}
+    delete:
+      operationId: deleteDependency
+      summary: Remove a declared dependency
+      description: Removes the line. Traffic between the two services still shows as a line of its own. Owners, admins and editors may.
+      tags: [Canvas]
+      responses:
+        '204':
+          description: The dependency is removed.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
@@ -5538,17 +5675,143 @@ components:
         y: {type: number, description: Vertical position., examples: [120]}
     CanvasPlacements:
       type: object
-      description: Services to move on a canvas.
-      required: [positions]
+      description: Nodes to move on a canvas. At least one, of either kind.
       additionalProperties: false
       properties:
         positions:
           type: array
           description: Where each service's node goes. Each service may appear once.
-          minItems: 1
           maxItems: 500
           items: {$ref: '#/components/schemas/CanvasPlacement'}
           examples: [[{serviceId: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, x: 320, y: 120}]]
+        targets:
+          type: array
+          description: Where each database's or outside host's node goes. Each may appear once.
+          maxItems: 500
+          items: {$ref: '#/components/schemas/TargetPlacement'}
+          examples: [[{kind: database, name: shop-db, x: 640, y: 400}]]
+    TargetPlacement:
+      type: object
+      description: Where a database's or outside host's node goes, in canvas units.
+      required: [kind, name, x, y]
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+          enum: [database, external]
+          description: What it is.
+          examples: [database]
+          x-enum-varnames: [TargetIsDatabase, TargetIsExternal]
+        name: {type: string, minLength: 1, maxLength: 1024, description: The address the service graph names it by., examples: [shop-db]}
+        x: {type: number, minimum: -1000000000, maximum: 1000000000, description: The node's horizontal position., examples: [640]}
+        y: {type: number, minimum: -1000000000, maximum: 1000000000, description: The node's vertical position., examples: [400]}
+    CanvasLayout:
+      type: object
+      description: What's saved about a canvas beyond its services.
+      required: [targets]
+      properties:
+        targets:
+          type: array
+          description: The databases and outside hosts someone placed.
+          items: {$ref: '#/components/schemas/TargetPlacement'}
+          examples: [[{kind: database, name: shop-db, x: 640, y: 400}]]
+    CanvasLive:
+      type: object
+      description: What a canvas shows live, or what changed of it since `changesSince`.
+      required: [services, lines, removed]
+      properties:
+        changesSince:
+          type: string
+          description: The ETag these changes apply to. Without it, this is everything.
+          examples: ['"6f1d2c3b4a59687766554433"']
+        services:
+          type: array
+          description: Services with their traffic.
+          items: {$ref: '#/components/schemas/LiveService'}
+          examples: [[{id: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, name: orders-api, onCanvas: true, rate: 12.4, errorRate: 0.008, p95Ms: 128}]]
+        lines:
+          type: array
+          description: Who calls whom.
+          items: {$ref: '#/components/schemas/LiveLine'}
+          examples: [[{id: 'svc_01j9z3q1s3v5w7y9a1c3e5g7j9>database:shop-db', from: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, to: 'database:shop-db', fromName: orders-api, toName: shop-db, toKind: database, system: postgresql, rate: 24.8, errorRate: 0}]]
+        removed:
+          type: object
+          description: What's gone since `changesSince`, by ID.
+          required: [services, lines]
+          properties:
+            services:
+              type: array
+              description: IDs of services.
+              items: {type: string, examples: ['seen:orders-api']}
+              examples: [['seen:orders-api']]
+            lines:
+              type: array
+              description: IDs of lines.
+              items: {type: string, examples: ['seen:orders-api>database:shop-db']}
+              examples: [['seen:orders-api>database:shop-db']]
+          examples: [{services: [], lines: []}]
+    LiveService:
+      type: object
+      description: A service's traffic over the last 5 minutes, from the requests it handled.
+      required: [id, name, onCanvas, rate, errorRate]
+      properties:
+        id: {type: string, description: 'The node''s ID: the service''s, on the canvas, and otherwise `seen:` and its name.', examples: [svc_01j9z3q1s3v5w7y9a1c3e5g7j9]}
+        name: {type: string, description: The `service.name` of its spans., examples: [orders-api]}
+        onCanvas: {type: boolean, description: Whether it matches a service on the canvas., examples: [true]}
+        rate: {type: number, minimum: 0, description: 'Requests a second, to 3 significant digits.', examples: [12.4]}
+        errorRate: {type: number, minimum: 0, maximum: 1, description: The share of them that failed., examples: [0.008]}
+        p95Ms: {type: number, minimum: 0, description: 'The 95th percentile of their durations, within 19%. Missing without requests.', examples: [128]}
+    LiveLine:
+      type: object
+      description: The calls from one node to another over 5 recent minutes, as the caller saw them.
+      required: [id, from, to, fromName, toName, toKind, rate, errorRate]
+      properties:
+        id: {type: string, description: The line's ID., examples: ['svc_01j9z3q1s3v5w7y9a1c3e5g7j9>database:shop-db']}
+        from: {type: string, description: The calling node's ID., examples: [svc_01j9z3q1s3v5w7y9a1c3e5g7j9]}
+        to: {type: string, description: The called node's ID., examples: ['database:shop-db']}
+        fromName: {type: string, description: 'The caller''s `service.name`.', examples: [orders-api]}
+        toName: {type: string, description: 'What it called: a service by name, or a database or host by address.', examples: [shop-db]}
+        toKind:
+          type: string
+          enum: [service, database, external]
+          description: What the target is.
+          examples: [database]
+          x-enum-varnames: [LineToService, LineToDatabase, LineToExternal]
+        system: {type: string, description: 'A database''s `db.system`.', examples: [postgresql]}
+        rate: {type: number, minimum: 0, description: 'Calls a second, to 3 significant digits.', examples: [24.8]}
+        errorRate: {type: number, minimum: 0, maximum: 1, description: The share of them that failed., examples: [0]}
+    DependencyId:
+      type: string
+      description: A declared dependency's ID.
+      pattern: '^dep_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [dep_01j9z3w5y7a9c1e3g5j7m9p1r3]
+    DependencyInput:
+      type: object
+      description: The two services of a dependency.
+      required: [fromServiceId, toServiceId]
+      additionalProperties: false
+      properties:
+        fromServiceId: {$ref: '#/components/schemas/ServiceId'}
+        toServiceId: {$ref: '#/components/schemas/ServiceId'}
+    Dependency:
+      type: object
+      description: A line someone declared between two services.
+      required: [id, fromServiceId, toServiceId, createdAt]
+      properties:
+        id: {$ref: '#/components/schemas/DependencyId'}
+        fromServiceId: {$ref: '#/components/schemas/ServiceId'}
+        toServiceId: {$ref: '#/components/schemas/ServiceId'}
+        createdAt: {type: string, format: date-time, description: When it was declared., examples: ['2026-11-03T12:00:00Z']}
+    DependencyList:
+      type: object
+      description: A project's declared dependencies.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The dependencies, oldest first.
+          items: {$ref: '#/components/schemas/Dependency'}
+          examples: [[{id: dep_01j9z3w5y7a9c1e3g5j7m9p1r3, fromServiceId: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, toServiceId: svc_01j9z3s7v9x1z3b5d7f9h1k3m5, createdAt: '2026-11-03T12:00:00Z'}]]
     CanvasPlacement:
       type: object
       description: Where one service's node goes, in canvas units.

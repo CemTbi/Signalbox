@@ -331,6 +331,98 @@ func (t *Traces) Graph(ctx context.Context, userID, environmentID uuid.UUID, fro
 	return out, nil
 }
 
+// maxRecent bounds what a live read returns: more services or lines than
+// any canvas could show, in case spans carry made-up names.
+const maxRecent = 5000
+
+// RecentService is a service with spans lately, and the requests it handled
+// over the recent part of that time.
+type RecentService struct {
+	Service       string
+	Calls, Errors uint64
+	P95           time.Duration
+}
+
+// RecentServices lists the services with spans since seen, of any kind,
+// with their server and consumer spans counted since from. The caller has
+// checked access.
+func RecentServices(ctx context.Context, conn clickhouse.Conn, environmentID uuid.UUID, seen, from time.Time) ([]RecentService, error) {
+	rows, err := conn.Query(ctx, `
+		WITH minute >= toStartOfMinute({from:DateTime64(9)}) AND span_kind IN ('server', 'consumer') AS counted
+		SELECT service_name, sumIf(calls, counted), sumIf(errors, counted),
+		       tupleElement(sumMapIf(latency_histogram, counted), 1), tupleElement(sumMapIf(latency_histogram, counted), 2)
+		FROM span_metrics_1m
+		WHERE environment_id = {env:UUID} AND minute >= toStartOfMinute({seen:DateTime64(9)})
+		GROUP BY service_name
+		ORDER BY sum(calls) DESC, service_name
+		LIMIT {limit:UInt32}`,
+		clickhouse.Named("env", environmentID), clickhouse.Named("seen", seen), clickhouse.Named("from", from), clickhouse.Named("limit", uint32(maxRecent)))
+	if err != nil {
+		return nil, fmt.Errorf("read recent services: %w", err)
+	}
+	defer rows.Close()
+	var out []RecentService
+	for rows.Next() {
+		var (
+			s       RecentService
+			buckets []uint8
+			counts  []uint64
+		)
+		if err := rows.Scan(&s.Service, &s.Calls, &s.Errors, &buckets, &counts); err != nil {
+			return nil, fmt.Errorf("read recent services: %w", err)
+		}
+		_, s.P95, _ = percentiles(buckets, counts)
+		out = append(out, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read recent services: %w", err)
+	}
+	return out, nil
+}
+
+// RecentEdge is a line of the service graph seen lately, with its calls
+// over the recent part of that time.
+type RecentEdge struct {
+	From, Target  string
+	TargetKind    TargetKind
+	System        string
+	Calls, Errors uint64
+}
+
+// RecentEdges lists the lines with calls since seen, with their calls
+// counted from from up to to. The caller has checked access.
+func RecentEdges(ctx context.Context, conn clickhouse.Conn, environmentID uuid.UUID, seen, from, to time.Time) ([]RecentEdge, error) {
+	rows, err := conn.Query(ctx, `
+		WITH minute >= toStartOfMinute({from:DateTime64(9)}) AND minute < {to:DateTime64(9)} AS counted
+		SELECT client_service, target, toString(target_kind), target_system, sumIf(calls, counted), sumIf(errors, counted)
+		FROM service_edges_1m FINAL
+		WHERE environment_id = {env:UUID} AND minute >= toStartOfMinute({seen:DateTime64(9)})
+		GROUP BY client_service, target, target_kind, target_system
+		ORDER BY sum(calls) DESC, client_service, target
+		LIMIT {limit:UInt32}`,
+		clickhouse.Named("env", environmentID), clickhouse.Named("seen", seen), clickhouse.Named("from", from), clickhouse.Named("to", to), clickhouse.Named("limit", uint32(maxRecent)))
+	if err != nil {
+		return nil, fmt.Errorf("read recent lines: %w", err)
+	}
+	defer rows.Close()
+	var out []RecentEdge
+	for rows.Next() {
+		var (
+			e    RecentEdge
+			kind string
+		)
+		if err := rows.Scan(&e.From, &e.Target, &kind, &e.System, &e.Calls, &e.Errors); err != nil {
+			return nil, fmt.Errorf("read recent lines: %w", err)
+		}
+		e.TargetKind = TargetKind(kind)
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read recent lines: %w", err)
+	}
+	return out, nil
+}
+
 // Operations returns a service's operations, or every service's when
 // service is "", over a time range, busiest first.
 func (t *Traces) Operations(ctx context.Context, userID, environmentID uuid.UUID, service string, from, to time.Time) ([]OperationStats, error) {

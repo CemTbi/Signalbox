@@ -41,6 +41,7 @@ const (
 	Agent       Prefix = "agt"
 	Job         Prefix = "job"
 	IngestKey   Prefix = "ing"
+	Dependency  Prefix = "dep"
 )
 
 // ErrInvalid means a string isn't an ID of the expected type.

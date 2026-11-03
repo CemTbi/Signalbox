@@ -764,16 +764,97 @@ export interface paths {
             };
             cookie?: never;
         };
-        get?: never;
         /**
-         * Move services on the canvas
-         * @description Sets where services' nodes are on the project's canvas, such as after someone drags one or arranges the canvas automatically. Owners, admins and editors may.
+         * Read the canvas's layout
+         * @description Returns where people placed databases and outside hosts on the project's canvas. Services carry their own positions. Every member of the workspace may.
+         */
+        get: operations["getCanvasLayout"];
+        /**
+         * Move nodes on the canvas
+         * @description Sets where nodes are on the project's canvas, such as after someone drags one or arranges the canvas automatically. Owners, admins and editors may.
          *
-         *     Layout isn't an edit of the services: their ETags stay the same, so it needs no `If-Match`, and the last move wins. The move is all or nothing; if a service isn't in the project, nothing moves.
+         *     Layout isn't an edit of the services: their ETags stay the same, so it needs no `If-Match`, and the last move wins. The move is all or nothing; if a service isn't in the project, nothing moves. Databases and outside hosts are named as the service graph names them, and needn't have traffic yet.
          */
         put: operations["placeServices"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/canvas/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read the canvas's live traffic
+         * @description Returns each service's requests, errors and p95 latency over the last 5 minutes in one environment, and each line's calls and errors. Lines are built a minute at a time, so theirs are the 5 minutes that end about 2 minutes ago. A service or line with nothing recent stays for an hour at a rate of 0. Every member of the workspace may.
+         *
+         *     Ask every 5 seconds, with the last `ETag` in `If-None-Match`. The answer is `304` if nothing changed, only what changed if the server still knows that state (`changesSince` says so), and otherwise everything. Answers are cached for 5 seconds per environment.
+         *
+         *     A span's `service.name` matches a canvas service by its telemetry name, or by its slug if it has none. Services seen in spans that match none are listed with `onCanvas` false, and lines name nodes by ID: a service's own, `seen:` and a name for a service not on the canvas, or the kind and address of a database or host, such as `database:shop-db`.
+         */
+        get: operations["getCanvasLive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/dependencies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List declared dependencies
+         * @description Lists the lines people declared between the project's services, oldest first. Every member of the workspace may.
+         */
+        get: operations["listDependencies"];
+        put?: never;
+        /**
+         * Declare a dependency
+         * @description Declares that one service calls another, for calls that traces haven't shown or can't. It shows as a dashed line until traffic shows the same call. A project can declare 1,000. Owners, admins and editors may.
+         */
+        post: operations["createDependency"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/dependencies/{dependencyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The dependency's ID. */
+                dependencyId: components["schemas"]["DependencyId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a declared dependency
+         * @description Removes the line. Traffic between the two services still shows as a line of its own. Owners, admins and editors may.
+         */
+        delete: operations["deleteDependency"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4554,7 +4635,7 @@ export interface components {
              */
             y: number;
         };
-        /** @description Services to move on a canvas. */
+        /** @description Nodes to move on a canvas. At least one, of either kind. */
         CanvasPlacements: {
             /**
              * @description Where each service's node goes. Each service may appear once.
@@ -4566,7 +4647,239 @@ export interface components {
              *       }
              *     ]
              */
-            positions: components["schemas"]["CanvasPlacement"][];
+            positions?: components["schemas"]["CanvasPlacement"][];
+            /**
+             * @description Where each database's or outside host's node goes. Each may appear once.
+             * @example [
+             *       {
+             *         "kind": "database",
+             *         "name": "shop-db",
+             *         "x": 640,
+             *         "y": 400
+             *       }
+             *     ]
+             */
+            targets?: components["schemas"]["TargetPlacement"][];
+        };
+        /** @description Where a database's or outside host's node goes, in canvas units. */
+        TargetPlacement: {
+            /**
+             * @description What it is.
+             * @example database
+             * @enum {string}
+             */
+            kind: "database" | "external";
+            /**
+             * @description The address the service graph names it by.
+             * @example shop-db
+             */
+            name: string;
+            /**
+             * @description The node's horizontal position.
+             * @example 640
+             */
+            x: number;
+            /**
+             * @description The node's vertical position.
+             * @example 400
+             */
+            y: number;
+        };
+        /** @description What's saved about a canvas beyond its services. */
+        CanvasLayout: {
+            /**
+             * @description The databases and outside hosts someone placed.
+             * @example [
+             *       {
+             *         "kind": "database",
+             *         "name": "shop-db",
+             *         "x": 640,
+             *         "y": 400
+             *       }
+             *     ]
+             */
+            targets: components["schemas"]["TargetPlacement"][];
+        };
+        /** @description What a canvas shows live, or what changed of it since `changesSince`. */
+        CanvasLive: {
+            /**
+             * @description The ETag these changes apply to. Without it, this is everything.
+             * @example "6f1d2c3b4a59687766554433"
+             */
+            changesSince?: string;
+            /**
+             * @description Services with their traffic.
+             * @example [
+             *       {
+             *         "id": "svc_01j9z3q1s3v5w7y9a1c3e5g7j9",
+             *         "name": "orders-api",
+             *         "onCanvas": true,
+             *         "rate": 12.4,
+             *         "errorRate": 0.008,
+             *         "p95Ms": 128
+             *       }
+             *     ]
+             */
+            services: components["schemas"]["LiveService"][];
+            /**
+             * @description Who calls whom.
+             * @example [
+             *       {
+             *         "id": "svc_01j9z3q1s3v5w7y9a1c3e5g7j9>database:shop-db",
+             *         "from": "svc_01j9z3q1s3v5w7y9a1c3e5g7j9",
+             *         "to": "database:shop-db",
+             *         "fromName": "orders-api",
+             *         "toName": "shop-db",
+             *         "toKind": "database",
+             *         "system": "postgresql",
+             *         "rate": 24.8,
+             *         "errorRate": 0
+             *       }
+             *     ]
+             */
+            lines: components["schemas"]["LiveLine"][];
+            /**
+             * @description What's gone since `changesSince`, by ID.
+             * @example {
+             *       "services": [],
+             *       "lines": []
+             *     }
+             */
+            removed: {
+                /**
+                 * @description IDs of services.
+                 * @example [
+                 *       "seen:orders-api"
+                 *     ]
+                 */
+                services: string[];
+                /**
+                 * @description IDs of lines.
+                 * @example [
+                 *       "seen:orders-api>database:shop-db"
+                 *     ]
+                 */
+                lines: string[];
+            };
+        };
+        /** @description A service's traffic over the last 5 minutes, from the requests it handled. */
+        LiveService: {
+            /**
+             * @description The node's ID: the service's, on the canvas, and otherwise `seen:` and its name.
+             * @example svc_01j9z3q1s3v5w7y9a1c3e5g7j9
+             */
+            id: string;
+            /**
+             * @description The `service.name` of its spans.
+             * @example orders-api
+             */
+            name: string;
+            /**
+             * @description Whether it matches a service on the canvas.
+             * @example true
+             */
+            onCanvas: boolean;
+            /**
+             * @description Requests a second, to 3 significant digits.
+             * @example 12.4
+             */
+            rate: number;
+            /**
+             * @description The share of them that failed.
+             * @example 0.008
+             */
+            errorRate: number;
+            /**
+             * @description The 95th percentile of their durations, within 19%. Missing without requests.
+             * @example 128
+             */
+            p95Ms?: number;
+        };
+        /** @description The calls from one node to another over 5 recent minutes, as the caller saw them. */
+        LiveLine: {
+            /**
+             * @description The line's ID.
+             * @example svc_01j9z3q1s3v5w7y9a1c3e5g7j9>database:shop-db
+             */
+            id: string;
+            /**
+             * @description The calling node's ID.
+             * @example svc_01j9z3q1s3v5w7y9a1c3e5g7j9
+             */
+            from: string;
+            /**
+             * @description The called node's ID.
+             * @example database:shop-db
+             */
+            to: string;
+            /**
+             * @description The caller's `service.name`.
+             * @example orders-api
+             */
+            fromName: string;
+            /**
+             * @description What it called: a service by name, or a database or host by address.
+             * @example shop-db
+             */
+            toName: string;
+            /**
+             * @description What the target is.
+             * @example database
+             * @enum {string}
+             */
+            toKind: "service" | "database" | "external";
+            /**
+             * @description A database's `db.system`.
+             * @example postgresql
+             */
+            system?: string;
+            /**
+             * @description Calls a second, to 3 significant digits.
+             * @example 24.8
+             */
+            rate: number;
+            /**
+             * @description The share of them that failed.
+             * @example 0
+             */
+            errorRate: number;
+        };
+        /**
+         * @description A declared dependency's ID.
+         * @example dep_01j9z3w5y7a9c1e3g5j7m9p1r3
+         */
+        DependencyId: string;
+        /** @description The two services of a dependency. */
+        DependencyInput: {
+            fromServiceId: components["schemas"]["ServiceId"];
+            toServiceId: components["schemas"]["ServiceId"];
+        };
+        /** @description A line someone declared between two services. */
+        Dependency: {
+            id: components["schemas"]["DependencyId"];
+            fromServiceId: components["schemas"]["ServiceId"];
+            toServiceId: components["schemas"]["ServiceId"];
+            /**
+             * Format: date-time
+             * @description When it was declared.
+             * @example 2026-11-03T12:00:00Z
+             */
+            createdAt: string;
+        };
+        /** @description A project's declared dependencies. */
+        DependencyList: {
+            /**
+             * @description The dependencies, oldest first.
+             * @example [
+             *       {
+             *         "id": "dep_01j9z3w5y7a9c1e3g5j7m9p1r3",
+             *         "fromServiceId": "svc_01j9z3q1s3v5w7y9a1c3e5g7j9",
+             *         "toServiceId": "svc_01j9z3s7v9x1z3b5d7f9h1k3m5",
+             *         "createdAt": "2026-11-03T12:00:00Z"
+             *       }
+             *     ]
+             */
+            data: components["schemas"]["Dependency"][];
         };
         /** @description Where one service's node goes, in canvas units. */
         CanvasPlacement: {
@@ -7932,6 +8245,45 @@ export interface operations {
             default: components["responses"]["Error"];
         };
     };
+    getCanvasLayout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The layout. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "targets": [
+                     *         {
+                     *           "kind": "database",
+                     *           "name": "shop-db",
+                     *           "x": 640,
+                     *           "y": 400
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["CanvasLayout"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
     placeServices: {
         parameters: {
             query?: never;
@@ -7942,7 +8294,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        /** @description The services to move, and where to. */
+        /** @description The nodes to move, and where to. */
         requestBody: {
             content: {
                 /**
@@ -7953,6 +8305,14 @@ export interface operations {
                  *           "x": 320,
                  *           "y": 120
                  *         }
+                 *       ],
+                 *       "targets": [
+                 *         {
+                 *           "kind": "database",
+                 *           "name": "shop-db",
+                 *           "x": 640,
+                 *           "y": 400
+                 *         }
                  *       ]
                  *     }
                  */
@@ -7960,7 +8320,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description The services moved. */
+            /** @description The nodes moved. */
             204: {
                 headers: {
                     "X-Request-Id": components["headers"]["RequestId"];
@@ -7969,6 +8329,196 @@ export interface operations {
                 content?: never;
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getCanvasLive: {
+        parameters: {
+            query: {
+                /** @description The environment whose traffic to show. */
+                environment: components["schemas"]["EnvironmentId"];
+            };
+            header?: {
+                /** @description The ETag of the answer last received. */
+                "If-None-Match"?: string;
+            };
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What the canvas shows, or what changed of it. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "services": [
+                     *         {
+                     *           "id": "svc_01j9z3q1s3v5w7y9a1c3e5g7j9",
+                     *           "name": "orders-api",
+                     *           "onCanvas": true,
+                     *           "rate": 12.4,
+                     *           "errorRate": 0.008,
+                     *           "p95Ms": 128
+                     *         }
+                     *       ],
+                     *       "lines": [
+                     *         {
+                     *           "id": "svc_01j9z3q1s3v5w7y9a1c3e5g7j9>database:shop-db",
+                     *           "from": "svc_01j9z3q1s3v5w7y9a1c3e5g7j9",
+                     *           "to": "database:shop-db",
+                     *           "fromName": "orders-api",
+                     *           "toName": "shop-db",
+                     *           "toKind": "database",
+                     *           "system": "postgresql",
+                     *           "rate": 24.8,
+                     *           "errorRate": 0
+                     *         }
+                     *       ],
+                     *       "removed": {
+                     *         "services": [],
+                     *         "lines": []
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["CanvasLive"];
+                };
+            };
+            /** @description Nothing changed since the ETag in `If-None-Match`. */
+            304: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listDependencies: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The dependencies. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "id": "dep_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *           "fromServiceId": "svc_01j9z3q1s3v5w7y9a1c3e5g7j9",
+                     *           "toServiceId": "svc_01j9z3s7v9x1z3b5d7f9h1k3m5",
+                     *           "createdAt": "2026-11-03T12:00:00Z"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["DependencyList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    createDependency: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /** @description The two services. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "fromServiceId": "svc_01j9z3q1s3v5w7y9a1c3e5g7j9",
+                 *       "toServiceId": "svc_01j9z3s7v9x1z3b5d7f9h1k3m5"
+                 *     }
+                 */
+                "application/json": components["schemas"]["DependencyInput"];
+            };
+        };
+        responses: {
+            /** @description The dependency is declared. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    Location: components["headers"]["Location"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "dep_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "fromServiceId": "svc_01j9z3q1s3v5w7y9a1c3e5g7j9",
+                     *       "toServiceId": "svc_01j9z3s7v9x1z3b5d7f9h1k3m5",
+                     *       "createdAt": "2026-11-03T12:00:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Dependency"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteDependency: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The dependency's ID. */
+                dependencyId: components["schemas"]["DependencyId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The dependency is removed. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

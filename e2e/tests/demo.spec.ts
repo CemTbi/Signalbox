@@ -92,6 +92,59 @@ test("a request's trace opens from its response, and traces can be searched", as
   await expect(page.getByRole("table", { name: /Spans of the trace/ }).getByRole("button", { name: /orders-api INSERT orders/ })).toBeVisible();
 });
 
+test("the canvas shows the shop's live traffic", async ({ page, request }) => {
+  // Lines are built a minute at a time, about two minutes after the calls.
+  test.setTimeout(300_000);
+  await openAsAdmin(page, request);
+  await expect(async () => {
+    await page.reload();
+    await expect(page.getByRole("link", { name: "Demo shop" })).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 90_000 });
+  await page.getByRole("link", { name: "Demo shop" }).click();
+  await page.getByRole("link", { name: /^Shop\b/ }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Shop" })).toBeVisible();
+
+  const node = (name: string) => page.locator(".react-flow__node").filter({ hasText: name });
+  // It shows production, where the shop sends its spans.
+  const environment = page.getByLabel("Environment");
+  await expect(environment.locator("option:checked")).toHaveText("Production");
+  await expect(node("Orders").getByText(/^p95 .* err · .*\/s$/)).toBeVisible({ timeout: 60_000 });
+
+  // Lines between services, and to the database and provider, arrive with
+  // the graph, at the places the seed gave those two.
+  await expect(node("shop-db").getByText("Database · postgresql")).toBeVisible({ timeout: 240_000 });
+  await expect(node("psp.example").getByText("External host")).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator(".react-flow__edge-path:not(.declared)").first()).toBeVisible();
+  await expect(page.locator(".call-label text").filter({ hasText: /\/s/ }).first()).toBeVisible();
+  // A minute's calls reach the rates when that minute has been built.
+  await expect(node("shop-db").getByText(/err · .*\/s$/)).toBeVisible({ timeout: 120_000 });
+  await expectAccessible(page);
+
+  // Moved, the database stays where it was put.
+  const db = node("shop-db");
+  const box = await db.boundingBox();
+  if (!box) throw new Error("the database has no box");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 16, box.y + box.height / 2 + 48, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.locator(".canvas-status")).toHaveText("Layout saved");
+  const moved = await db.evaluate((el) => (el as HTMLElement).style.transform);
+  await page.reload();
+  await expect(db).toBeVisible({ timeout: 30_000 });
+  expect(await db.evaluate((el) => (el as HTMLElement).style.transform)).toBe(moved);
+
+  // Another environment has its own traffic: none, here.
+  await page.getByLabel("Environment").selectOption({ label: "Staging" });
+  await expect(node("Orders").getByText("No recent traffic")).toBeVisible({ timeout: 15_000 });
+  await expect(db).toHaveCount(0);
+  await expect(page.locator(".react-flow__edge-path")).toHaveCount(0);
+  // The choice is remembered.
+  await page.reload();
+  await expect(page.getByLabel("Environment").locator("option:checked")).toHaveText("Staging");
+  await page.getByLabel("Environment").selectOption({ label: "Production" });
+});
+
 test("the shop's services and their calls", async ({ page, request }) => {
   // Lines are built a minute at a time, about two minutes after the calls.
   test.setTimeout(300_000);

@@ -109,6 +109,9 @@ type Deps struct {
 	IngestKeys IngestKeys
 	// Traces reads the spans services sent; nil leaves the routes out.
 	Traces Traces
+	// Canvas answers what a project's canvas shows live; nil leaves the route
+	// out.
+	Canvas Canvas
 	// PublicURL is the address people open Signalbox at. It decides the
 	// session cookie's name and flags, and the origin that unsafe requests
 	// must come from. Default http://localhost:8080.
@@ -231,7 +234,18 @@ func NewHandler(d Deps) http.Handler {
 		http.MethodGet: a.authenticated(a.getVariables),
 		http.MethodPut: a.authenticated(a.putVariables),
 	})
-	mux.Handle("/api/v1/projects/{projectId}/canvas", methods{http.MethodPut: a.authenticated(a.placeServices)})
+	mux.Handle("/api/v1/projects/{projectId}/canvas", methods{
+		http.MethodGet: a.authenticated(a.getCanvas),
+		http.MethodPut: a.authenticated(a.placeServices),
+	})
+	if a.Canvas != nil {
+		mux.Handle("/api/v1/projects/{projectId}/canvas/live", methods{http.MethodGet: a.authenticated(a.getCanvasLive)})
+	}
+	mux.Handle("/api/v1/projects/{projectId}/dependencies", methods{
+		http.MethodGet:  a.authenticated(a.listDependencies),
+		http.MethodPost: a.authenticated(a.createDependency),
+	})
+	mux.Handle("/api/v1/dependencies/{dependencyId}", methods{http.MethodDelete: a.authenticated(a.deleteDependency)})
 	mux.Handle("/api/v1/projects/{projectId}/send", methods{http.MethodPost: a.authenticated(a.sendRequest)})
 	mux.Handle("/api/v1/projects/{projectId}/history", methods{http.MethodGet: a.authenticated(a.listHistory)})
 	mux.Handle("/api/v1/history/{entryId}", methods{http.MethodGet: a.authenticated(a.getHistoryEntry)})

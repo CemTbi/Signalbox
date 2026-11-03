@@ -2,11 +2,13 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { getRouteApi, Link } from "@tanstack/react-router";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useId, useState } from "react";
 import { api, describeError } from "../../api";
 import { LoadError, Loading, PageHeader } from "../../components/Page";
-import { projectQuery, workspaceQuery } from "../../queries";
+import { environmentsQuery, projectQuery, workspaceQuery } from "../../queries";
 import { ServicesSection } from "../services/ServicesSection";
+import { DeclaredDependencies, SeenServices } from "./CanvasPanels";
+import { chooseEnvironment, rememberCanvasEnvironment, rememberedCanvasEnvironment } from "./placement";
 
 // The canvas library is large, so it loads only when a canvas is shown.
 const Canvas = lazy(() => import("./Canvas"));
@@ -20,6 +22,11 @@ export function ProjectPage() {
     ...workspaceQuery(api, project.data?.workspaceId ?? ""),
     enabled: project.isSuccess,
   });
+
+  const environments = useQuery(environmentsQuery(api, projectId));
+  const [chosen, setChosen] = useState(() => rememberedCanvasEnvironment(projectId));
+  const environmentId = chooseEnvironment(environments.data?.data ?? [], chosen);
+  const environmentField = useId();
 
   if (project.isPending) return <Loading label="Loading project…" />;
   if (project.isError) {
@@ -54,12 +61,35 @@ export function ProjectPage() {
           </>
         }
       />
+      {environments.data && environments.data.data.length > 0 ? (
+        <div className="canvas-controls">
+          <div className="field">
+            <label htmlFor={environmentField}>Environment</label>
+            <select
+              id={environmentField}
+              value={environmentId}
+              onChange={(e) => {
+                setChosen(e.target.value);
+                rememberCanvasEnvironment(projectId, e.target.value);
+              }}
+            >
+              {environments.data.data.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      ) : null}
       <section className="canvas-frame" aria-label={`Canvas of ${p.name}`}>
         <Suspense fallback={<Loading label="Loading canvas…" />}>
-          <Canvas projectId={p.id} canEdit={canEdit} />
+          <Canvas projectId={p.id} environmentId={environmentId} canEdit={canEdit} />
         </Suspense>
       </section>
+      <SeenServices projectId={p.id} environmentId={environmentId} canEdit={canEdit} />
       <ServicesSection projectId={p.id} canEdit={canEdit} />
+      <DeclaredDependencies projectId={p.id} canEdit={canEdit} />
     </div>
   );
 }

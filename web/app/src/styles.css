@@ -809,6 +809,28 @@ button {
   margin: 0;
 }
 
+/* Which environment's traffic the canvas shows. */
+.canvas-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.canvas-controls .field {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Declaring a dependency between two services. */
+.dependency-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 12px;
+}
+
 /* What the canvas says and offers, over its top edge. */
 .canvas-bar {
   position: absolute;
@@ -1159,6 +1181,10 @@ button.primary:disabled {
 }
 
 .svc-metrics {
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: var(--ink-2);
@@ -1168,13 +1194,44 @@ button.primary:disabled {
   border-style: dashed;
 }
 
-.react-flow__edge.declared path {
+/* The ends people draw a dependency between: inside the node, which clips
+   what's outside it, and showing only when one can be drawn. */
+.svc-node .react-flow__handle {
+  width: 8px;
+  height: 28px;
+  min-width: 0;
+  border: 0;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0;
+  transform: translateY(-50%);
+}
+.svc-node .react-flow__handle-left {
+  left: 0;
+}
+.svc-node .react-flow__handle-right {
+  right: 0;
+}
+.svc-node:hover .react-flow__handle.connectable {
+  opacity: 1;
+}
+
+.react-flow__edge-path.declared {
   stroke-dasharray: 5 4;
 }
 
 .call-label rect {
   fill: var(--surface);
   stroke: var(--rule);
+}
+
+.call-label.errors rect {
+  fill: var(--bad-soft);
+  stroke: var(--bad);
+}
+
+.call-label.errors text {
+  fill: var(--ink);
 }
 
 .call-label text {

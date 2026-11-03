@@ -30,6 +30,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/httpapi"
 	"github.com/CemTbi/Signalbox/internal/modules/agents"
 	"github.com/CemTbi/Signalbox/internal/modules/apis"
+	"github.com/CemTbi/Signalbox/internal/modules/canvas"
 	"github.com/CemTbi/Signalbox/internal/modules/client"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
 	"github.com/CemTbi/Signalbox/internal/modules/runner"
@@ -183,8 +184,10 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL), ch c
 	runs := testruns.New(pool, logger, ws, sender)
 	t.Cleanup(runs.Close)
 	var traces httpapi.Traces
+	var live httpapi.Canvas
 	if ch != nil {
 		traces = telemetry.NewTraces(ch, ws)
+		live = canvas.New(ch, ws, mods)
 	}
 	srv.Config.Handler = httpapi.NewHandler(httpapi.Deps{
 		Logger:      logger,
@@ -204,6 +207,7 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL), ch c
 		Agents:      ag,
 		IngestKeys:  telemetry.NewKeys(pool, logger, ws),
 		Traces:      traces,
+		Canvas:      live,
 		PublicURL:   public,
 	})
 	srv.StartTLS()
