@@ -132,6 +132,15 @@ func NewPassword(errs *Errors, pointer, v string) {
 	}
 }
 
+// PlainText checks text that isn't a person's writing, such as a name that
+// came from a span: it must be UTF-8 without control characters. PostgreSQL
+// refuses NUL in text, so without this a stray one is a server error.
+func PlainText(errs *Errors, pointer, v string) {
+	if !utf8.ValidString(v) || hasControl(v, "") {
+		errs.Add(pointer, "pattern", "Remove line breaks and other control characters.")
+	}
+}
+
 func hasControl(s, allowed string) bool {
 	for _, r := range s {
 		if unicode.IsControl(r) && !strings.ContainsRune(allowed, r) {

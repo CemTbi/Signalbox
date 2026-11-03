@@ -119,6 +119,8 @@ func (m *Module) PlaceOnCanvas(ctx context.Context, userID, projectID uuid.UUID,
 			errs.Add(pointer+"/name", "required", "Name the database or host.")
 		case len(t.Name) > maxTargetName:
 			errs.Add(pointer+"/name", "maxLength", fmt.Sprintf("Use at most %d bytes.", maxTargetName))
+		default:
+			validate.PlainText(&errs, pointer+"/name", t.Name)
 		}
 		key := t.Kind + "\x00" + t.Name
 		if seenTargets[key] {

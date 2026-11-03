@@ -85,6 +85,11 @@ func TestPlacingDatabasesAndHostsOnTheCanvas(t *testing.T) {
 	h.do(bad).expect(t, http.StatusBadRequest, "validation-failed")
 	bad = put(map[string]any{"kind": "database", "name": " ", "x": 1, "y": 1})
 	h.do(bad).expect(t, http.StatusBadRequest, "validation-failed")
+	// PostgreSQL refuses NUL in text, so it's a bad request, not a failure.
+	bad = put(map[string]any{"kind": "database", "name": "shop\x00db", "x": 1, "y": 1})
+	h.do(bad).expect(t, http.StatusBadRequest, "validation-failed")
+	h.do(call{method: http.MethodPost, path: "/api/v1/projects/" + p.ID + "/services", body: map[string]string{"name": "A", "slug": "a", "telemetryServiceName": "a\x00b"}}).
+		expect(t, http.StatusBadRequest, "validation-failed")
 	// Nothing to move at all.
 	bad = call{method: http.MethodPut, path: canvas, body: map[string]any{}}
 	h.do(bad).expect(t, http.StatusBadRequest, "validation-failed")

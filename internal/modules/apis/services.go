@@ -84,6 +84,7 @@ func telemetryName(errs *validate.Errors, v string) string {
 	if utf8.RuneCountInString(v) > maxTelemetryName {
 		errs.Add("/telemetryServiceName", "maxLength", fmt.Sprintf("Use at most %d characters.", maxTelemetryName))
 	}
+	validate.PlainText(errs, "/telemetryServiceName", v)
 	return v
 }
 
