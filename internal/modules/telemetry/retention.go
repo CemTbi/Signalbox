@@ -26,6 +26,7 @@ var expiring = []struct{ table, column string }{
 	{"spans", "timestamp"},
 	{"trace_ids", "start"},
 	{"span_metrics_1m", "minute"},
+	{"service_edges_1m", "minute"},
 }
 
 // ttlDays reads the days of a TTL such as "TTL toDate(timestamp) +

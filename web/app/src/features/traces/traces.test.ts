@@ -3,6 +3,7 @@
 import type { Span } from "@signalbox/api-client";
 import { describe, expect, it } from "vitest";
 import { criticalPath, formatDuration, serviceColors, startMs, waterfall } from "./model";
+import { errorRate } from "./ServicesView";
 import { validateTracesSearch } from "./TracesPage";
 
 const t0 = Date.parse("2026-10-31T12:00:00Z");
@@ -109,5 +110,15 @@ describe("validateTracesSearch", () => {
       minMs: 250,
     });
     expect(validateTracesSearch({ range: "forever", minMs: "-1", errors: "no" })).toEqual({});
+  });
+});
+
+describe("errorRate", () => {
+  it("reads as a percentage, never rounding failures away", () => {
+    expect(errorRate(0, 0)).toBe("0%");
+    expect(errorRate(100, 0)).toBe("0%");
+    expect(errorRate(10_000, 1)).toBe("<0.1%");
+    expect(errorRate(1000, 25)).toBe("2.5%");
+    expect(errorRate(100, 37)).toBe("37%");
   });
 });

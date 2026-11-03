@@ -1010,6 +1010,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/environments/{environmentId}/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The environment's ID. */
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get the service graph
+         * @description Returns who called whom in the environment over a time range, the last hour by default: a line for each pair, with its calls, errors and latency as the caller saw them. A target is another service, a database that isn't traced, named by its address and `db.system`, or a host outside the traced services.
+         *
+         *     The graph is built from the spans a minute at a time, about two minutes after each minute ends. Every member of the workspace may read it.
+         */
+        get: operations["getServiceGraph"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/environments/{environmentId}/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The environment's ID. */
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List operations
+         * @description Lists the operations of a service, or of every service, seen in the environment's spans over a time range, the last hour by default, busiest first, with their calls, errors and latency. Percentiles are within 19%. Every member of the workspace may.
+         */
+        get: operations["listOperations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/traces/{traceId}": {
         parameters: {
             query?: never;
@@ -2064,6 +2112,175 @@ export interface components {
              *     ]
              */
             data: components["schemas"]["ServiceStats"][];
+        };
+        /**
+         * @description A line of the service graph, with its calls as the caller saw them.
+         * @example {
+         *       "from": "orders-api",
+         *       "to": "payments-api",
+         *       "toKind": "service",
+         *       "calls": 400,
+         *       "errors": 3,
+         *       "meanMs": 41.2,
+         *       "p50Ms": 32,
+         *       "p95Ms": 128,
+         *       "p99Ms": 181
+         *     }
+         */
+        ServiceEdge: {
+            /**
+             * @description The calling service, by its `service.name`.
+             * @example orders-api
+             */
+            from: string;
+            /**
+             * @description What it called: a service by its `service.name`, or a database or host by its address.
+             * @example payments-api
+             */
+            to: string;
+            /**
+             * @description What the target is: a traced service, a database that isn't traced, or a host outside the traced services.
+             * @example service
+             * @enum {string}
+             */
+            toKind: "service" | "database" | "external";
+            /**
+             * @description A database's `db.system`.
+             * @example postgresql
+             */
+            system?: string;
+            /**
+             * @description The calls in the time range.
+             * @example 400
+             */
+            calls: number;
+            /**
+             * @description Of them, how many failed.
+             * @example 3
+             */
+            errors: number;
+            /**
+             * @description Their mean duration.
+             * @example 41.2
+             */
+            meanMs: number;
+            /**
+             * @description The median, within 19%.
+             * @example 32
+             */
+            p50Ms: number;
+            /**
+             * @description The 95th percentile, within 19%.
+             * @example 128
+             */
+            p95Ms: number;
+            /**
+             * @description The 99th percentile, within 19%.
+             * @example 181
+             */
+            p99Ms: number;
+        };
+        /** @description Who called whom in an environment. */
+        ServiceGraph: {
+            /**
+             * @description The lines, busiest first.
+             * @example [
+             *       {
+             *         "from": "orders-api",
+             *         "to": "payments-api",
+             *         "toKind": "service",
+             *         "calls": 400,
+             *         "errors": 3,
+             *         "meanMs": 41.2,
+             *         "p50Ms": 32,
+             *         "p95Ms": 128,
+             *         "p99Ms": 181
+             *       }
+             *     ]
+             */
+            edges: components["schemas"]["ServiceEdge"][];
+        };
+        /**
+         * @description An operation's traffic over a time range.
+         * @example {
+         *       "service": "orders-api",
+         *       "operation": "POST /orders",
+         *       "kind": "server",
+         *       "calls": 400,
+         *       "errors": 3,
+         *       "meanMs": 61.2,
+         *       "p50Ms": 54,
+         *       "p95Ms": 128,
+         *       "p99Ms": 181
+         *     }
+         */
+        OperationStats: {
+            /**
+             * @description The service.
+             * @example orders-api
+             */
+            service: string;
+            /**
+             * @description The operation: `METHOD /route` for a server span with a route, otherwise the span name. A service's operations past 1,000 are counted as `(other)`.
+             * @example POST /orders
+             */
+            operation: string;
+            /**
+             * @description The kind of its spans.
+             * @example server
+             * @enum {string}
+             */
+            kind: "unspecified" | "internal" | "server" | "client" | "producer" | "consumer";
+            /**
+             * @description Its spans in the time range.
+             * @example 400
+             */
+            calls: number;
+            /**
+             * @description Of them, how many failed.
+             * @example 3
+             */
+            errors: number;
+            /**
+             * @description Their mean duration.
+             * @example 61.2
+             */
+            meanMs: number;
+            /**
+             * @description The median, within 19%.
+             * @example 54
+             */
+            p50Ms: number;
+            /**
+             * @description The 95th percentile, within 19%.
+             * @example 128
+             */
+            p95Ms: number;
+            /**
+             * @description The 99th percentile, within 19%.
+             * @example 181
+             */
+            p99Ms: number;
+        };
+        /** @description Operations seen in an environment's spans. */
+        OperationStatsList: {
+            /**
+             * @description The operations, busiest first.
+             * @example [
+             *       {
+             *         "service": "orders-api",
+             *         "operation": "POST /orders",
+             *         "kind": "server",
+             *         "calls": 400,
+             *         "errors": 3,
+             *         "meanMs": 61.2,
+             *         "p50Ms": 54,
+             *         "p95Ms": 128,
+             *         "p99Ms": 181
+             *       }
+             *     ]
+             */
+            data: components["schemas"]["OperationStats"][];
         };
         /**
          * @description An ingest key's ID.
@@ -8459,6 +8676,109 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["ServiceStatsList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getServiceGraph: {
+        parameters: {
+            query?: {
+                /** @description The start of the time range, RFC 3339. An hour before `to` by default. */
+                from?: string;
+                /** @description The end of the time range, RFC 3339. Now by default. */
+                to?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The environment's ID. */
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The lines of the graph, busiest first. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "edges": [
+                     *         {
+                     *           "from": "orders-api",
+                     *           "to": "shop-db",
+                     *           "toKind": "database",
+                     *           "system": "postgresql",
+                     *           "calls": 1200,
+                     *           "errors": 0,
+                     *           "meanMs": 3.1,
+                     *           "p50Ms": 2.4,
+                     *           "p95Ms": 8,
+                     *           "p99Ms": 13.5
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ServiceGraph"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listOperations: {
+        parameters: {
+            query?: {
+                /** @description Only this service's operations. */
+                service?: string;
+                /** @description The start of the time range, RFC 3339. An hour before `to` by default. */
+                from?: string;
+                /** @description The end of the time range, RFC 3339. Now by default. */
+                to?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The environment's ID. */
+                environmentId: components["parameters"]["EnvironmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The operations. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "service": "orders-api",
+                     *           "operation": "POST /orders",
+                     *           "kind": "server",
+                     *           "calls": 400,
+                     *           "errors": 3,
+                     *           "meanMs": 61.2,
+                     *           "p50Ms": 54,
+                     *           "p95Ms": 128,
+                     *           "p99Ms": 181
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["OperationStatsList"];
                 };
             };
             400: components["responses"]["BadRequest"];

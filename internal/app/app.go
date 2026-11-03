@@ -150,7 +150,8 @@ type Server struct {
 	// otlpGRPC receives spans over OTLP/gRPC, on otlpGRPCLn.
 	otlpGRPC   *grpc.Server
 	otlpGRPCLn net.Listener
-	spans      *telemetry.Writer // nil when the ingest role isn't running
+	spans      *telemetry.Writer   // nil when the ingest role isn't running
+	graph      *telemetry.GraphJob // nil when the worker role isn't running
 }
 
 type endpoint struct {
@@ -316,6 +317,9 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 		}
 	}
 
+	if slices.Contains(names, roles.Worker) {
+		s.graph = telemetry.NewGraphJob(db, s.ch, logger, reg)
+	}
 	if slices.Contains(names, roles.Ingest) {
 		if cfg.IngestSpansPerSecond < 1 {
 			return nil, s.abort(fmt.Errorf("ingest rate of %d spans a second: use at least 1", cfg.IngestSpansPerSecond))
@@ -482,6 +486,12 @@ func (s *Server) Run(ctx context.Context) error {
 	if s.runs != nil {
 		g.Go(func() error {
 			s.runs.Run(gctx)
+			return nil
+		})
+	}
+	if s.graph != nil {
+		g.Go(func() error {
+			s.graph.Run(gctx)
 			return nil
 		})
 	}

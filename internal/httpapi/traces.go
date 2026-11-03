@@ -25,6 +25,36 @@ type Traces interface {
 	Search(ctx context.Context, userID, environmentID uuid.UUID, q telemetry.TraceQuery) ([]telemetry.TraceSummary, error)
 	FindTrace(ctx context.Context, userID, projectID uuid.UUID, traceID telemetry.TraceID) (uuid.UUID, []telemetry.Span, error)
 	Services(ctx context.Context, userID, environmentID uuid.UUID, from, to time.Time) ([]telemetry.ServiceStats, error)
+	Graph(ctx context.Context, userID, environmentID uuid.UUID, from, to time.Time) ([]telemetry.Edge, error)
+	Operations(ctx context.Context, userID, environmentID uuid.UUID, service string, from, to time.Time) ([]telemetry.OperationStats, error)
+}
+
+// EdgeJSON is a line of the service graph.
+type EdgeJSON struct {
+	From   string `json:"from"`
+	To     string `json:"to"`
+	ToKind string `json:"toKind"`
+	// System is a database's db.system.
+	System string  `json:"system,omitempty"`
+	Calls  uint64  `json:"calls"`
+	Errors uint64  `json:"errors"`
+	MeanMs float64 `json:"meanMs"`
+	P50Ms  float64 `json:"p50Ms"`
+	P95Ms  float64 `json:"p95Ms"`
+	P99Ms  float64 `json:"p99Ms"`
+}
+
+// OperationStatsJSON is an operation's traffic over a time range.
+type OperationStatsJSON struct {
+	Service   string  `json:"service"`
+	Operation string  `json:"operation"`
+	Kind      string  `json:"kind"`
+	Calls     uint64  `json:"calls"`
+	Errors    uint64  `json:"errors"`
+	MeanMs    float64 `json:"meanMs"`
+	P50Ms     float64 `json:"p50Ms"`
+	P95Ms     float64 `json:"p95Ms"`
+	P99Ms     float64 `json:"p99Ms"`
 }
 
 // TraceSummaryJSON is a trace in a search's results.
@@ -267,6 +297,54 @@ func (a *api) listTracedServices(w http.ResponseWriter, r *http.Request, s *iden
 	for i, st := range stats {
 		out[i] = ServiceStatsJSON{Service: st.Service, Calls: st.Calls, Errors: st.Errors,
 			MeanMs: ms(st.Mean), P50Ms: ms(st.P50), P95Ms: ms(st.P95), P99Ms: ms(st.P99)}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": out})
+}
+
+func (a *api) getGraph(w http.ResponseWriter, r *http.Request, s *identity.Session) {
+	envID, ok := pathID(w, r, "environmentId", id.Environment, "environment")
+	if !ok {
+		return
+	}
+	var fields validate.Errors
+	from, to := timeRange(r, &fields)
+	if len(fields) > 0 {
+		writeInvalid(w, r, fields)
+		return
+	}
+	edges, err := a.Traces.Graph(r.Context(), s.User.ID, envID, from, to)
+	if err != nil {
+		a.tracesError(w, r, err)
+		return
+	}
+	out := make([]EdgeJSON, len(edges))
+	for i, e := range edges {
+		out[i] = EdgeJSON{From: e.From, To: e.Target, ToKind: string(e.TargetKind), System: e.System, Calls: e.Calls, Errors: e.Errors,
+			MeanMs: ms(e.Mean), P50Ms: ms(e.P50), P95Ms: ms(e.P95), P99Ms: ms(e.P99)}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"edges": out})
+}
+
+func (a *api) listOperations(w http.ResponseWriter, r *http.Request, s *identity.Session) {
+	envID, ok := pathID(w, r, "environmentId", id.Environment, "environment")
+	if !ok {
+		return
+	}
+	var fields validate.Errors
+	from, to := timeRange(r, &fields)
+	if len(fields) > 0 {
+		writeInvalid(w, r, fields)
+		return
+	}
+	ops, err := a.Traces.Operations(r.Context(), s.User.ID, envID, r.URL.Query().Get("service"), from, to)
+	if err != nil {
+		a.tracesError(w, r, err)
+		return
+	}
+	out := make([]OperationStatsJSON, len(ops))
+	for i, o := range ops {
+		out[i] = OperationStatsJSON{Service: o.Service, Operation: o.Name, Kind: o.Kind.String(), Calls: o.Calls, Errors: o.Errors,
+			MeanMs: ms(o.Mean), P50Ms: ms(o.P50), P95Ms: ms(o.P95), P99Ms: ms(o.P99)}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": out})
 }

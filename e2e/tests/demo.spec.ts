@@ -91,3 +91,36 @@ test("a request's trace opens from its response, and traces can be searched", as
   await results.getByRole("link", { name: /storefront-web: POST \/api\/checkout/ }).first().click();
   await expect(page.getByRole("table", { name: /Spans of the trace/ }).getByRole("button", { name: /orders-api INSERT orders/ })).toBeVisible();
 });
+
+test("the shop's services and their calls", async ({ page, request }) => {
+  // Lines are built a minute at a time, about two minutes after the calls.
+  test.setTimeout(300_000);
+  await openAsAdmin(page, request);
+  await expect(async () => {
+    await page.reload();
+    await expect(page.getByRole("link", { name: "Demo shop" })).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 90_000 });
+  await page.getByRole("link", { name: "Demo shop" }).click();
+  await page.getByRole("link", { name: /^Shop\b/ }).click();
+  await page.getByRole("link", { name: "Traces", exact: true }).click();
+  await page.getByRole("tab", { name: "Services" }).click();
+
+  const services = page.getByRole("region", { name: "Services" });
+  await expect(services.getByRole("button", { name: "orders-api" })).toBeVisible();
+  await services.getByRole("button", { name: "orders-api" }).click();
+  await expect(page.getByRole("table", { name: "Operations of orders-api" }).getByText("POST /orders")).toBeVisible();
+
+  // The orders service calls payments, its database and, through payments,
+  // the payment provider outside the shop.
+  const calls = page.getByRole("region", { name: "Calls" });
+  await expect(async () => {
+    await page.reload();
+    await expect(calls.getByRole("row", { name: /^orders-api payments-api \d/ })).toBeVisible({ timeout: 2_000 });
+    await expect(calls.getByRole("row", { name: /^orders-api shop-db Database, postgresql/ })).toBeVisible({ timeout: 2_000 });
+    await expect(calls.getByRole("row", { name: /^payments-api psp\.example External/ })).toBeVisible({ timeout: 2_000 });
+    // Calls made while payments' spans were refused, before the seed made
+    // its key, still count as calls to payments.
+    await expect(calls.getByRole("row", { name: /payments-api External/ })).toHaveCount(0);
+  }).toPass({ timeout: 240_000 });
+  await expectAccessible(page);
+});
