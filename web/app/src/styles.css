@@ -823,6 +823,193 @@ button {
   gap: 8px;
 }
 
+/* A monitor's state: a shape and a word. */
+.monitor-state {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+table.traces .row-sub {
+  display: block;
+}
+
+.monitor-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  margin: 0;
+}
+
+.monitor-facts dt {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.monitor-facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.monitor-failure {
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--bad-soft);
+  border-left: 3px solid var(--bad);
+  border-radius: 2px;
+  color: var(--ink);
+}
+
+.monitor-components {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.monitor-components li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.monitor-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: flex-start;
+}
+
+.monitor-form-row > .field {
+  flex: 1 1 180px;
+}
+
+.monitor-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.monitor-assertions {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.monitor-assertions > legend {
+  padding: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.assertion-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.assertion-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* Response times: a bar per check, the newest on the right. */
+.check-chart {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.check-chart-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  font-size: 13px;
+  color: var(--ink-2);
+  min-height: 20px;
+}
+
+.check-chart-read {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.check-bars {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 96px;
+  border-bottom: 1px solid var(--rule-strong);
+}
+
+.check-column {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 2px;
+  max-width: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  /* Room for the mark over the tallest bar. */
+  padding-top: 14px;
+}
+
+.check-column:hover {
+  background: var(--surface-2);
+}
+
+.check-bar {
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent);
+}
+
+.check-bar.degraded {
+  background: var(--warn);
+}
+
+.check-bar.failed {
+  background: var(--bad);
+}
+
+.check-column .svc-mark {
+  position: absolute;
+  top: 2px;
+  width: 8px;
+  height: 8px;
+}
+
+.check-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.check-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
 /* Declaring a dependency between two services. */
 .dependency-form {
   display: flex;

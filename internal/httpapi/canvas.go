@@ -14,6 +14,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/apis"
 	"github.com/CemTbi/Signalbox/internal/modules/canvas"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
+	"github.com/CemTbi/Signalbox/internal/modules/monitors"
 	"github.com/CemTbi/Signalbox/internal/platform/id"
 	"github.com/CemTbi/Signalbox/internal/platform/validate"
 )
@@ -51,6 +52,21 @@ type LiveServiceJSON struct {
 	Rate      float64 `json:"rate"`
 	ErrorRate float64 `json:"errorRate"`
 	P95Ms     float64 `json:"p95Ms,omitempty"`
+	// Health is ok, warn, down or unknown: the canvas's words for a state.
+	Health       string `json:"health"`
+	HealthDetail string `json:"healthDetail,omitempty"`
+}
+
+func healthWord(state string) string {
+	switch state {
+	case monitors.StateUp:
+		return "ok"
+	case monitors.StateDegraded:
+		return "warn"
+	case monitors.StateDown:
+		return "down"
+	}
+	return "unknown"
 }
 
 // LiveLineJSON is who calls whom, and how much.
@@ -131,7 +147,7 @@ func (a *api) getCanvasLive(w http.ResponseWriter, r *http.Request, s *identity.
 		Removed:      LiveRemovedJSON{Services: orEmpty(got.RemovedServices), Lines: orEmpty(got.RemovedLines)},
 	}
 	for i, v := range got.Services {
-		out.Services[i] = LiveServiceJSON{ID: v.ID, Name: v.Name, OnCanvas: v.OnCanvas, Rate: v.Rate, ErrorRate: v.ErrorRate, P95Ms: v.P95Ms}
+		out.Services[i] = LiveServiceJSON{ID: v.ID, Name: v.Name, OnCanvas: v.OnCanvas, Rate: v.Rate, ErrorRate: v.ErrorRate, P95Ms: v.P95Ms, Health: healthWord(v.Health), HealthDetail: v.HealthDetail}
 	}
 	for i, l := range got.Lines {
 		out.Lines[i] = LiveLineJSON{ID: l.ID, From: l.From, To: l.To, FromName: l.FromName, ToName: l.ToName, ToKind: l.ToKind, System: l.System, Rate: l.Rate, ErrorRate: l.ErrorRate}

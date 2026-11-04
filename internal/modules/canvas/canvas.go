@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/CemTbi/Signalbox/internal/modules/apis"
+	"github.com/CemTbi/Signalbox/internal/modules/monitors"
 	"github.com/CemTbi/Signalbox/internal/modules/telemetry"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/clickhouse"
@@ -63,6 +64,11 @@ type Service struct {
 	Rate, ErrorRate float64
 	// P95Ms is 0 without requests.
 	P95Ms float64
+	// Health is its monitors' worst state: up, degraded or down, and "" when
+	// none has been checked.
+	Health string
+	// HealthDetail says what isn't healthy.
+	HealthDetail string
 }
 
 // Line is who calls whom, between node IDs. A database's or host's node ID
@@ -105,6 +111,11 @@ type Services interface {
 	ListServices(ctx context.Context, userID, projectID uuid.UUID, p workspaces.PageRequest) (workspaces.Page[apis.Service], error)
 }
 
+// Monitors says how services are, from their monitors.
+type Monitors interface {
+	EnvironmentHealth(ctx context.Context, environmentID uuid.UUID) (map[uuid.UUID]monitors.ServiceHealth, error)
+}
+
 // Module answers for the canvas. Answers are cached per environment, so
 // fifty people watching one project cost one read of ClickHouse every five
 // seconds; access is checked on every request.
@@ -112,6 +123,7 @@ type Module struct {
 	conn     clickhouse.Conn
 	access   Access
 	services Services
+	monitors Monitors
 	now      func() time.Time
 
 	mu   sync.Mutex
@@ -135,8 +147,8 @@ type state struct {
 }
 
 // New returns the module.
-func New(conn clickhouse.Conn, access Access, services Services) *Module {
-	return &Module{conn: conn, access: access, services: services, now: time.Now, envs: map[uuid.UUID]*environment{}}
+func New(conn clickhouse.Conn, access Access, services Services, health Monitors) *Module {
+	return &Module{conn: conn, access: access, services: services, monitors: health, now: time.Now, envs: map[uuid.UUID]*environment{}}
 }
 
 // Live returns what the canvas shows for an environment, as changes since
@@ -229,7 +241,11 @@ func (m *Module) read(ctx context.Context, userID, projectID, environmentID uuid
 	if err != nil {
 		return state{}, err
 	}
-	return assemble(services, traffic, now.Sub(from), edges, recent), nil
+	health, err := m.monitors.EnvironmentHealth(ctx, environmentID)
+	if err != nil {
+		return state{}, err
+	}
+	return assemble(services, health, traffic, now.Sub(from), edges, recent), nil
 }
 
 func (m *Module) allServices(ctx context.Context, userID, projectID uuid.UUID) ([]apis.Service, error) {
@@ -265,7 +281,7 @@ func spanName(s apis.Service) string {
 // service.name matches at read time, so setting a service's telemetry name
 // takes effect at once, spans already stored included. If two services
 // claim one name, the oldest gets it, and a told name beats a slug.
-func assemble(services []apis.Service, traffic []telemetry.RecentService, serviceWindow time.Duration, edges []telemetry.RecentEdge, lineWindow time.Duration) state {
+func assemble(services []apis.Service, health map[uuid.UUID]monitors.ServiceHealth, traffic []telemetry.RecentService, serviceWindow time.Duration, edges []telemetry.RecentEdge, lineWindow time.Duration) state {
 	nodes := make(map[string]string, len(services)) // span name to node ID
 	for _, told := range []bool{true, false} {
 		for _, s := range services {
@@ -282,7 +298,8 @@ func assemble(services []apis.Service, traffic []telemetry.RecentService, servic
 	out := state{services: make([]Service, 0, len(services)+len(traffic))}
 	for _, s := range services {
 		nodeID := id.Format(id.Service, s.ID)
-		node := Service{ID: nodeID, Name: spanName(s), OnCanvas: true}
+		h := health[s.ID]
+		node := Service{ID: nodeID, Name: spanName(s), OnCanvas: true, Health: h.State, HealthDetail: h.Detail}
 		if nodes[node.Name] == nodeID {
 			fill(&node, byName[node.Name], serviceWindow)
 		}
@@ -380,7 +397,7 @@ func rounded(v float64) float64 {
 func tagOf(s state) string {
 	h := sha256.New()
 	for _, v := range s.services {
-		fmt.Fprintf(h, "%q %q %v %v %v %v\n", v.ID, v.Name, v.OnCanvas, v.Rate, v.ErrorRate, v.P95Ms)
+		fmt.Fprintf(h, "%q %q %v %v %v %v %q %q\n", v.ID, v.Name, v.OnCanvas, v.Rate, v.ErrorRate, v.P95Ms, v.Health, v.HealthDetail)
 	}
 	for _, l := range s.lines {
 		fmt.Fprintf(h, "%q %q %q %v %v\n", l.ID, l.ToKind, l.System, l.Rate, l.ErrorRate)

@@ -54,7 +54,7 @@ export const ServiceNode = memo(function ServiceNode({ id, data: base, selected,
   const compact = useStore(zoomedOut);
   if (compact) {
     return (
-      <div className={`svc-node compact svc-${data.kind}${selected ? " selected" : ""}`} data-health={data.health}>
+      <div className={`svc-node compact svc-${data.kind}${selected ? " selected" : ""}`} data-health={data.health} title={data.healthDetail}>
         <Handle type="target" position={Position.Left} isConnectable={isConnectable} />
         <span className={`svc-mark ${data.health}`} role="img" aria-label={healthLabels[data.health]} />
         <span className="svc-name">{data.name}</span>
@@ -72,7 +72,7 @@ export const ServiceNode = memo(function ServiceNode({ id, data: base, selected,
       : "No recent traffic"
     : `${data.p95Ms === undefined ? "" : `p95 ${formatMs(data.p95Ms)} · `}${formatRate(data.errorRate ?? 0)} err · ${formatPerSecond(data.rps ?? 0)}`;
   return (
-    <div className={`svc-node svc-${data.kind}${selected ? " selected" : ""}`} data-health={data.health}>
+    <div className={`svc-node svc-${data.kind}${selected ? " selected" : ""}`} data-health={data.health} title={data.healthDetail}>
       <Handle type="target" position={Position.Left} isConnectable={isConnectable} />
       <div className="svc-head">
         <span className="svc-name">{data.name}</span>

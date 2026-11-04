@@ -156,6 +156,7 @@ type fakeSignalbox struct {
 	mu        sync.Mutex
 	setUp     bool
 	created   []string
+	monitors  []string
 	revoked   []string
 	published int
 }
@@ -225,6 +226,18 @@ func (f *fakeSignalbox) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case key == "POST /api/v1/specs/spec_1/versions":
 		f.published++
 		writeJSON(w, http.StatusCreated, map[string]any{})
+	case key == "GET /api/v1/projects/prj_1/monitors":
+		// The storefront's exists already.
+		writeJSON(w, http.StatusOK, map[string]any{"data": []map[string]string{{"id": "mon_1", "name": "Storefront health"}}})
+	case key == "POST /api/v1/projects/prj_1/monitors":
+		var in map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		if in["environmentId"] != "env_prod" || in["kind"] != "health" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		f.monitors = append(f.monitors, fmtString(in["name"]))
+		writeJSON(w, http.StatusCreated, map[string]string{"id": "mon_2"})
 	case key == "GET /api/v1/projects/prj_1/canvas":
 		writeJSON(w, http.StatusOK, map[string]any{"targets": []any{}})
 	case key == "PUT /api/v1/projects/prj_1/canvas":
@@ -260,6 +273,9 @@ func TestSeed(t *testing.T) {
 
 	if err := runSeed(t.Context()); err != nil {
 		t.Fatal(err)
+	}
+	if want := "Orders health,Inventory health,Payments health"; strings.Join(fake.monitors, ",") != want {
+		t.Errorf("made monitors %v, want %s", fake.monitors, want)
 	}
 	key, err := os.ReadFile(keyFile)
 	if err != nil || strings.TrimSpace(string(key)) != "sbx_ing_new" {

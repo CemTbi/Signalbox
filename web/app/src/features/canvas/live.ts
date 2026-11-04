@@ -6,7 +6,7 @@ import type { ServiceData } from "./model";
 export type LiveEdge = { rps: number | undefined; errorRate?: number };
 
 /** The values of a node that change while the canvas is open. */
-export type LiveNode = Pick<ServiceData, "health" | "p95Ms" | "errorRate" | "rps">;
+export type LiveNode = Pick<ServiceData, "health" | "healthDetail" | "p95Ms" | "errorRate" | "rps">;
 
 /**
  * Live metrics for the canvas, kept apart from React Flow's nodes and edges.
@@ -27,7 +27,7 @@ export class LiveMetrics {
     const changed: string[] = [];
     for (const [id, v] of nodes) {
       const old = this.nodes.get(id);
-      if (!old || old.health !== v.health || old.p95Ms !== v.p95Ms || old.errorRate !== v.errorRate || old.rps !== v.rps) {
+      if (!old || old.health !== v.health || old.healthDetail !== v.healthDetail || old.p95Ms !== v.p95Ms || old.errorRate !== v.errorRate || old.rps !== v.rps) {
         this.nodes.set(id, v);
         changed.push(`n:${id}`);
       }

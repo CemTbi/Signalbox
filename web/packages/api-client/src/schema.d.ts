@@ -860,6 +860,137 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/monitors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List a project's monitors
+         * @description Lists the project's monitors with their current state, oldest first. Every member of the workspace may.
+         */
+        get: operations["listMonitors"];
+        put?: never;
+        /**
+         * Create a monitor
+         * @description Adds a monitor to the project. Owners, admins and editors may. A project can have 1,000.
+         *
+         *     A `http` check passes when its request gets a response and every assertion holds; unless a status is asserted, the status must be 2xx. A `health` check also reads the body, if it's `application/health+json`, Spring Boot Actuator's health or Kubernetes' verbose `/readyz`: a warning, or a component that's down while the whole is up, makes the monitor `degraded`. Any check over HTTPS records when the certificate expires, and turns `degraded` when that's within `certificateWarningDays`.
+         *
+         *     Checks are sent by the server through its egress policy, with the environment's variables and secrets filled in. The first comes within one interval; checks are spread across it.
+         */
+        post: operations["createMonitor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{projectId}/monitor-stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Read monitors' uptime
+         * @description Returns the uptime and response times of the project's monitors over a time range, the last 24 hours by default. Monitors with no results in it aren't listed. Skipped checks don't count, and degraded ones count as up. Every member of the workspace may.
+         */
+        get: operations["getMonitorStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monitors/{monitorId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The monitor's ID. */
+                monitorId: components["parameters"]["MonitorId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get a monitor
+         * @description Returns a monitor with its current state and last check. Every member of the workspace may.
+         */
+        get: operations["getMonitor"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a monitor
+         * @description Deletes the monitor. Its results stay until they expire, after 90 days. Owners, admins and editors may.
+         */
+        delete: operations["deleteMonitor"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a monitor
+         * @description Changes the fields that are sent. `paused` stops its checks, and turning it off starts the monitor again as `pending`. Changing what it checks forgets failures so far. A monitor's ETag changes when people change it, not when it's checked. Owners, admins and editors may.
+         */
+        patch: operations["updateMonitor"];
+        trace?: never;
+    };
+    "/api/v1/monitors/{monitorId}/checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The monitor's ID. */
+                monitorId: components["parameters"]["MonitorId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List a monitor's checks
+         * @description Returns what its checks found over a time range, the last hour by default, newest first, kept for 90 days. The last second's may not be there yet. Secrets are masked. Every member of the workspace may.
+         */
+        get: operations["listChecks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monitors/{monitorId}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The monitor's ID. */
+                monitorId: components["parameters"]["MonitorId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check a monitor now
+         * @description Runs its check at once, waits for it and returns what it found. It counts like a scheduled check, and the schedule stays as it is. A paused monitor stays paused. Owners, admins and editors may.
+         */
+        post: operations["checkMonitor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/projects/{projectId}/send": {
         parameters: {
             query?: never;
@@ -4716,7 +4847,8 @@ export interface components {
              *         "onCanvas": true,
              *         "rate": 12.4,
              *         "errorRate": 0.008,
-             *         "p95Ms": 128
+             *         "p95Ms": 128,
+             *         "health": "ok"
              *       }
              *     ]
              */
@@ -4794,6 +4926,17 @@ export interface components {
              * @example 128
              */
             p95Ms?: number;
+            /**
+             * @description The worst state of its monitors in this environment: `ok` is up, `warn` degraded, and `unknown` means none has been checked.
+             * @example ok
+             * @enum {string}
+             */
+            health: "ok" | "warn" | "down" | "unknown";
+            /**
+             * @description What isn't healthy
+             * @example Orders health degraded: postgres warn
+             */
+            healthDetail?: string;
         };
         /** @description The calls from one node to another over 5 recent minutes, as the caller saw them. */
         LiveLine: {
@@ -4843,6 +4986,467 @@ export interface components {
              * @example 0
              */
             errorRate: number;
+        };
+        /**
+         * @description A monitor's ID.
+         * @example mon_01j9z3w5y7a9c1e3g5j7m9p1r3
+         */
+        MonitorId: string;
+        /**
+         * @description What the check reads: `http` its status and assertions, and `health` a health format in the body too.
+         * @example health
+         * @enum {string}
+         */
+        MonitorKind: "http" | "health";
+        /**
+         * @description `pending` until its first check. A failure only starts a confirmation, 10 seconds later, until `failuresToConfirm` come in a row, which makes it `down`. One success brings it back `up`.
+         * @example up
+         * @enum {string}
+         */
+        MonitorState: "pending" | "up" | "degraded" | "down" | "paused";
+        /**
+         * @description What a check found. `skipped` means it says nothing about the service: the check before it was still running, or Signalbox couldn't send it.
+         * @example passed
+         * @enum {string}
+         */
+        CheckOutcome: "passed" | "degraded" | "failed" | "skipped";
+        /**
+         * @description One thing a check's response must satisfy.
+         * @example {
+         *       "kind": "jsonPath",
+         *       "target": "$.status",
+         *       "op": "equals",
+         *       "value": "ok"
+         *     }
+         */
+        Assertion: {
+            /**
+             * @description What's checked. `responseTime` is in milliseconds.
+             * @example jsonPath
+             * @enum {string}
+             */
+            kind: "status" | "header" | "jsonPath" | "responseTime";
+            /**
+             * @description The header's name, or an RFC 9535 JSONPath, whose first match is compared.
+             * @example $.status
+             */
+            target?: string;
+            /**
+             * @description How it's compared. A status takes `equals`, `notEquals`, `lessThan` and `greaterThan`; a header all but `lessThan` and `greaterThan`; a response time only `lessThan`.
+             * @example equals
+             * @enum {string}
+             */
+            op: "equals" | "notEquals" | "contains" | "lessThan" | "greaterThan" | "exists" | "notExists";
+            /**
+             * @description What it's compared with. A number for `lessThan`, `greaterThan` and statuses.
+             * @example ok
+             */
+            value?: string;
+        };
+        /**
+         * @description One part of a service, as its health check reports it.
+         * @example {
+         *       "name": "postgres:responseTime",
+         *       "status": "ok"
+         *     }
+         */
+        HealthComponent: {
+            /**
+             * @description The component's name.
+             * @example postgres:responseTime
+             */
+            name: string;
+            /**
+             * @description Its status, whatever words its format uses.
+             * @example ok
+             * @enum {string}
+             */
+            status: "ok" | "warn" | "down";
+            /**
+             * @description What it said about itself.
+             * @example connection refused
+             */
+            detail?: string;
+        };
+        /** @description A new monitor. */
+        MonitorCreate: {
+            /**
+             * @description The monitor's name.
+             * @example Orders health
+             */
+            name: string;
+            kind?: components["schemas"]["MonitorKind"];
+            environmentId: components["schemas"]["EnvironmentId"];
+            serviceId?: components["schemas"]["ServiceId"];
+            request: components["schemas"]["SavedRequest"];
+            /**
+             * @description What the response must satisfy. Unless a status is among them, the status must be 2xx.
+             * @example [
+             *       {
+             *         "kind": "jsonPath",
+             *         "target": "$.status",
+             *         "op": "equals",
+             *         "value": "ok"
+             *       }
+             *     ]
+             */
+            assertions?: components["schemas"]["Assertion"][];
+            /**
+             * @description How often it's checked.
+             * @default 60
+             * @example 60
+             */
+            intervalSeconds: number;
+            /**
+             * @description How long a check may take.
+             * @default 10
+             * @example 10
+             */
+            timeoutSeconds: number;
+            /**
+             * @description How many failures in a row make it down.
+             * @default 2
+             * @example 2
+             */
+            failuresToConfirm: number;
+            /**
+             * @description How long before a certificate expires it turns degraded; 0 never does.
+             * @default 14
+             * @example 14
+             */
+            certificateWarningDays: number;
+            /**
+             * @description Whether it starts paused. It doesn't by default.
+             * @example false
+             */
+            paused?: boolean;
+        };
+        /** @description The fields of a monitor to change. */
+        MonitorUpdate: {
+            /**
+             * @description The monitor's name.
+             * @example Orders health
+             */
+            name?: string;
+            kind?: components["schemas"]["MonitorKind"];
+            /**
+             * @description The service whose health it shows on the canvas, or null for none.
+             * @example svc_01j9z3q1s3v5w7y9a1c3e5g7j9
+             */
+            serviceId?: components["schemas"]["ServiceId"] | null;
+            request?: components["schemas"]["SavedRequest"];
+            /**
+             * @description What the response must satisfy. Unless a status is among them, the status must be 2xx.
+             * @example [
+             *       {
+             *         "kind": "status",
+             *         "op": "equals",
+             *         "value": "200"
+             *       }
+             *     ]
+             */
+            assertions?: components["schemas"]["Assertion"][];
+            /**
+             * @description How often it's checked.
+             * @example 60
+             */
+            intervalSeconds?: number;
+            /**
+             * @description How long a check may take.
+             * @example 10
+             */
+            timeoutSeconds?: number;
+            /**
+             * @description How many failures in a row make it down.
+             * @example 2
+             */
+            failuresToConfirm?: number;
+            /**
+             * @description How long before a certificate expires it turns degraded; 0 never does.
+             * @example 14
+             */
+            certificateWarningDays?: number;
+            /**
+             * @description Whether its checks are stopped.
+             * @example true
+             */
+            paused?: boolean;
+        };
+        /** @description A monitor and its current state. */
+        Monitor: {
+            id: components["schemas"]["MonitorId"];
+            projectId: components["schemas"]["ProjectId"];
+            environmentId: components["schemas"]["EnvironmentId"];
+            serviceId?: components["schemas"]["ServiceId"];
+            /**
+             * @description The monitor's name.
+             * @example Orders health
+             */
+            name: string;
+            kind: components["schemas"]["MonitorKind"];
+            request: components["schemas"]["SavedRequest"];
+            /**
+             * @description What the response must satisfy.
+             * @example [
+             *       {
+             *         "kind": "jsonPath",
+             *         "target": "$.status",
+             *         "op": "equals",
+             *         "value": "ok"
+             *       }
+             *     ]
+             */
+            assertions: components["schemas"]["Assertion"][];
+            /**
+             * @description How often it's checked.
+             * @example 60
+             */
+            intervalSeconds: number;
+            /**
+             * @description How long a check may take.
+             * @example 10
+             */
+            timeoutSeconds: number;
+            /**
+             * @description How many failures in a row make it down.
+             * @example 2
+             */
+            failuresToConfirm: number;
+            /**
+             * @description How long before a certificate expires it turns degraded; 0 never does.
+             * @example 14
+             */
+            certificateWarningDays: number;
+            state: components["schemas"]["MonitorState"];
+            /**
+             * @description Failed checks in a row.
+             * @example 0
+             */
+            consecutiveFailures: number;
+            /**
+             * Format: date-time
+             * @description When its next scheduled check is due.
+             * @example 2026-11-04T12:01:12Z
+             */
+            nextCheckAt: string;
+            lastCheck?: components["schemas"]["LastCheck"];
+            /**
+             * Format: date-time
+             * @description When its server's certificate expires, as of the last HTTPS response.
+             * @example 2027-02-01T00:00:00Z
+             */
+            certificateExpiresAt?: string;
+            /**
+             * Format: date-time
+             * @description When it was created.
+             * @example 2026-11-04T09:00:00Z
+             */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @description When people last changed it.
+             * @example 2026-11-04T09:00:00Z
+             */
+            updatedAt: string;
+        };
+        /**
+         * @description What a monitor's last check found.
+         * @example {
+         *       "at": "2026-11-04T12:00:12Z",
+         *       "outcome": "passed",
+         *       "status": 200,
+         *       "durationMs": 41.2,
+         *       "components": []
+         *     }
+         */
+        LastCheck: {
+            /**
+             * Format: date-time
+             * @description When it ran.
+             * @example 2026-11-04T12:00:12Z
+             */
+            at: string;
+            outcome: components["schemas"]["CheckOutcome"];
+            /**
+             * @description The response's status. Missing without a response.
+             * @example 200
+             */
+            status?: number;
+            /**
+             * @description How long it took.
+             * @example 41.2
+             */
+            durationMs: number;
+            /**
+             * @description Why it failed or is degraded: `assertion`, `health`, `certificate`, or how the request failed, such as `dns` or `timeout`.
+             * @example assertion
+             */
+            failureCode?: string;
+            /**
+             * @description The same in words.
+             * @example The response's status is 503, not 2xx.
+             */
+            failureMessage?: string;
+            /**
+             * @description The trace it sent, in hex.
+             * @example 4bf92f3577b34da6a3ce929d0e0e4736
+             */
+            traceId?: string;
+            /**
+             * @description The health components it read.
+             * @example [
+             *       {
+             *         "name": "postgres:responseTime",
+             *         "status": "ok"
+             *       }
+             *     ]
+             */
+            components: components["schemas"]["HealthComponent"][];
+        };
+        /**
+         * @description What one check found. Secrets are masked.
+         * @example {
+         *       "at": "2026-11-04T12:00:12Z",
+         *       "outcome": "passed",
+         *       "status": 200,
+         *       "durationMs": 41.2,
+         *       "components": []
+         *     }
+         */
+        Check: {
+            /**
+             * Format: date-time
+             * @description When it ran.
+             * @example 2026-11-04T12:00:12Z
+             */
+            at: string;
+            outcome: components["schemas"]["CheckOutcome"];
+            /**
+             * @description How long it took.
+             * @example 41.2
+             */
+            durationMs: number;
+            /**
+             * @description The response's status. Missing without a response.
+             * @example 200
+             */
+            status?: number;
+            /**
+             * @description Why it failed or is degraded: `assertion`, `health`, `certificate`, or how the request failed, such as `dns` or `timeout`.
+             * @example assertion
+             */
+            failureCode?: string;
+            /**
+             * @description The same in words.
+             * @example The response's status is 503, not 2xx.
+             */
+            failureMessage?: string;
+            /**
+             * @description The health components it read.
+             * @example [
+             *       {
+             *         "name": "postgres:responseTime",
+             *         "status": "ok"
+             *       }
+             *     ]
+             */
+            components: components["schemas"]["HealthComponent"][];
+            /**
+             * Format: date-time
+             * @description When the server's certificate expires.
+             * @example 2027-02-01T00:00:00Z
+             */
+            certificateExpiresAt?: string;
+            /**
+             * @description The trace it sent, in hex.
+             * @example 4bf92f3577b34da6a3ce929d0e0e4736
+             */
+            traceId?: string;
+        };
+        /** @description A monitor's results. */
+        CheckList: {
+            /**
+             * @description The results, newest first.
+             * @example [
+             *       {
+             *         "at": "2026-11-04T12:00:12Z",
+             *         "outcome": "passed",
+             *         "status": 200,
+             *         "durationMs": 41.2,
+             *         "components": []
+             *       }
+             *     ]
+             */
+            data: components["schemas"]["Check"][];
+        };
+        /** @description A page of monitors. */
+        MonitorPage: {
+            /**
+             * @description The monitors, oldest first.
+             * @example []
+             */
+            data: components["schemas"]["Monitor"][];
+            /**
+             * @description The cursor of the next page. Missing on the last.
+             * @example eyJpZCI6Im1vbl8wMSJ9
+             */
+            nextCursor?: string;
+        };
+        /**
+         * @description A monitor's checks over a time range.
+         * @example {
+         *       "monitorId": "mon_01j9z3w5y7a9c1e3g5j7m9p1r3",
+         *       "checks": 1440,
+         *       "failed": 3,
+         *       "uptime": 0.9979,
+         *       "meanMs": 41.2,
+         *       "p95Ms": 128
+         *     }
+         */
+        MonitorStats: {
+            monitorId: components["schemas"]["MonitorId"];
+            /**
+             * @description The checks that ran.
+             * @example 1440
+             */
+            checks: number;
+            /**
+             * @description Of them, how many failed.
+             * @example 3
+             */
+            failed: number;
+            /**
+             * @description The share that didn't fail.
+             * @example 0.9979
+             */
+            uptime: number;
+            /**
+             * @description Their mean duration.
+             * @example 41.2
+             */
+            meanMs: number;
+            /**
+             * @description The 95th percentile of their durations.
+             * @example 128
+             */
+            p95Ms: number;
+        };
+        /** @description A project's monitors' statistics. */
+        MonitorStatsList: {
+            /**
+             * @description The statistics of monitors with results in the time range.
+             * @example [
+             *       {
+             *         "monitorId": "mon_01j9z3w5y7a9c1e3g5j7m9p1r3",
+             *         "checks": 1440,
+             *         "failed": 3,
+             *         "uptime": 0.9979,
+             *         "meanMs": 41.2,
+             *         "p95Ms": 128
+             *       }
+             *     ]
+             */
+            data: components["schemas"]["MonitorStats"][];
         };
         /**
          * @description A declared dependency's ID.
@@ -5894,6 +6498,8 @@ export interface components {
         AgentId: components["schemas"]["AgentId"];
         /** @description The environment's ID. */
         EnvironmentId: components["schemas"]["EnvironmentId"];
+        /** @description The monitor's ID. */
+        MonitorId: components["schemas"]["MonitorId"];
         /** @description The service's ID. */
         ServiceId: components["schemas"]["ServiceId"];
         /** @description The spec's ID. */
@@ -8370,7 +8976,8 @@ export interface operations {
                      *           "onCanvas": true,
                      *           "rate": 12.4,
                      *           "errorRate": 0.008,
-                     *           "p95Ms": 128
+                     *           "p95Ms": 128,
+                     *           "health": "ok"
                      *         }
                      *       ],
                      *       "lines": [
@@ -8522,6 +9129,465 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listMonitors: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Maximum number of items to return.
+                 * @example 50
+                 */
+                limit?: components["parameters"]["Limit"];
+                /**
+                 * @description The `nextCursor` value from the previous page.
+                 * @example eyJpZCI6IndzXzAxajl6M2txNG04cjJ0NnYweDV3N3k5YTFiIn0
+                 */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of monitors. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MonitorPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    createMonitor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /** @description The new monitor. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "name": "Orders health",
+                 *       "kind": "health",
+                 *       "environmentId": "env_01j9z3p1r3t5v7x9z1b3d5f7h9",
+                 *       "serviceId": "svc_01j9z3q1s3v5w7y9a1c3e5g7j9",
+                 *       "request": {
+                 *         "method": "GET",
+                 *         "url": "{{baseUrl}}/health"
+                 *       },
+                 *       "intervalSeconds": 60
+                 *     }
+                 */
+                "application/json": components["schemas"]["MonitorCreate"];
+            };
+        };
+        responses: {
+            /** @description The monitor. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    ETag: components["headers"]["ETag"];
+                    Location: components["headers"]["Location"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "mon_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "projectId": "prj_01j9z3m2p4r6t8v0x2z4b6d8f0",
+                     *       "environmentId": "env_01j9z3p1r3t5v7x9z1b3d5f7h9",
+                     *       "serviceId": "svc_01j9z3q1s3v5w7y9a1c3e5g7j9",
+                     *       "name": "Orders health",
+                     *       "kind": "health",
+                     *       "request": {
+                     *         "method": "GET",
+                     *         "url": "{{baseUrl}}/health"
+                     *       },
+                     *       "assertions": [],
+                     *       "intervalSeconds": 60,
+                     *       "timeoutSeconds": 10,
+                     *       "failuresToConfirm": 2,
+                     *       "certificateWarningDays": 14,
+                     *       "state": "up",
+                     *       "consecutiveFailures": 0,
+                     *       "nextCheckAt": "2026-11-04T12:01:12Z",
+                     *       "lastCheck": {
+                     *         "at": "2026-11-04T12:00:12Z",
+                     *         "outcome": "passed",
+                     *         "status": 200,
+                     *         "durationMs": 41.2,
+                     *         "components": [
+                     *           {
+                     *             "name": "postgres:responseTime",
+                     *             "status": "ok"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "createdAt": "2026-11-04T09:00:00Z",
+                     *       "updatedAt": "2026-11-04T09:00:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Monitor"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getMonitorStats: {
+        parameters: {
+            query?: {
+                /** @description The start of the time range, RFC 3339. 24 hours before `to` by default. */
+                from?: string;
+                /** @description The end of the time range, RFC 3339. Now by default. */
+                to?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The statistics. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "monitorId": "mon_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *           "checks": 1440,
+                     *           "failed": 3,
+                     *           "uptime": 0.9979,
+                     *           "meanMs": 41.2,
+                     *           "p95Ms": 128
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["MonitorStatsList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getMonitor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The monitor's ID. */
+                monitorId: components["parameters"]["MonitorId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The monitor. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "mon_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "projectId": "prj_01j9z3m2p4r6t8v0x2z4b6d8f0",
+                     *       "environmentId": "env_01j9z3p1r3t5v7x9z1b3d5f7h9",
+                     *       "serviceId": "svc_01j9z3q1s3v5w7y9a1c3e5g7j9",
+                     *       "name": "Orders health",
+                     *       "kind": "health",
+                     *       "request": {
+                     *         "method": "GET",
+                     *         "url": "{{baseUrl}}/health"
+                     *       },
+                     *       "assertions": [],
+                     *       "intervalSeconds": 60,
+                     *       "timeoutSeconds": 10,
+                     *       "failuresToConfirm": 2,
+                     *       "certificateWarningDays": 14,
+                     *       "state": "up",
+                     *       "consecutiveFailures": 0,
+                     *       "nextCheckAt": "2026-11-04T12:01:12Z",
+                     *       "lastCheck": {
+                     *         "at": "2026-11-04T12:00:12Z",
+                     *         "outcome": "passed",
+                     *         "status": 200,
+                     *         "durationMs": 41.2,
+                     *         "components": [
+                     *           {
+                     *             "name": "postgres:responseTime",
+                     *             "status": "ok"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "createdAt": "2026-11-04T09:00:00Z",
+                     *       "updatedAt": "2026-11-04T09:00:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Monitor"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    deleteMonitor: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description The `ETag` of the version you edited. The request fails with 412 if the resource changed since.
+                 * @example "3"
+                 */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The monitor's ID. */
+                monitorId: components["parameters"]["MonitorId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The monitor is gone. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            default: components["responses"]["Error"];
+        };
+    };
+    updateMonitor: {
+        parameters: {
+            query?: never;
+            header?: {
+                /**
+                 * @description The `ETag` of the version you edited. The request fails with 412 if the resource changed since.
+                 * @example "3"
+                 */
+                "If-Match"?: components["parameters"]["IfMatch"];
+            };
+            path: {
+                /** @description The monitor's ID. */
+                monitorId: components["parameters"]["MonitorId"];
+            };
+            cookie?: never;
+        };
+        /** @description The fields to change, as a JSON Merge Patch (RFC 7396). */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "paused": true
+                 *     }
+                 */
+                "application/merge-patch+json": components["schemas"]["MonitorUpdate"];
+            };
+        };
+        responses: {
+            /** @description The updated monitor. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    ETag: components["headers"]["ETag"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "mon_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "projectId": "prj_01j9z3m2p4r6t8v0x2z4b6d8f0",
+                     *       "environmentId": "env_01j9z3p1r3t5v7x9z1b3d5f7h9",
+                     *       "serviceId": "svc_01j9z3q1s3v5w7y9a1c3e5g7j9",
+                     *       "name": "Orders health",
+                     *       "kind": "health",
+                     *       "request": {
+                     *         "method": "GET",
+                     *         "url": "{{baseUrl}}/health"
+                     *       },
+                     *       "assertions": [],
+                     *       "intervalSeconds": 60,
+                     *       "timeoutSeconds": 10,
+                     *       "failuresToConfirm": 2,
+                     *       "certificateWarningDays": 14,
+                     *       "state": "up",
+                     *       "consecutiveFailures": 0,
+                     *       "nextCheckAt": "2026-11-04T12:01:12Z",
+                     *       "lastCheck": {
+                     *         "at": "2026-11-04T12:00:12Z",
+                     *         "outcome": "passed",
+                     *         "status": 200,
+                     *         "durationMs": 41.2,
+                     *         "components": [
+                     *           {
+                     *             "name": "postgres:responseTime",
+                     *             "status": "ok"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "createdAt": "2026-11-04T09:00:00Z",
+                     *       "updatedAt": "2026-11-04T09:00:00Z"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Monitor"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            412: components["responses"]["PreconditionFailed"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listChecks: {
+        parameters: {
+            query?: {
+                /** @description The start of the time range, RFC 3339. An hour before `to` by default. */
+                from?: string;
+                /** @description The end of the time range, RFC 3339. Now by default. */
+                to?: string;
+                /** @description The most results to return. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description The monitor's ID. */
+                monitorId: components["parameters"]["MonitorId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The results. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "data": [
+                     *         {
+                     *           "at": "2026-11-04T12:00:12Z",
+                     *           "outcome": "failed",
+                     *           "durationMs": 41.2,
+                     *           "status": 503,
+                     *           "failureCode": "assertion",
+                     *           "failureMessage": "The response's status is 503, not 2xx.",
+                     *           "components": []
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["CheckList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    checkMonitor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The monitor's ID. */
+                monitorId: components["parameters"]["MonitorId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What the check found. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "at": "2026-11-04T12:00:12Z",
+                     *       "outcome": "passed",
+                     *       "durationMs": 41.2,
+                     *       "status": 200,
+                     *       "components": []
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Check"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description This server has no runner to send the check with (`runner-unavailable`). */
+            503: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://signalbox.dev/problems/runner-unavailable",
+                     *       "title": "Service Unavailable",
+                     *       "status": 503,
+                     *       "code": "runner-unavailable",
+                     *       "detail": "This server has no runner to send the check with.",
+                     *       "requestId": "req_01j9z3q1s3v5w7y9a1c3e5g7j9"
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             default: components["responses"]["Error"];
         };
     };
