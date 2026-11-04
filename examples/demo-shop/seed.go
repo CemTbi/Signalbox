@@ -85,6 +85,9 @@ func runSeed(ctx context.Context) error {
 	if err := s.placeTargets(ctx, project); err != nil {
 		return fmt.Errorf("the canvas: %w", err)
 	}
+	if err := s.monitors(ctx, project); err != nil {
+		return fmt.Errorf("the monitors: %w", err)
+	}
 	key, err := s.ingestKey(ctx, project)
 	if err != nil {
 		return fmt.Errorf("the ingest key: %w", err)
@@ -232,6 +235,25 @@ func (s *seeder) find(ctx context.Context, path, field, value string, create map
 	return fmt.Sprint(made["id"]), nil
 }
 
+// production finds the project's production environment.
+func (s *seeder) production(ctx context.Context, project string) (string, error) {
+	var envs struct {
+		Data []struct {
+			ID   string `json:"id"`
+			Slug string `json:"slug"`
+		} `json:"data"`
+	}
+	if err := s.do(ctx, http.MethodGet, "/api/v1/projects/"+project+"/environments", nil, &envs, http.StatusOK); err != nil {
+		return "", err
+	}
+	for _, e := range envs.Data {
+		if e.Slug == "production" {
+			return e.ID, nil
+		}
+	}
+	return "", nil
+}
+
 // placeTargets says where the shop's database and payment provider go when
 // their first calls bring them to the canvas, unless someone has placed
 // them already.
@@ -249,6 +271,38 @@ func (s *seeder) placeTargets(ctx context.Context, project string) error {
 		{"kind": "database", "name": "shop-db", "x": 640, "y": 400},
 		{"kind": "external", "name": "psp.example", "x": 960, "y": 220},
 	}}, nil, http.StatusNoContent)
+}
+
+// monitors makes a health monitor per service of the shop, in production,
+// unless it's there already. Each puts its service's health on the canvas.
+func (s *seeder) monitors(ctx context.Context, project string) error {
+	production, err := s.production(ctx, project)
+	if err != nil {
+		return err
+	}
+	var services struct {
+		Data []struct {
+			ID   string `json:"id"`
+			Slug string `json:"slug"`
+		} `json:"data"`
+	}
+	if err := s.do(ctx, http.MethodGet, "/api/v1/projects/"+project+"/services?limit=100", nil, &services, http.StatusOK); err != nil {
+		return err
+	}
+	ids := map[string]string{}
+	for _, svc := range services.Data {
+		ids[svc.Slug] = svc.ID
+	}
+	for _, svc := range shopServices {
+		name := svc.name + " health"
+		if _, err := s.find(ctx, "/api/v1/projects/"+project+"/monitors", "name", name, map[string]any{
+			"name": name, "kind": "health", "environmentId": production, "serviceId": ids[svc.slug], "intervalSeconds": 30, "timeoutSeconds": 5,
+			"request": map[string]any{"method": "GET", "url": "http://" + svc.slug + ":8080/health"},
+		}); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+	}
+	return nil
 }
 
 // service makes a service with its spec published as a version, unless
@@ -291,20 +345,9 @@ func specFile(name string) (string, error) {
 // ingestKey makes a new key for production, revoking the ones earlier
 // runs made, so only the running shop's key works.
 func (s *seeder) ingestKey(ctx context.Context, project string) (string, error) {
-	var envs struct {
-		Data []struct {
-			ID   string `json:"id"`
-			Slug string `json:"slug"`
-		} `json:"data"`
-	}
-	if err := s.do(ctx, http.MethodGet, "/api/v1/projects/"+project+"/environments", nil, &envs, http.StatusOK); err != nil {
+	production, err := s.production(ctx, project)
+	if err != nil {
 		return "", err
-	}
-	var production string
-	for _, e := range envs.Data {
-		if e.Slug == "production" {
-			production = e.ID
-		}
 	}
 	if production == "" {
 		return "", errors.New("the project has no production environment")

@@ -4,9 +4,12 @@ package httpapi_test
 
 import (
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -200,6 +203,170 @@ func TestCanvasLive(t *testing.T) {
 		changed.Lines[0].System != "postgresql" || changed.Lines[0].ErrorRate != 1 || changed.Lines[0].Rate <= 0 {
 		t.Errorf("lines = %+v", changed.Lines)
 	}
+}
+
+func TestMonitors(t *testing.T) {
+	ch, chURL := clickhousetest.NewWithURL(t)
+	if err := clickhouse.Migrate(context.Background(), chURL, nil, slog.New(slog.DiscardHandler)); err != nil {
+		t.Fatal(err)
+	}
+	h := newHarnessWithTraces(t, ch)
+	h.setUp()
+	p := h.newProject("shop")
+	var envs struct {
+		Data []httpapi.EnvironmentJSON `json:"data"`
+	}
+	h.do(call{method: http.MethodGet, path: "/api/v1/projects/" + p.ID + "/environments"}).decode(t, &envs)
+	env := envs.Data[2].ID
+	var svc httpapi.ServiceJSON
+	h.do(call{method: http.MethodPost, path: "/api/v1/projects/" + p.ID + "/services", body: map[string]string{"name": "Orders", "slug": "orders"}}).decode(t, &svc)
+
+	// What the check will read, with a secret that must not be kept.
+	h.do(call{method: http.MethodPut, path: "/api/v1/environments/" + env + "/variables", headers: map[string]string{"If-Match": "*"},
+		body: map[string]any{"variables": []map[string]any{{"key": "token", "value": "hunter2", "secret": true}}}}).expect(t, http.StatusOK, "")
+	var health atomic.Value
+	health.Store(`{"status":"pass","checks":{"db":[{"status":"pass"}]}}`)
+	var sentToken atomic.Value
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sentToken.Store(r.Header.Get("X-Token"))
+		w.Header().Set("Content-Type", "application/health+json")
+		_, _ = io.WriteString(w, health.Load().(string))
+	}))
+	defer target.Close()
+
+	monitorsPath := "/api/v1/projects/" + p.ID + "/monitors"
+	create := map[string]any{
+		"name": "Orders health", "kind": "health", "environmentId": env, "serviceId": svc.ID, "intervalSeconds": 60,
+		"request":    map[string]any{"method": "GET", "url": target.URL + "/health", "headers": []map[string]any{{"key": "X-Token", "value": "{{token}}", "enabled": true}}},
+		"assertions": []map[string]any{{"kind": "responseTime", "op": "lessThan", "value": "20000"}},
+	}
+	var m httpapi.MonitorJSON
+	r := h.do(call{method: http.MethodPost, path: monitorsPath, body: create})
+	r.decode(t, &m)
+	if m.State != "pending" || m.TimeoutSeconds != 10 || m.FailuresToConfirm != 2 || m.CertificateWarningDays != 14 || m.ServiceID != svc.ID || r.header.Get("Location") != "/api/v1/monitors/"+m.ID {
+		t.Fatalf("created = %+v", m)
+	}
+	monitorPath := "/api/v1/monitors/" + m.ID
+	tag := r.header.Get("ETag")
+
+	for name, change := range map[string]func(body map[string]any){
+		"interval too short": func(b map[string]any) { b["intervalSeconds"] = 5 },
+		"timeout too long":   func(b map[string]any) { b["timeoutSeconds"] = 300 },
+		"no URL":             func(b map[string]any) { b["request"] = map[string]any{"method": "GET", "url": " "} },
+		"not a JSONPath": func(b map[string]any) {
+			b["assertions"] = []map[string]any{{"kind": "jsonPath", "target": "not a path", "op": "exists"}}
+		},
+	} {
+		body := map[string]any{}
+		for k, v := range create {
+			body[k] = v
+		}
+		change(body)
+		got := h.do(call{method: http.MethodPost, path: monitorsPath, body: body, invalid: name != "no URL" && name != "not a JSONPath"})
+		if got.status != http.StatusBadRequest {
+			t.Errorf("%s: status %d", name, got.status)
+		}
+	}
+	// Another project's environment isn't this one's.
+	other := h.newProject("other")
+	var otherEnvs struct {
+		Data []httpapi.EnvironmentJSON `json:"data"`
+	}
+	h.do(call{method: http.MethodGet, path: "/api/v1/projects/" + other.ID + "/environments"}).decode(t, &otherEnvs)
+	foreign := map[string]any{"name": "x", "environmentId": otherEnvs.Data[0].ID, "request": map[string]any{"method": "GET", "url": "http://x"}}
+	h.do(call{method: http.MethodPost, path: monitorsPath, body: foreign}).expect(t, http.StatusNotFound, "not-found")
+
+	// Checking now fills in the secret, keeps none of it, and moves the state.
+	var check httpapi.CheckJSON
+	h.do(call{method: http.MethodPost, path: monitorPath + "/check"}).decode(t, &check)
+	if check.Outcome != "passed" || check.Status != 200 || len(check.Components) != 1 || check.Components[0].Name != "db" || len(check.TraceID) != 32 {
+		t.Fatalf("check = %+v", check)
+	}
+	if sentToken.Load() != "hunter2" {
+		t.Errorf("the check sent the token %q", sentToken.Load())
+	}
+	r = h.do(call{method: http.MethodGet, path: monitorPath})
+	r.decode(t, &m)
+	if m.State != "up" || m.LastCheck == nil || m.LastCheck.Outcome != "passed" {
+		t.Fatalf("after a check = %+v", m)
+	}
+	// A check isn't an edit, so an edit begun before it still applies.
+	if r.header.Get("ETag") != tag {
+		t.Errorf("ETag moved from %s to %s", tag, r.header.Get("ETag"))
+	}
+
+	// A warning makes it degraded; a failure needs confirming.
+	health.Store(`{"status":"pass","checks":{"db":[{"status":"warn","output":"slow"}],"cache":[{"status":"fail"}]}}`)
+	h.do(call{method: http.MethodPost, path: monitorPath + "/check"}).decode(t, &check)
+	if check.Outcome != "degraded" || check.FailureCode != "health" || !strings.Contains(check.FailureMessage, "cache is down") {
+		t.Errorf("degraded check = %+v", check)
+	}
+	health.Store(`{"status":"fail"}`)
+	h.do(call{method: http.MethodPost, path: monitorPath + "/check"}).decode(t, &check)
+	h.do(call{method: http.MethodGet, path: monitorPath}).decode(t, &m)
+	if check.Outcome != "failed" || m.State != "degraded" || m.ConsecutiveFailures != 1 {
+		t.Errorf("first failure: %+v, then %+v", check, m)
+	}
+	h.do(call{method: http.MethodPost, path: monitorPath + "/check"}).decode(t, &check)
+	h.do(call{method: http.MethodGet, path: monitorPath}).decode(t, &m)
+	if m.State != "down" {
+		t.Errorf("second failure = %+v", m)
+	}
+
+	// The canvas shows it, for that environment only.
+	live := "/api/v1/projects/" + p.ID + "/canvas/live?environment="
+	var canvasNow httpapi.CanvasLiveJSON
+	h.do(call{method: http.MethodGet, path: live + env}).decode(t, &canvasNow)
+	if len(canvasNow.Services) != 1 || canvasNow.Services[0].Health != "down" || !strings.Contains(canvasNow.Services[0].HealthDetail, "Orders health down") {
+		t.Errorf("canvas = %+v", canvasNow.Services)
+	}
+	h.do(call{method: http.MethodGet, path: live + envs.Data[0].ID}).decode(t, &canvasNow)
+	if canvasNow.Services[0].Health != "unknown" {
+		t.Errorf("another environment's canvas = %+v", canvasNow.Services)
+	}
+
+	// Its results read back, newest first, with its uptime. Results are
+	// written a batch at a time, and the harness writes them when asked.
+	var checks struct {
+		Data []httpapi.CheckJSON `json:"data"`
+	}
+	var stats struct {
+		Data []httpapi.MonitorStatsJSON `json:"data"`
+	}
+	h.flushMonitors(t)
+	h.do(call{method: http.MethodGet, path: monitorPath + "/checks?limit=2"}).decode(t, &checks)
+	if len(checks.Data) != 2 || checks.Data[0].Outcome != "failed" || strings.Contains(checks.Data[0].FailureMessage, "hunter2") {
+		t.Errorf("checks = %+v", checks.Data)
+	}
+	h.do(call{method: http.MethodGet, path: "/api/v1/projects/" + p.ID + "/monitor-stats"}).decode(t, &stats)
+	if len(stats.Data) != 1 || stats.Data[0].Checks != 4 || stats.Data[0].Failed != 2 || stats.Data[0].Uptime != 0.5 {
+		t.Errorf("stats = %+v", stats.Data)
+	}
+
+	// Changing it needs the current ETag, and forgets failures so far.
+	h.do(call{method: http.MethodPatch, path: monitorPath, contentType: "application/merge-patch+json", headers: map[string]string{"If-Match": `"99"`},
+		body: map[string]any{"name": "Late"}}).expect(t, http.StatusPreconditionFailed, "edit-conflict")
+	r = h.do(call{method: http.MethodPatch, path: monitorPath, contentType: "application/merge-patch+json", headers: map[string]string{"If-Match": tag},
+		body: map[string]any{"name": "Orders", "serviceId": nil, "assertions": []map[string]any{}}})
+	var updated httpapi.MonitorJSON
+	r.decode(t, &updated)
+	if updated.Name != "Orders" || updated.ServiceID != "" || updated.ConsecutiveFailures != 0 || r.header.Get("ETag") == tag {
+		t.Errorf("updated = %+v", updated)
+	}
+	h.do(call{method: http.MethodPatch, path: monitorPath, contentType: "application/merge-patch+json", body: map[string]any{"paused": true}}).decode(t, &m)
+	if m.State != "paused" {
+		t.Errorf("paused = %+v", m)
+	}
+
+	var page struct {
+		Data []httpapi.MonitorJSON `json:"data"`
+	}
+	h.do(call{method: http.MethodGet, path: monitorsPath}).decode(t, &page)
+	if len(page.Data) != 1 || page.Data[0].ID != m.ID {
+		t.Errorf("list = %+v", page.Data)
+	}
+	h.do(call{method: http.MethodDelete, path: monitorPath}).expect(t, http.StatusNoContent, "")
+	h.do(call{method: http.MethodGet, path: monitorPath}).expect(t, http.StatusNotFound, "not-found")
 }
 
 func TestPlacingServicesOnTheCanvas(t *testing.T) {

@@ -7,12 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/CemTbi/Signalbox/internal/modules/client/convert"
 	"github.com/CemTbi/Signalbox/internal/modules/runner"
+	"github.com/CemTbi/Signalbox/internal/modules/scripts"
+	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 )
 
 // PlanRun returns the plan for running a collection, or one folder of it
@@ -139,6 +142,36 @@ func (m *Module) RunEnvironment(ctx context.Context, userID, projectID, environm
 		return RunEnvironment{}, err
 	}
 	return RunEnvironment{Name: env.Name, Values: values, Secrets: secrets}, nil
+}
+
+// Probe sends a request for a monitor: for no one, with an environment's
+// variables and secrets, keeping no history. What comes back has the
+// secrets masked, so it can be judged and kept. An error means it couldn't
+// be tried, which says nothing about where it was going.
+func (m *Module) Probe(ctx context.Context, env workspaces.Environment, saved SavedRequest, timeout time.Duration) (Entry, error) {
+	if m.runner == nil {
+		return Entry{}, ErrRunnerUnavailable
+	}
+	values, secrets, err := m.environmentValues(ctx, env)
+	if err != nil {
+		return Entry{}, err
+	}
+	st := &state{
+		vars: scripts.Variables{Environment: anyMap(values)}, iterations: 1, secrets: secrets, stored: map[string]string{}, project: env.ProjectID,
+	}
+	for _, k := range secrets {
+		st.stored[k] = values[k]
+	}
+	req := saved.toRunner()
+	req.Timeout = timeout
+	out, err := m.Engine().step(ctx, st, Step{Name: "Check", Request: req, Auth: saved.Auth})
+	if errors.Is(err, ErrResolvedTooLarge) {
+		out = stepOut{req: req, result: runner.Result{Failure: &runner.Failure{Code: "too-large",
+			Message: "The request is too large once its variables are filled in, so it wasn't sent."}}}
+	} else if err != nil {
+		return Entry{}, err
+	}
+	return out.masked(st), nil
 }
 
 // ErrNoFolder means a converted collection has no folder of the name asked

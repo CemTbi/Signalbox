@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Dependency, LiveLine, Service, TargetPlacement } from "@signalbox/api-client";
+import type { Dependency, LiveLine, LiveService, Service, TargetPlacement } from "@signalbox/api-client";
 import { MarkerType, type NodeChange } from "@xyflow/react";
 import type { LiveEdge, LiveNode } from "../canvas/live";
 import { type CallEdge, NODE_HEIGHT, NODE_WIDTH, type ServiceNode } from "../canvas/model";
@@ -125,10 +125,10 @@ export function canvasEdges(lines: LiveLine[], dependencies: Dependency[], names
 }
 
 /** What the live store should show of traffic: nodes by ID, lines by ID. */
-export function liveValues(services: { id: string; rate: number; errorRate: number; p95Ms?: number }[], lines: LiveLine[]) {
+export function liveValues(services: LiveService[], lines: LiveLine[]) {
   const nodes = new Map<string, LiveNode>();
   for (const s of services) {
-    nodes.set(s.id, { health: "unknown", rps: s.rate, errorRate: s.errorRate, p95Ms: s.p95Ms });
+    nodes.set(s.id, { health: s.health, healthDetail: s.healthDetail, rps: s.rate, errorRate: s.errorRate, p95Ms: s.p95Ms });
   }
   const edges = new Map<string, LiveEdge>();
   // A database or host has the calls to it, added up.

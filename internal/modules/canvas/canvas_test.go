@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/CemTbi/Signalbox/internal/modules/apis"
+	"github.com/CemTbi/Signalbox/internal/modules/monitors"
 	"github.com/CemTbi/Signalbox/internal/modules/telemetry"
 	"github.com/CemTbi/Signalbox/internal/platform/id"
 )
@@ -24,7 +25,7 @@ func TestAssembleMatchesSpansToServices(t *testing.T) {
 	orders := svc(1, "orders-api", "")
 	pay := svc(2, "payments", "payments-api")
 	quiet := svc(3, "quiet", "")
-	s := assemble([]apis.Service{orders, pay, quiet}, []telemetry.RecentService{
+	s := assemble([]apis.Service{orders, pay, quiet}, nil, []telemetry.RecentService{
 		{Service: "orders-api", Calls: 300, Errors: 3, P95: 128 * time.Millisecond},
 		{Service: "payments-api", Calls: 150, P95: 40 * time.Millisecond},
 		{Service: "cron", Calls: 0},
@@ -53,7 +54,7 @@ func TestAssembleGivesAContestedNameToOneService(t *testing.T) {
 	bySlug := svc(1, "orders", "")
 	told := svc(2, "other", "orders")
 	alsoTold := svc(3, "third", "orders")
-	s := assemble([]apis.Service{bySlug, told, alsoTold}, []telemetry.RecentService{{Service: "orders", Calls: 300}}, 5*time.Minute, nil, 5*time.Minute)
+	s := assemble([]apis.Service{bySlug, told, alsoTold}, nil, []telemetry.RecentService{{Service: "orders", Calls: 300}}, 5*time.Minute, nil, 5*time.Minute)
 	for _, v := range s.services {
 		want := 0.0
 		if v.ID == nodeID(told) {
@@ -68,7 +69,7 @@ func TestAssembleGivesAContestedNameToOneService(t *testing.T) {
 func TestAssembleResolvesLines(t *testing.T) {
 	orders := svc(1, "orders-api", "")
 	pay := svc(2, "payments-api", "")
-	s := assemble([]apis.Service{orders, pay}, nil, 5*time.Minute, []telemetry.RecentEdge{
+	s := assemble([]apis.Service{orders, pay}, nil, nil, 5*time.Minute, []telemetry.RecentEdge{
 		{From: "orders-api", Target: "payments-api", TargetKind: telemetry.TargetService, Calls: 200, Errors: 2},
 		// Before payments sent spans, calls to it were calls to an address.
 		{From: "orders-api", Target: "payments-api", TargetKind: telemetry.TargetExternal, Calls: 100, Errors: 1},
@@ -103,16 +104,28 @@ func TestAssembleResolvesLines(t *testing.T) {
 func TestTagsFollowContent(t *testing.T) {
 	orders := svc(1, "orders-api", "")
 	traffic := []telemetry.RecentService{{Service: "orders-api", Calls: 300}}
-	a := assemble([]apis.Service{orders}, traffic, 5*time.Minute, nil, 5*time.Minute)
-	if b := assemble([]apis.Service{orders}, traffic, 5*time.Minute, nil, 5*time.Minute); a.tag != b.tag {
+	a := assemble([]apis.Service{orders}, nil, traffic, 5*time.Minute, nil, 5*time.Minute)
+	if b := assemble([]apis.Service{orders}, nil, traffic, 5*time.Minute, nil, 5*time.Minute); a.tag != b.tag {
 		t.Error("one state got two tags")
 	}
 	// Within the rounding, it's the same state.
-	if b := assemble([]apis.Service{orders}, []telemetry.RecentService{{Service: "orders-api", Calls: 300}}, 5*time.Minute+time.Millisecond, nil, 5*time.Minute); a.tag != b.tag {
+	if b := assemble([]apis.Service{orders}, nil, []telemetry.RecentService{{Service: "orders-api", Calls: 300}}, 5*time.Minute+time.Millisecond, nil, 5*time.Minute); a.tag != b.tag {
 		t.Error("noise changed the tag")
 	}
-	if b := assemble([]apis.Service{orders}, []telemetry.RecentService{{Service: "orders-api", Calls: 330}}, 5*time.Minute, nil, 5*time.Minute); a.tag == b.tag {
+	if b := assemble([]apis.Service{orders}, nil, []telemetry.RecentService{{Service: "orders-api", Calls: 330}}, 5*time.Minute, nil, 5*time.Minute); a.tag == b.tag {
 		t.Error("a new rate kept the tag")
+	}
+}
+
+func TestAssembleShowsHealth(t *testing.T) {
+	orders := svc(1, "orders-api", "")
+	s := assemble([]apis.Service{orders}, map[uuid.UUID]monitors.ServiceHealth{orders.ID: {State: monitors.StateDegraded, Detail: "Orders degraded: db warn"}}, nil, 5*time.Minute, nil, 5*time.Minute)
+	if got := s.services[0]; got.Health != monitors.StateDegraded || got.HealthDetail != "Orders degraded: db warn" {
+		t.Errorf("health = %+v", got)
+	}
+	// A change of health is a change of state.
+	if b := assemble([]apis.Service{orders}, nil, nil, 5*time.Minute, nil, 5*time.Minute); b.tag == s.tag {
+		t.Error("new health kept the tag")
 	}
 }
 

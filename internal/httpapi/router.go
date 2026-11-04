@@ -109,6 +109,8 @@ type Deps struct {
 	IngestKeys IngestKeys
 	// Traces reads the spans services sent; nil leaves the routes out.
 	Traces Traces
+	// Monitors keeps monitors and their results; nil leaves the routes out.
+	Monitors Monitors
 	// Canvas answers what a project's canvas shows live; nil leaves the route
 	// out.
 	Canvas Canvas
@@ -288,6 +290,20 @@ func NewHandler(d Deps) http.Handler {
 		mux.Handle("/api/v1/environments/{environmentId}/graph", methods{http.MethodGet: a.authenticated(a.getGraph)})
 		mux.Handle("/api/v1/environments/{environmentId}/operations", methods{http.MethodGet: a.authenticated(a.listOperations)})
 		mux.Handle("/api/v1/projects/{projectId}/traces/{traceId}", methods{http.MethodGet: a.authenticated(a.getTrace)})
+	}
+	if a.Monitors != nil {
+		mux.Handle("/api/v1/projects/{projectId}/monitors", methods{
+			http.MethodGet:  a.authenticated(a.listMonitors),
+			http.MethodPost: a.authenticated(a.createMonitor),
+		})
+		mux.Handle("/api/v1/projects/{projectId}/monitor-stats", methods{http.MethodGet: a.authenticated(a.getMonitorStats)})
+		mux.Handle("/api/v1/monitors/{monitorId}", methods{
+			http.MethodGet:    a.authenticated(a.getMonitor),
+			http.MethodPatch:  a.authenticated(a.updateMonitor),
+			http.MethodDelete: a.authenticated(a.deleteMonitor),
+		})
+		mux.Handle("/api/v1/monitors/{monitorId}/checks", methods{http.MethodGet: a.authenticated(a.listChecks)})
+		mux.Handle("/api/v1/monitors/{monitorId}/check", methods{http.MethodPost: a.authenticated(a.checkMonitor)})
 	}
 	if a.Contracts != nil {
 		mux.Handle("/api/v1/versions/{versionId}/contract-tests", methods{http.MethodPost: a.authenticated(a.generateContractTests)})

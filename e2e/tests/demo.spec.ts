@@ -145,6 +145,48 @@ test("the canvas shows the shop's live traffic", async ({ page, request }) => {
   await page.getByLabel("Environment").selectOption({ label: "Production" });
 });
 
+test("a failing health check shows on its monitor and the canvas", async ({ page, request }) => {
+  test.setTimeout(180_000);
+  await openAsAdmin(page, request);
+  await expect(async () => {
+    await page.reload();
+    await expect(page.getByRole("link", { name: "Demo shop" })).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 90_000 });
+  await page.getByRole("link", { name: "Demo shop" }).click();
+  await page.getByRole("link", { name: /^Shop\b/ }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Shop" })).toBeVisible();
+  const projectURL = page.url();
+  const payments = page.locator(".react-flow__node").filter({ hasText: "Payments" });
+
+  // The scheduler checks the seed's monitors by itself, every 30 seconds.
+  await expect(payments.getByText("Healthy")).toBeVisible({ timeout: 60_000 });
+
+  try {
+    const broke = await request.put("http://localhost:8091/chaos", { data: { mode: "unhealthy" } });
+    expect(broke.ok()).toBe(true);
+    // Confirmed by itself: a failure, then a second check 10 seconds later.
+    await expect(payments.getByText("Down")).toBeVisible({ timeout: 90_000 });
+    await expectAccessible(page);
+
+    await page.getByRole("link", { name: "Monitors" }).click();
+    const list = page.getByRole("table", { name: "Monitors" });
+    await expect(list.getByRole("row", { name: /Payments health.*Down/ })).toBeVisible();
+    await list.getByRole("link", { name: "Payments health" }).click();
+    await expect(page.getByRole("status", { name: "State: Down" })).toBeVisible();
+    await expect(page.getByRole("table", { name: "Checks" }).getByRole("cell", { name: "Failed" }).first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("list", { name: "Health components" })).toBeVisible();
+    await expectAccessible(page);
+  } finally {
+    await request.put("http://localhost:8091/chaos", { data: { mode: "off" } });
+  }
+
+  // One success brings it back, and the canvas says so.
+  await page.getByRole("button", { name: "Check now" }).click();
+  await expect(page.getByRole("status", { name: "State: Up" })).toBeVisible();
+  await page.goto(projectURL);
+  await expect(payments.getByText("Healthy")).toBeVisible({ timeout: 15_000 });
+});
+
 test("the shop's services and their calls", async ({ page, request }) => {
   // Lines are built a minute at a time, about two minutes after the calls.
   test.setTimeout(300_000);

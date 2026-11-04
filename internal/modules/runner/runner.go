@@ -71,6 +71,9 @@ type Response struct {
 	URL        string
 	Redirects  int
 	RemoteAddr string
+	// CertificateExpiresAt is when the server's certificate expires; zero
+	// when the response didn't come over TLS.
+	CertificateExpiresAt time.Time
 }
 
 // Failure is why a request got no response.
@@ -209,6 +212,9 @@ func (r *Runner) run(ctx context.Context, req Request) Result {
 	out := &Response{
 		Status: resp.StatusCode, StatusText: http.StatusText(resp.StatusCode), Proto: resp.Proto,
 		Body: body, Truncated: truncated, URL: resp.Request.URL.String(), Redirects: max(redirects, 0), RemoteAddr: remote,
+	}
+	if resp.TLS != nil && len(resp.TLS.PeerCertificates) > 0 {
+		out.CertificateExpiresAt = resp.TLS.PeerCertificates[0].NotAfter
 	}
 	for key, values := range resp.Header {
 		for _, v := range values {

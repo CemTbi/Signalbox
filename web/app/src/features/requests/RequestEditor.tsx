@@ -34,13 +34,6 @@ export function RequestEditor({
       if (canSend && !sending) onSend();
     }
   }
-  function setHeader(id: number, change: Partial<HeaderRow>) {
-    const headers = draft.headers.map((h) => (h.id === id ? { ...h, ...change } : h));
-    // A row is always free for the next header.
-    if (headers.at(-1)?.key || headers.at(-1)?.value) headers.push(row());
-    onChange({ ...draft, headers });
-  }
-
   return (
     <form className="request-editor" onSubmit={submit} onKeyDown={shortcut} aria-label="Request">
       <div className="request-line">
@@ -87,42 +80,7 @@ export function RequestEditor({
         </button>
       </div>
       {tab === "headers" ? (
-        <table className="header-rows" role="tabpanel">
-          <thead>
-            <tr>
-              <th scope="col">
-                <span className="visually-hidden">Send</span>
-              </th>
-              <th scope="col">Name</th>
-              <th scope="col">Value</th>
-              <th scope="col">
-                <span className="visually-hidden">Remove</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {draft.headers.map((h, i) => (
-              <tr key={h.id}>
-                <td>
-                  <input type="checkbox" checked={h.enabled} onChange={(e) => setHeader(h.id, { enabled: e.target.checked })} aria-label={`Send header ${i + 1}`} />
-                </td>
-                <td>
-                  <input className="mono" value={h.key} placeholder="Name" aria-label={`Header ${i + 1} name`} onChange={(e) => setHeader(h.id, { key: e.target.value })} />
-                </td>
-                <td>
-                  <input className="mono" value={h.value} placeholder="Value" aria-label={`Header ${i + 1} value`} onChange={(e) => setHeader(h.id, { value: e.target.value })} />
-                </td>
-                <td>
-                  {i < draft.headers.length - 1 ? (
-                    <button type="button" className="button ghost small" aria-label={`Remove header ${h.key || i + 1}`} onClick={() => onChange({ ...draft, headers: draft.headers.filter((x) => x.id !== h.id) })}>
-                      Remove
-                    </button>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <HeaderRows draft={draft} onChange={onChange} role="tabpanel" />
       ) : tab === "auth" ? (
         <AuthEditor auth={draft.auth} onChange={(auth) => onChange({ ...draft, auth })} />
       ) : tab === "scripts" ? (
@@ -171,8 +129,56 @@ export function RequestEditor({
   );
 }
 
+/** A request's headers, each of which can be turned off, with a row free for the next. */
+export function HeaderRows({ draft, onChange, role }: { draft: Draft; onChange: (d: Draft) => void; role?: string }) {
+  function setHeader(id: number, change: Partial<HeaderRow>) {
+    const headers = draft.headers.map((h) => (h.id === id ? { ...h, ...change } : h));
+    // A row is always free for the next header.
+    if (headers.at(-1)?.key || headers.at(-1)?.value) headers.push(row());
+    onChange({ ...draft, headers });
+  }
+  return (
+    <table className="header-rows" role={role}>
+      <thead>
+        <tr>
+          <th scope="col">
+            <span className="visually-hidden">Send</span>
+          </th>
+          <th scope="col">Name</th>
+          <th scope="col">Value</th>
+          <th scope="col">
+            <span className="visually-hidden">Remove</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {draft.headers.map((h, i) => (
+          <tr key={h.id}>
+            <td>
+              <input type="checkbox" checked={h.enabled} onChange={(e) => setHeader(h.id, { enabled: e.target.checked })} aria-label={`Send header ${i + 1}`} />
+            </td>
+            <td>
+              <input className="mono" value={h.key} placeholder="Name" aria-label={`Header ${i + 1} name`} onChange={(e) => setHeader(h.id, { key: e.target.value })} />
+            </td>
+            <td>
+              <input className="mono" value={h.value} placeholder="Value" aria-label={`Header ${i + 1} value`} onChange={(e) => setHeader(h.id, { value: e.target.value })} />
+            </td>
+            <td>
+              {i < draft.headers.length - 1 ? (
+                <button type="button" className="button ghost small" aria-label={`Remove header ${h.key || i + 1}`} onClick={() => onChange({ ...draft, headers: draft.headers.filter((x) => x.id !== h.id) })}>
+                  Remove
+                </button>
+              ) : null}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 /** How the request authenticates. Fields take {{variables}}, so credentials can be secrets. */
-function AuthEditor({ auth, onChange }: { auth: AuthDraft; onChange: (a: AuthDraft) => void }) {
+export function AuthEditor({ auth, onChange }: { auth: AuthDraft; onChange: (a: AuthDraft) => void }) {
   const ids = { type: useId(), a: useId(), b: useId(), in: useId() };
   const set = (change: Partial<AuthDraft>) => onChange({ ...auth, ...change });
   const field = (id: string, label: string, value: string, change: (v: string) => void, placeholder: string, secret = false) => (

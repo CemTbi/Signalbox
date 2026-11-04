@@ -33,6 +33,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/canvas"
 	"github.com/CemTbi/Signalbox/internal/modules/client"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
+	"github.com/CemTbi/Signalbox/internal/modules/monitors"
 	"github.com/CemTbi/Signalbox/internal/modules/runner"
 	"github.com/CemTbi/Signalbox/internal/modules/scripts"
 	"github.com/CemTbi/Signalbox/internal/modules/telemetry"
@@ -101,7 +102,8 @@ type harness struct {
 	// csrf is sent with unsafe requests once someone has signed in.
 	csrf string
 	// logs holds what the server logged, as JSON lines.
-	logs *logBuffer
+	logs  *logBuffer
+	flush func(context.Context) error
 }
 
 // logBuffer collects log output from the server's goroutines.
@@ -185,9 +187,14 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL), ch c
 	t.Cleanup(runs.Close)
 	var traces httpapi.Traces
 	var live httpapi.Canvas
+	var watching httpapi.Monitors
+	var flush func(context.Context) error
 	if ch != nil {
 		traces = telemetry.NewTraces(ch, ws)
-		live = canvas.New(ch, ws, mods)
+		mon := monitors.New(pool, ch, logger, ws, mods, sender, nil)
+		t.Cleanup(mon.Close)
+		watching, flush = mon, mon.Flush
+		live = canvas.New(ch, ws, mods, mon)
 	}
 	srv.Config.Handler = httpapi.NewHandler(httpapi.Deps{
 		Logger:      logger,
@@ -208,6 +215,7 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL), ch c
 		IngestKeys:  telemetry.NewKeys(pool, logger, ws),
 		Traces:      traces,
 		Canvas:      live,
+		Monitors:    watching,
 		PublicURL:   public,
 	})
 	srv.StartTLS()
@@ -219,7 +227,15 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL), ch c
 		t.Fatal(err)
 	}
 	client.Jar = jar
-	return &harness{t: t, srv: srv, client: client, pool: pool, ids: ids, logs: logs}
+	return &harness{t: t, srv: srv, client: client, pool: pool, ids: ids, logs: logs, flush: flush}
+}
+
+// flushMonitors writes the check results held so far.
+func (h *harness) flushMonitors(t *testing.T) {
+	t.Helper()
+	if err := h.flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // call is one request. Body is sent as JSON unless it is a string.
