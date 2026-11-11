@@ -152,6 +152,10 @@ func TestHeartbeatMonitors(t *testing.T) {
 	if limited == 0 {
 		t.Error("a token's calls aren't limited")
 	}
+	// Made-up tokens are turned away without being counted.
+	for range 20 {
+		h.do(call{method: http.MethodPost, path: "/api/v1/heartbeats/not-a-token"}).expect(t, http.StatusNotFound, "not-found")
+	}
 	// Heartbeats have no request, and no timeout.
 	h.do(call{method: http.MethodPost, path: "/api/v1/projects/" + p.ID + "/monitors", body: map[string]any{
 		"name": "x", "kind": "heartbeat", "environmentId": env, "timeoutSeconds": 10,

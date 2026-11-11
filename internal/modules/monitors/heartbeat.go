@@ -24,8 +24,7 @@ const FailureNoHeartbeat = "no-heartbeat"
 // monitor takes the call and changes nothing. ErrNotFound means no monitor
 // has the token.
 func (m *Module) Heartbeat(ctx context.Context, secret string) error {
-	rest, ok := strings.CutPrefix(secret, HeartbeatTokenPrefix)
-	if !ok || !token.WellFormed(rest) {
+	if !WellFormedHeartbeatToken(secret) {
 		return ErrNotFound
 	}
 	var (
@@ -66,6 +65,13 @@ func (m *Module) Heartbeat(ctx context.Context, secret string) error {
 		m.changed(ctx, check.MonitorID, before, after)
 	}
 	return nil
+}
+
+// WellFormedHeartbeatToken says whether a string could be a heartbeat
+// token, without looking it up.
+func WellFormedHeartbeatToken(secret string) bool {
+	rest, ok := strings.CutPrefix(secret, HeartbeatTokenPrefix)
+	return ok && token.WellFormed(rest)
 }
 
 // expire records a heartbeat that was due and didn't come. A call that came

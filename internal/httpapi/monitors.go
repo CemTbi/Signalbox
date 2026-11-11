@@ -491,6 +491,12 @@ func (a *api) heartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	secret := r.PathValue("token")
+	// A token that can't be one is turned away before it takes a place in
+	// the per-token limiter, so made-up tokens can't crowd real ones out.
+	if !monitors.WellFormedHeartbeatToken(secret) {
+		writeProblem(w, r, http.StatusNotFound, "not-found", "No heartbeat monitor has this token. It may have been rotated, or the monitor deleted.")
+		return
+	}
 	if ok, retry := a.heartbeatsByToken.Allow(string(token.Hash(secret))); !ok {
 		writeRateLimited(w, r, retry)
 		return
