@@ -295,7 +295,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 		} else {
 			logger.InfoContext(ctx, "no secret key is configured, so environments can't keep secret variables; set SIGNALBOX_SECRET_KEY to turn them on")
 		}
-		s.monitors = monitors.New(db, s.ch, logger, s.workspaces, mods, s.client, reg)
+		s.monitors = monitors.New(db, s.ch, logger, s.workspaces, mods, s.client, s.client, s.runs, reg)
 		handler := httpapi.NewHandler(httpapi.Deps{
 			Logger:         logger,
 			Health:         checker,

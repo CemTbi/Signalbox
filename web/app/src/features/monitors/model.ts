@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Assertion, Check, Monitor, MonitorCreate, SavedRequest } from "@signalbox/api-client";
+import type { Assertion, Check, Monitor, MonitorCreate, MonitorUpdate, SavedRequest } from "@signalbox/api-client";
 import { type Draft, emptyDraft, fromSaved, toSaved } from "../requests/model";
 
 /** A monitor's state in words. The shape beside it comes from the same names as the canvas's. */
@@ -82,7 +82,17 @@ export function withKind(row: AssertionRow, kind: Assertion["kind"]): AssertionR
   return { ...row, kind, op, target: takesTarget(kind) ? row.target : undefined };
 }
 
-/** What the monitor form edits. */
+export const kindLabels: Record<Monitor["kind"], string> = {
+  http: "HTTP check",
+  health: "Health check",
+  collection: "Collection run",
+  heartbeat: "Heartbeat",
+};
+
+/** Whether a kind of monitor sends a request of its own. A kind changes only between these. */
+export const sendsRequest = (kind: Monitor["kind"]) => kind === "http" || kind === "health";
+
+/** What the monitor form edits. Each kind uses its own fields of it. */
 export type MonitorDraft = {
   name: string;
   kind: Monitor["kind"];
@@ -90,8 +100,12 @@ export type MonitorDraft = {
   serviceId: string;
   request: Draft;
   assertions: AssertionRow[];
+  collectionId: string;
+  /** "" runs the whole collection. */
+  folderId: string;
   intervalSeconds: number;
   timeoutSeconds: number;
+  graceSeconds: number;
   failuresToConfirm: number;
   certificateWarningDays: number;
 };
@@ -104,11 +118,27 @@ export function emptyMonitor(environmentId: string): MonitorDraft {
     serviceId: "",
     request: emptyDraft(),
     assertions: [],
+    collectionId: "",
+    folderId: "",
     intervalSeconds: 60,
     timeoutSeconds: 10,
+    graceSeconds: 3600,
     failuresToConfirm: 2,
     certificateWarningDays: 14,
   };
+}
+
+/** A new monitor's draft as another kind, with that kind's defaults where they differ, as the API has them. */
+export function withMonitorKind(d: MonitorDraft, kind: Monitor["kind"]): MonitorDraft {
+  if (sendsRequest(kind) && sendsRequest(d.kind)) return { ...d, kind };
+  switch (kind) {
+    case "collection":
+      return { ...d, kind, intervalSeconds: 300, timeoutSeconds: 60, failuresToConfirm: 2 };
+    case "heartbeat":
+      return { ...d, kind, intervalSeconds: 86400, graceSeconds: 3600, failuresToConfirm: 1 };
+    default:
+      return { ...d, kind, intervalSeconds: 60, timeoutSeconds: 10, failuresToConfirm: 2 };
+  }
 }
 
 export function fromMonitor(m: Monitor): MonitorDraft {
@@ -117,10 +147,13 @@ export function fromMonitor(m: Monitor): MonitorDraft {
     kind: m.kind,
     environmentId: m.environmentId,
     serviceId: m.serviceId ?? "",
-    request: fromSaved(m.request),
+    request: m.request ? fromSaved(m.request) : emptyDraft(),
     assertions: m.assertions.map(assertionRow),
+    collectionId: m.collectionId ?? "",
+    folderId: m.folderId ?? "",
     intervalSeconds: m.intervalSeconds,
     timeoutSeconds: m.timeoutSeconds,
+    graceSeconds: m.graceSeconds ?? 3600,
     failuresToConfirm: m.failuresToConfirm,
     certificateWarningDays: m.certificateWarningDays,
   };
@@ -142,32 +175,65 @@ function toRequest(d: Draft): SavedRequest {
   return saved;
 }
 
+/** The fields of a kind of monitor, as the API takes them: each kind refuses the others'. */
+function kindFields(d: MonitorDraft) {
+  switch (d.kind) {
+    case "collection":
+      return { collectionId: d.collectionId, intervalSeconds: d.intervalSeconds, timeoutSeconds: d.timeoutSeconds, failuresToConfirm: d.failuresToConfirm };
+    case "heartbeat":
+      return { intervalSeconds: d.intervalSeconds, graceSeconds: d.graceSeconds };
+    default:
+      return {
+        request: toRequest(d.request),
+        assertions: d.assertions.map(toAssertion),
+        intervalSeconds: d.intervalSeconds,
+        timeoutSeconds: d.timeoutSeconds,
+        failuresToConfirm: d.failuresToConfirm,
+        certificateWarningDays: d.certificateWarningDays,
+      };
+  }
+}
+
 export function toCreate(d: MonitorDraft): MonitorCreate {
   return {
     name: d.name,
     kind: d.kind,
     environmentId: d.environmentId,
     ...(d.serviceId ? { serviceId: d.serviceId } : {}),
-    request: toRequest(d.request),
-    assertions: d.assertions.map(toAssertion),
-    intervalSeconds: d.intervalSeconds,
-    timeoutSeconds: d.timeoutSeconds,
-    failuresToConfirm: d.failuresToConfirm,
-    certificateWarningDays: d.certificateWarningDays,
+    ...kindFields(d),
+    ...(d.kind === "collection" && d.folderId ? { folderId: d.folderId } : {}),
   };
 }
 
 /** The fields of an edit. A monitor's environment doesn't change: its results and state belong to it. */
-export function toUpdate(d: MonitorDraft) {
-  const { name, kind, serviceId, request, assertions, intervalSeconds, timeoutSeconds, failuresToConfirm, certificateWarningDays } = toCreate(d);
-  return { name, kind, serviceId: serviceId ?? null, request, assertions, intervalSeconds, timeoutSeconds, failuresToConfirm, certificateWarningDays };
+export function toUpdate(d: MonitorDraft): MonitorUpdate {
+  return {
+    name: d.name,
+    kind: d.kind,
+    serviceId: d.serviceId || null,
+    ...kindFields(d),
+    ...(d.kind === "collection" ? { folderId: d.folderId || null } : {}),
+  };
+}
+
+/** A span of seconds in words: 90 seconds, 5 minutes, 2 hours, 1 day. */
+export function formatSeconds(seconds: number): string {
+  const unit = (n: number, name: string) => `${n} ${name}${n === 1 ? "" : "s"}`;
+  if (seconds > 0 && seconds % 86400 === 0) return unit(seconds / 86400, "day");
+  if (seconds > 0 && seconds % 3600 === 0) return unit(seconds / 3600, "hour");
+  if (seconds > 0 && seconds % 60 === 0) return unit(seconds / 60, "minute");
+  return unit(seconds, "second");
 }
 
 /** How often, in words. */
 export function formatInterval(seconds: number): string {
-  if (seconds % 3600 === 0) return seconds === 3600 ? "every hour" : `every ${seconds / 3600} hours`;
-  if (seconds % 60 === 0) return seconds === 60 ? "every minute" : `every ${seconds / 60} minutes`;
-  return `every ${seconds} seconds`;
+  const every = formatSeconds(seconds);
+  return every.startsWith("1 ") ? `every ${every.slice(2)}` : `every ${every}`;
+}
+
+/** The URL a heartbeat's job calls. */
+export function heartbeatURL(origin: string, token: string): string {
+  return `${origin}/api/v1/heartbeats/${token}`;
 }
 
 /** A share as uptime, keeping enough digits that 99.99% isn't 100%. */

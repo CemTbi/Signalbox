@@ -26,7 +26,17 @@ func (m *Module) PlanRun(ctx context.Context, userID, collectionID, folderID uui
 	if err := m.authorizeFor(ctx, userID, projectOfCollection, collectionID, edit); err != nil {
 		return Collection{}, Plan{}, err
 	}
+	return m.PlanFor(ctx, collectionID, folderID)
+}
+
+// PlanFor returns the plan for running a collection, or one folder of it,
+// for no one, such as for a monitor. It returns ErrNotFound when either is
+// gone.
+func (m *Module) PlanFor(ctx context.Context, collectionID, folderID uuid.UUID) (Collection, Plan, error) {
 	col, err := readCollection(m.db.QueryRow(ctx, `SELECT `+collectionColumns+` FROM collections WHERE id = $1`, collectionID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Collection{}, Plan{}, ErrNotFound
+	}
 	if err != nil {
 		return Collection{}, Plan{}, fmt.Errorf("get collection: %w", err)
 	}
@@ -137,6 +147,16 @@ func (m *Module) RunEnvironment(ctx context.Context, userID, projectID, environm
 	if env.ProjectID != projectID {
 		return RunEnvironment{}, ErrNotFound
 	}
+	values, secrets, err := m.environmentValues(ctx, env)
+	if err != nil {
+		return RunEnvironment{}, err
+	}
+	return RunEnvironment{Name: env.Name, Values: values, Secrets: secrets}, nil
+}
+
+// EnvironmentOf returns an environment's variables and secrets for a run
+// for no one, such as a monitor's. The caller knows it may.
+func (m *Module) EnvironmentOf(ctx context.Context, env workspaces.Environment) (RunEnvironment, error) {
 	values, secrets, err := m.environmentValues(ctx, env)
 	if err != nil {
 		return RunEnvironment{}, err

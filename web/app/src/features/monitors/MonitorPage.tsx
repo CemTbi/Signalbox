@@ -3,13 +3,39 @@
 import type { Check, Monitor } from "@signalbox/api-client";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { api, describeError, unwrap, unwrapTagged } from "../../api";
 import { LoadError, Loading, PageHeader } from "../../components/Page";
-import { checksKey, checksQuery, environmentsQuery, monitorKey, monitorQuery, monitorsKey, monitorStatsQuery, projectQuery, servicesQuery, workspaceQuery } from "../../queries";
+import {
+  checksKey,
+  checksQuery,
+  collectionQuery,
+  environmentsQuery,
+  monitorKey,
+  monitorQuery,
+  monitorsKey,
+  monitorStatsQuery,
+  projectQuery,
+  servicesQuery,
+  workspaceQuery,
+} from "../../queries";
 import { formatMs } from "../canvas/ServiceNode";
 import { MonitorForm } from "./MonitorForm";
-import { chartBars, formatInterval, formatUptime, fromMonitor, type MonitorDraft, outcomeLabels, outcomeMarks, stateLabels, stateMarks, toUpdate } from "./model";
+import {
+  chartBars,
+  formatInterval,
+  formatSeconds,
+  formatUptime,
+  fromMonitor,
+  heartbeatURL,
+  type MonitorDraft,
+  outcomeLabels,
+  outcomeMarks,
+  stateLabels,
+  stateMarks,
+  toUpdate,
+} from "./model";
+import { takeFreshToken } from "./tokens";
 
 const route = getRouteApi("/_app/monitors/$monitorId");
 
@@ -29,6 +55,9 @@ export function MonitorPage() {
   const environments = useQuery({ ...environmentsQuery(api, projectId), enabled: monitor !== undefined });
   const checks = useQuery(checksQuery(api, monitorId));
   const stats = useQuery({ ...monitorStatsQuery(api, projectId), enabled: monitor !== undefined });
+  const collection = useQuery({ ...collectionQuery(api, monitor?.collectionId ?? ""), enabled: monitor?.collectionId !== undefined });
+  // Shown until the page is left: the API won't show it again.
+  const [token, setToken] = useState(() => takeFreshToken(monitorId));
 
   const refresh = async () => {
     await Promise.all([
@@ -62,6 +91,19 @@ export function MonitorPage() {
   const dayStats = stats.data?.data.find((s) => s.monitorId === m.id);
   const paused = m.state === "paused";
   const actionError = checkNow.error ?? pause.error ?? remove.error;
+  const what =
+    m.kind === "heartbeat" ? (
+      <>heartbeat expected {formatInterval(m.intervalSeconds)}, with {formatSeconds(m.graceSeconds ?? 0)} of grace</>
+    ) : m.kind === "collection" ? (
+      <>
+        runs {collection.data ? collection.data.name : "a collection"}
+        {m.folderId ? ", one folder" : ""} {formatInterval(m.intervalSeconds)}
+      </>
+    ) : (
+      <>
+        {m.request?.method} <span className="mono">{m.request?.url}</span> · {formatInterval(m.intervalSeconds)}
+      </>
+    );
 
   return (
     <div className="stack">
@@ -80,16 +122,18 @@ export function MonitorPage() {
             <span className={`svc-mark ${stateMarks[m.state]}`} aria-hidden="true" />
             {stateLabels[m.state]}
             <span className="field-hint">
-              {env} · {m.request.method} <span className="mono">{m.request.url}</span> · {formatInterval(m.intervalSeconds)}
+              {env} · {what}
             </span>
           </p>
         }
         actions={
           canEdit ? (
             <>
-              <button type="button" className="button primary" disabled={checkNow.isPending} onClick={() => checkNow.mutate()}>
-                {checkNow.isPending ? "Checking…" : "Check now"}
-              </button>
+              {m.kind !== "heartbeat" ? (
+                <button type="button" className="button primary" disabled={checkNow.isPending} onClick={() => checkNow.mutate()}>
+                  {checkNow.isPending ? (m.kind === "collection" ? "Running…" : "Checking…") : "Check now"}
+                </button>
+              ) : null}
               <button type="button" className="button secondary" disabled={pause.isPending} onClick={() => pause.mutate(!paused)}>
                 {paused ? "Resume" : "Pause"}
               </button>
@@ -105,7 +149,8 @@ export function MonitorPage() {
           {describeError(actionError)}
         </p>
       ) : null}
-      <LastCheck monitor={m} uptime={dayStats ? formatUptime(dayStats.uptime) : undefined} p95={dayStats ? formatMs(dayStats.p95Ms) : undefined} />
+      {m.kind === "heartbeat" ? <Heartbeat monitorId={m.id} token={token} onToken={setToken} canEdit={canEdit} /> : null}
+      <LastCheck monitor={m} uptime={dayStats ? formatUptime(dayStats.uptime) : undefined} p95={dayStats && m.kind !== "heartbeat" ? formatMs(dayStats.p95Ms) : undefined} />
       <section aria-labelledby="results" className="stack-tight">
         <h2 id="results" className="section-title">
           Recent checks
@@ -115,7 +160,7 @@ export function MonitorPage() {
         {checks.data && checks.data.data.length === 0 ? <p className="field-hint">No checks in the last day yet.</p> : null}
         {checks.data && checks.data.data.length > 0 ? (
           <>
-            <ResponseTimes checks={checks.data.data} />
+            {m.kind !== "heartbeat" ? <ResponseTimes checks={checks.data.data} /> : null}
             <CheckTable checks={checks.data.data} projectId={projectId} />
           </>
         ) : null}
@@ -135,9 +180,15 @@ function LastCheck({ monitor: m, uptime, p95 }: { monitor: Monitor; uptime?: str
           <dd>{last ? dateTime.format(new Date(last.at)) : "Not yet"}</dd>
         </div>
         <div>
-          <dt>Next check</dt>
+          <dt>{m.kind === "heartbeat" ? "Missed after" : "Next check"}</dt>
           <dd>{m.state === "paused" ? "Paused" : dateTime.format(new Date(m.nextCheckAt))}</dd>
         </div>
+        {m.kind === "heartbeat" ? (
+          <div>
+            <dt>Last call</dt>
+            <dd>{m.lastPingAt ? dateTime.format(new Date(m.lastPingAt)) : "None yet"}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>Uptime, 24 h</dt>
           <dd>{uptime ?? "–"}</dd>
@@ -158,7 +209,19 @@ function LastCheck({ monitor: m, uptime, p95 }: { monitor: Monitor; uptime?: str
           {m.consecutiveFailures} of {m.failuresToConfirm} failures in a row. It&apos;s being confirmed before the monitor goes down.
         </p>
       ) : null}
-      {last?.failureMessage ? <p className="monitor-failure">{last.failureMessage}</p> : null}
+      {last?.failureMessage ? (
+        <p className="monitor-failure">
+          {last.failureMessage}
+          {last.runId ? (
+            <>
+              {" "}
+              <Link to="/runs/$runId" params={{ runId: last.runId }}>
+                Open the run
+              </Link>
+            </>
+          ) : null}
+        </p>
+      ) : null}
       {last && last.components.length > 0 ? (
         <ul className="monitor-components" aria-label="Health components">
           {last.components.map((c) => (
@@ -226,6 +289,7 @@ function CheckTable({ checks, projectId }: { checks: Check[]; projectId: string 
             <th scope="col">Took</th>
             <th scope="col">What it found</th>
             <th scope="col">Trace</th>
+            {checks.some((c) => c.runId) ? <th scope="col">Run</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -248,6 +312,15 @@ function CheckTable({ checks, projectId }: { checks: Check[]; projectId: string 
                   </Link>
                 ) : null}
               </td>
+              {checks.some((x) => x.runId) ? (
+                <td>
+                  {c.runId ? (
+                    <Link to="/runs/$runId" params={{ runId: c.runId }}>
+                      Open
+                    </Link>
+                  ) : null}
+                </td>
+              ) : null}
             </tr>
           ))}
         </tbody>
@@ -274,14 +347,79 @@ function Settings({ monitor, etag, onSaved }: { monitor: Monitor; etag: string; 
         draft={draft}
         onChange={setDraft}
         onSubmit={() => save.mutate(draft)}
+        projectId={monitor.projectId}
         environments={[]}
         services={services}
         pending={save.isPending}
         error={save.error}
         submitLabel="Save settings"
         label="Monitor settings"
-        lockEnvironment
+        editing
       />
+    </section>
+  );
+}
+
+/**
+ * Where a heartbeat's job calls. The token is a credential the API shows
+ * once, when it's made: after that, only a new one can be shown.
+ */
+function Heartbeat({ monitorId, token, onToken, canEdit }: { monitorId: string; token?: string; onToken: (t: string) => void; canEdit: boolean }) {
+  const urlId = useId();
+  const [confirming, setConfirming] = useState(false);
+  const rotate = useMutation({
+    mutationFn: () => unwrap(api.POST("/api/v1/monitors/{monitorId}/heartbeat-token", { params: { path: { monitorId } } })),
+    onSuccess: (r) => {
+      setConfirming(false);
+      onToken(r.heartbeatToken);
+    },
+  });
+  const url = heartbeatURL(window.location.origin, token ?? "sbx_hb_…");
+  return (
+    <section aria-labelledby={`${urlId}-title`} className="panel stack-tight">
+      <h2 id={`${urlId}-title`} className="section-title">
+        Heartbeat URL
+      </h2>
+      {token ? (
+        <>
+          <p className="field-hint">Copy it now: the token in it isn&apos;t shown again. Anyone with it can say the job ran, so keep it as you would a password.</p>
+          <label htmlFor={urlId} className="visually-hidden">
+            Heartbeat URL
+          </label>
+          <input id={urlId} className="mono heartbeat-url" readOnly value={url} onFocus={(e) => e.target.select()} />
+          <p className="field-hint">
+            Call it when the job finishes, such as <span className="mono">curl -fsS -X POST {url}</span>. GET works too.
+          </p>
+        </>
+      ) : (
+        <p className="field-hint">
+          The job calls <span className="mono">{url}</span> when it finishes. Its token was shown once, when the monitor was made. To see a new one, rotate it.
+        </p>
+      )}
+      {canEdit ? (
+        confirming ? (
+          <div className="inline-confirm" role="group" aria-label="Rotate the token">
+            <span>The old token stops working at once.</span>
+            <button type="button" className="button secondary small" disabled={rotate.isPending} onClick={() => rotate.mutate()}>
+              {rotate.isPending ? "Rotating…" : "Rotate"}
+            </button>
+            <button type="button" className="button ghost small" onClick={() => setConfirming(false)}>
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div>
+            <button type="button" className="button secondary small" onClick={() => setConfirming(true)}>
+              Rotate token
+            </button>
+          </div>
+        )
+      ) : null}
+      {rotate.error ? (
+        <p className="form-alert" role="alert">
+          {describeError(rotate.error)}
+        </p>
+      ) : null}
     </section>
   );
 }

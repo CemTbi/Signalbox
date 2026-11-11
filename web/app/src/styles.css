@@ -876,6 +876,17 @@ table.traces .row-sub {
   gap: 6px;
 }
 
+.inline-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.heartbeat-url {
+  width: 100%;
+}
+
 .monitor-form-row {
   display: flex;
   flex-wrap: wrap;

@@ -19,6 +19,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/monitors"
 	"github.com/CemTbi/Signalbox/internal/modules/workspaces"
 	"github.com/CemTbi/Signalbox/internal/platform/id"
+	"github.com/CemTbi/Signalbox/internal/platform/token"
 	"github.com/CemTbi/Signalbox/internal/platform/validate"
 )
 
@@ -30,6 +31,8 @@ type Monitors interface {
 	Update(ctx context.Context, userID, monitorID uuid.UUID, pre workspaces.Precondition, patch monitors.Patch) (monitors.Monitor, error)
 	Delete(ctx context.Context, userID, monitorID uuid.UUID, pre workspaces.Precondition) error
 	CheckNow(ctx context.Context, userID, monitorID uuid.UUID) (monitors.Check, error)
+	Heartbeat(ctx context.Context, secret string) error
+	RotateHeartbeatToken(ctx context.Context, userID, monitorID uuid.UUID) (string, error)
 	Checks(ctx context.Context, userID, monitorID uuid.UUID, q monitors.CheckQuery) ([]monitors.Check, error)
 	ProjectStats(ctx context.Context, userID, projectID uuid.UUID, from, to time.Time) ([]monitors.Stats, error)
 }
@@ -59,29 +62,35 @@ type LastCheckJSON struct {
 	FailureMessage string          `json:"failureMessage,omitempty"`
 	TraceID        string          `json:"traceId,omitempty"`
 	Components     []ComponentJSON `json:"components"`
+	RunID          string          `json:"runId,omitempty"`
 }
 
 // MonitorJSON is a monitor.
 type MonitorJSON struct {
-	ID                     string           `json:"id"`
-	ProjectID              string           `json:"projectId"`
-	EnvironmentID          string           `json:"environmentId"`
-	ServiceID              string           `json:"serviceId,omitempty"`
-	Name                   string           `json:"name"`
-	Kind                   string           `json:"kind"`
-	Request                SavedRequestJSON `json:"request"`
-	Assertions             []AssertionJSON  `json:"assertions"`
-	IntervalSeconds        int              `json:"intervalSeconds"`
-	TimeoutSeconds         int              `json:"timeoutSeconds"`
-	FailuresToConfirm      int              `json:"failuresToConfirm"`
-	CertificateWarningDays int              `json:"certificateWarningDays"`
-	State                  string           `json:"state"`
-	ConsecutiveFailures    int              `json:"consecutiveFailures"`
-	NextCheckAt            string           `json:"nextCheckAt"`
-	LastCheck              *LastCheckJSON   `json:"lastCheck,omitempty"`
-	CertificateExpiresAt   string           `json:"certificateExpiresAt,omitempty"`
-	CreatedAt              string           `json:"createdAt"`
-	UpdatedAt              string           `json:"updatedAt"`
+	ID                     string            `json:"id"`
+	ProjectID              string            `json:"projectId"`
+	EnvironmentID          string            `json:"environmentId"`
+	ServiceID              string            `json:"serviceId,omitempty"`
+	Name                   string            `json:"name"`
+	Kind                   string            `json:"kind"`
+	Request                *SavedRequestJSON `json:"request,omitempty"`
+	Assertions             []AssertionJSON   `json:"assertions"`
+	CollectionID           string            `json:"collectionId,omitempty"`
+	FolderID               string            `json:"folderId,omitempty"`
+	IntervalSeconds        int               `json:"intervalSeconds"`
+	TimeoutSeconds         int               `json:"timeoutSeconds"`
+	GraceSeconds           *int              `json:"graceSeconds,omitempty"`
+	FailuresToConfirm      int               `json:"failuresToConfirm"`
+	CertificateWarningDays int               `json:"certificateWarningDays"`
+	State                  string            `json:"state"`
+	ConsecutiveFailures    int               `json:"consecutiveFailures"`
+	NextCheckAt            string            `json:"nextCheckAt"`
+	LastCheck              *LastCheckJSON    `json:"lastCheck,omitempty"`
+	LastPingAt             string            `json:"lastPingAt,omitempty"`
+	HeartbeatToken         string            `json:"heartbeatToken,omitempty"`
+	CertificateExpiresAt   string            `json:"certificateExpiresAt,omitempty"`
+	CreatedAt              string            `json:"createdAt"`
+	UpdatedAt              string            `json:"updatedAt"`
 }
 
 // CheckJSON is what one check found.
@@ -95,6 +104,7 @@ type CheckJSON struct {
 	Components           []ComponentJSON `json:"components"`
 	CertificateExpiresAt string          `json:"certificateExpiresAt,omitempty"`
 	TraceID              string          `json:"traceId,omitempty"`
+	RunID                string          `json:"runId,omitempty"`
 }
 
 // MonitorStatsJSON is a monitor's checks over a time range.
@@ -115,19 +125,41 @@ func componentsJSON(parts []monitors.Component) []ComponentJSON {
 	return out
 }
 
+func runIDJSON(v uuid.UUID) string {
+	if v == uuid.Nil {
+		return ""
+	}
+	return id.Format(id.Run, v)
+}
+
 func monitorJSON(m monitors.Monitor) MonitorJSON {
 	out := MonitorJSON{
 		ID: id.Format(id.Monitor, m.ID), ProjectID: id.Format(id.Project, m.ProjectID), EnvironmentID: id.Format(id.Environment, m.EnvironmentID),
-		Name: m.Name, Kind: m.Kind, Request: SavedRequestJSON{Method: m.Request.Method, URL: m.Request.URL, Body: m.Request.Body, Auth: authJSON(m.Request.Auth)},
+		Name: m.Name, Kind: m.Kind,
 		Assertions: make([]AssertionJSON, len(m.Assertions)), IntervalSeconds: int(m.Interval / time.Second), TimeoutSeconds: int(m.Timeout / time.Second),
 		FailuresToConfirm: m.FailuresToConfirm, CertificateWarningDays: m.CertificateWarningDays, State: m.State, ConsecutiveFailures: m.ConsecutiveFailures,
-		NextCheckAt: timestamp(m.NextCheckAt), CreatedAt: timestamp(m.CreatedAt), UpdatedAt: timestamp(m.UpdatedAt),
+		NextCheckAt: timestamp(m.NextCheckAt), HeartbeatToken: m.HeartbeatToken, CreatedAt: timestamp(m.CreatedAt), UpdatedAt: timestamp(m.UpdatedAt),
 	}
 	if m.ServiceID != uuid.Nil {
 		out.ServiceID = id.Format(id.Service, m.ServiceID)
 	}
-	for _, h := range m.Request.Headers {
-		out.Request.Headers = append(out.Request.Headers, SavedHeaderJSON(h))
+	switch m.Kind {
+	case monitors.KindHTTP, monitors.KindHealth:
+		out.Request = &SavedRequestJSON{Method: m.Request.Method, URL: m.Request.URL, Body: m.Request.Body, Auth: authJSON(m.Request.Auth)}
+		for _, h := range m.Request.Headers {
+			out.Request.Headers = append(out.Request.Headers, SavedHeaderJSON(h))
+		}
+	case monitors.KindCollection:
+		out.CollectionID = id.Format(id.Collection, m.CollectionID)
+		if m.FolderID != uuid.Nil {
+			out.FolderID = id.Format(id.Item, m.FolderID)
+		}
+	case monitors.KindHeartbeat:
+		grace := int(m.Grace / time.Second)
+		out.GraceSeconds = &grace
+		if !m.LastPingAt.IsZero() {
+			out.LastPingAt = preciseTime(m.LastPingAt)
+		}
 	}
 	for i, a := range m.Assertions {
 		out.Assertions[i] = AssertionJSON(a)
@@ -138,7 +170,7 @@ func monitorJSON(m monitors.Monitor) MonitorJSON {
 	if l := m.Last; l != nil {
 		out.LastCheck = &LastCheckJSON{
 			At: preciseTime(l.At), Outcome: l.Outcome, Status: l.Status, DurationMs: ms(l.Duration), FailureCode: l.FailureCode,
-			FailureMessage: l.FailureMessage, TraceID: l.TraceID, Components: componentsJSON(l.Components),
+			FailureMessage: l.FailureMessage, TraceID: l.TraceID, Components: componentsJSON(l.Components), RunID: runIDJSON(l.RunID),
 		}
 	}
 	return out
@@ -147,7 +179,7 @@ func monitorJSON(m monitors.Monitor) MonitorJSON {
 func checkJSON(c monitors.Check) CheckJSON {
 	out := CheckJSON{
 		At: preciseTime(c.At), Outcome: c.Outcome, DurationMs: ms(c.Duration), Status: c.Status, FailureCode: c.FailureCode,
-		FailureMessage: c.FailureMessage, Components: componentsJSON(c.Components), TraceID: c.TraceID,
+		FailureMessage: c.FailureMessage, Components: componentsJSON(c.Components), TraceID: c.TraceID, RunID: runIDJSON(c.RunID),
 	}
 	if !c.CertificateExpiresAt.IsZero() {
 		out.CertificateExpiresAt = timestamp(c.CertificateExpiresAt)
@@ -166,6 +198,10 @@ func (a *api) monitorsError(w http.ResponseWriter, r *http.Request, err error) {
 		writeProblem(w, r, http.StatusForbidden, "permission-denied", "Your role in this workspace doesn't allow this. Ask a workspace owner or admin.")
 	case errors.Is(err, monitors.ErrVersionMismatch):
 		writeProblem(w, r, http.StatusPreconditionFailed, "edit-conflict", "Someone changed this monitor since you loaded it. Load it again and reapply your change.")
+	case errors.Is(err, monitors.ErrNotCheckable):
+		writeProblem(w, r, http.StatusConflict, "not-checkable", "A heartbeat monitor is checked by the calls its job makes, so it can't be checked now.")
+	case errors.Is(err, monitors.ErrNoHeartbeat):
+		writeProblem(w, r, http.StatusConflict, "not-a-heartbeat", "Only a heartbeat monitor has a token.")
 	case errors.Is(err, client.ErrRunnerUnavailable):
 		writeProblem(w, r, http.StatusServiceUnavailable, "runner-unavailable", "This server has no runner to send the check with.")
 	default:
@@ -193,8 +229,11 @@ func (a *api) createMonitor(w http.ResponseWriter, r *http.Request, s *identity.
 		ServiceID              string            `json:"serviceId"`
 		Request                *SavedRequestJSON `json:"request"`
 		Assertions             []AssertionJSON   `json:"assertions"`
+		CollectionID           string            `json:"collectionId"`
+		FolderID               string            `json:"folderId"`
 		IntervalSeconds        int               `json:"intervalSeconds"`
 		TimeoutSeconds         int               `json:"timeoutSeconds"`
+		GraceSeconds           *int              `json:"graceSeconds"`
 		FailuresToConfirm      *int              `json:"failuresToConfirm"`
 		CertificateWarningDays *int              `json:"certificateWarningDays"`
 		Paused                 bool              `json:"paused"`
@@ -217,10 +256,25 @@ func (a *api) createMonitor(w http.ResponseWriter, r *http.Request, s *identity.
 			fields.Add("/serviceId", "pattern", "Use a service ID, such as svc_01j9z3q1s3v5w7y9a1c3e5g7j9.")
 		}
 	}
-	if body.Request == nil {
-		fields.Add("/request", "required", "This field is required.")
-	} else {
+	switch {
+	case body.Request != nil:
 		in.Request = *savedRequest(body.Request)
+	case in.Kind == "" || in.Kind == monitors.KindHTTP || in.Kind == monitors.KindHealth:
+		fields.Add("/request", "required", "This field is required.")
+	}
+	if body.CollectionID != "" {
+		if in.CollectionID, err = id.Parse(id.Collection, body.CollectionID); err != nil {
+			fields.Add("/collectionId", "pattern", "Use a collection ID, such as col_01j9z3q1s3v5w7y9a1c3e5g7j9.")
+		}
+	}
+	if body.FolderID != "" {
+		if in.FolderID, err = id.Parse(id.Item, body.FolderID); err != nil {
+			fields.Add("/folderId", "pattern", "Use a folder's item ID, such as item_01j9z3q1s3v5w7y9a1c3e5g7j9.")
+		}
+	}
+	if body.GraceSeconds != nil {
+		grace := time.Duration(*body.GraceSeconds) * time.Second
+		in.Grace = &grace
 	}
 	if len(fields) > 0 {
 		writeInvalid(w, r, fields)
@@ -273,8 +327,8 @@ func (a *api) updateMonitor(w http.ResponseWriter, r *http.Request, s *identity.
 	if !ok {
 		return
 	}
-	patch, ok := decodeMergePatch(w, r, "name", "kind", "serviceId", "request", "assertions", "intervalSeconds", "timeoutSeconds",
-		"failuresToConfirm", "certificateWarningDays", "paused")
+	patch, ok := decodeMergePatch(w, r, "name", "kind", "serviceId", "request", "assertions", "collectionId", "folderId", "intervalSeconds", "timeoutSeconds",
+		"graceSeconds", "failuresToConfirm", "certificateWarningDays", "paused")
 	if !ok {
 		return
 	}
@@ -307,8 +361,26 @@ func (a *api) updateMonitor(w http.ResponseWriter, r *http.Request, s *identity.
 			change.Assertions = &in
 		}
 	}
+	if v := patch.str(&fields, "collectionId", false); v != nil {
+		collection, err := id.Parse(id.Collection, *v)
+		if err != nil {
+			fields.Add("/collectionId", "pattern", "Use a collection ID, such as col_01j9z3q1s3v5w7y9a1c3e5g7j9.")
+		}
+		change.CollectionID = &collection
+	}
+	if v := patch.str(&fields, "folderId", true); v != nil {
+		var folder uuid.UUID
+		if *v != "" {
+			var err error
+			if folder, err = id.Parse(id.Item, *v); err != nil {
+				fields.Add("/folderId", "pattern", "Use a folder's item ID, such as item_01j9z3q1s3v5w7y9a1c3e5g7j9.")
+			}
+		}
+		change.FolderID = &folder
+	}
 	change.Interval = patch.seconds(&fields, "intervalSeconds")
 	change.Timeout = patch.seconds(&fields, "timeoutSeconds")
+	change.Grace = patch.seconds(&fields, "graceSeconds")
 	change.FailuresToConfirm = patch.integer(&fields, "failuresToConfirm")
 	change.CertificateWarningDays = patch.integer(&fields, "certificateWarningDays")
 	if raw, ok := patch["paused"]; ok {
@@ -383,12 +455,62 @@ func (a *api) checkMonitor(w http.ResponseWriter, r *http.Request, s *identity.S
 		writeRateLimited(w, r, retry)
 		return
 	}
+	// A collection monitor's run may take longer than the server's write
+	// timeout allows.
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(monitors.MaxRunTimeout + 30*time.Second))
 	c, err := a.Monitors.CheckNow(r.Context(), s.User.ID, monitorID)
 	if err != nil {
 		a.monitorsError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, checkJSON(c))
+}
+
+// rotateHeartbeatToken gives a heartbeat monitor a new token, shown once.
+func (a *api) rotateHeartbeatToken(w http.ResponseWriter, r *http.Request, s *identity.Session) {
+	monitorID, ok := pathID(w, r, "monitorId", id.Monitor, "monitor")
+	if !ok {
+		return
+	}
+	secret, err := a.Monitors.RotateHeartbeatToken(r.Context(), s.User.ID, monitorID)
+	if err != nil {
+		a.monitorsError(w, r, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]string{"heartbeatToken": secret})
+}
+
+// heartbeat takes a call from a heartbeat monitor's job. The token in the
+// path is the credential, so it needs no sign-in. Calls are limited per
+// token, and per address, so guessing tokens is slow. GET and HEAD work
+// too, for jobs that only have curl.
+func (a *api) heartbeat(w http.ResponseWriter, r *http.Request) {
+	if ok, retry := a.heartbeatsByIP.Allow(clientIP(r, a.TrustedProxies).String()); !ok {
+		writeRateLimited(w, r, retry)
+		return
+	}
+	secret := r.PathValue("token")
+	// A token that can't be one is turned away before it takes a place in
+	// the per-token limiter, so made-up tokens can't crowd real ones out.
+	if !monitors.WellFormedHeartbeatToken(secret) {
+		writeProblem(w, r, http.StatusNotFound, "not-found", "No heartbeat monitor has this token. It may have been rotated, or the monitor deleted.")
+		return
+	}
+	if ok, retry := a.heartbeatsByToken.Allow(string(token.Hash(secret))); !ok {
+		writeRateLimited(w, r, retry)
+		return
+	}
+	err := a.Monitors.Heartbeat(r.Context(), secret)
+	switch {
+	case errors.Is(err, monitors.ErrNotFound):
+		writeProblem(w, r, http.StatusNotFound, "not-found", "No heartbeat monitor has this token. It may have been rotated, or the monitor deleted.")
+	case err != nil:
+		a.fail(w, r, "heartbeat", err)
+	default:
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusNoContent)
+	}
 }
 
 func (a *api) listChecks(w http.ResponseWriter, r *http.Request, s *identity.Session) {

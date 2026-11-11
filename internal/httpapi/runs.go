@@ -42,6 +42,9 @@ type RunJSON struct {
 	FolderID      string `json:"folderId,omitempty"`
 	EnvironmentID string `json:"environmentId,omitempty"`
 	StartedBy     string `json:"startedBy,omitempty"`
+	// MonitorID is the collection monitor that ran it; absent for a
+	// person's run.
+	MonitorID string `json:"monitorId,omitempty"`
 	// AgentID and Agent are the agent the requests went through; absent
 	// when they went from the server.
 	AgentID     string        `json:"agentId,omitempty"`
@@ -78,6 +81,9 @@ func runJSON(r testruns.Run) RunJSON {
 	}
 	if r.AgentID != uuid.Nil {
 		out.AgentID = id.Format(id.Agent, r.AgentID)
+	}
+	if r.MonitorID != uuid.Nil {
+		out.MonitorID = id.Format(id.Monitor, r.MonitorID)
 	}
 	out.Agent = r.AgentName
 	if !r.StartedAt.IsZero() {

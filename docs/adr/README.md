@@ -52,3 +52,4 @@ Write a new ADR by copying [template.md](template.md) to the next number. Propos
 | [0044](0044-service-graph.md) | The service graph, built a minute at a time | Accepted |
 | [0045](0045-live-canvas-api.md) | The canvas goes live: polling, changes and declared lines | Accepted |
 | [0046](0046-monitors.md) | Monitors: a scheduler in PostgreSQL, results in ClickHouse | Accepted |
+| [0047](0047-collection-and-heartbeat-monitors.md) | Collection and heartbeat monitors | Accepted |

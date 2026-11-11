@@ -191,7 +191,7 @@ func startHarness(t *testing.T, configure func(*identity.Config, *url.URL), ch c
 	var flush func(context.Context) error
 	if ch != nil {
 		traces = telemetry.NewTraces(ch, ws)
-		mon := monitors.New(pool, ch, logger, ws, mods, sender, nil)
+		mon := monitors.New(pool, ch, logger, ws, mods, sender, sender, runs, nil)
 		t.Cleanup(mon.Close)
 		watching, flush = mon, mon.Flush
 		live = canvas.New(ch, ws, mods, mon)

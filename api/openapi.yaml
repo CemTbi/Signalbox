@@ -1993,7 +1993,7 @@ paths:
     post:
       operationId: checkMonitor
       summary: Check a monitor now
-      description: Runs its check at once, waits for it and returns what it found. It counts like a scheduled check, and the schedule stays as it is. A paused monitor stays paused. Owners, admins and editors may.
+      description: Runs its check at once, waits for it and returns what it found. It counts like a scheduled check, and the schedule stays as it is. A paused monitor stays paused. A collection monitor's run may take up to its timeout, two minutes at most. A heartbeat can't be checked now. Owners, admins and editors may.
       tags: [Monitors]
       responses:
         '200':
@@ -2007,6 +2007,14 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: The monitor is a heartbeat, which its job's calls check (`not-checkable`).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example: {type: 'https://signalbox.dev/problems/not-checkable', title: Conflict, status: 409, code: not-checkable, detail: 'A heartbeat monitor is checked by the calls its job makes, so it can''t be checked now.', requestId: req_01j9z3q1s3v5w7y9a1c3e5g7j9}
         '429': {$ref: '#/components/responses/TooManyRequests'}
         '503':
           description: This server has no runner to send the check with (`runner-unavailable`).
@@ -2016,6 +2024,73 @@ paths:
             application/problem+json:
               schema: {$ref: '#/components/schemas/Problem'}
               example: {type: 'https://signalbox.dev/problems/runner-unavailable', title: Service Unavailable, status: 503, code: runner-unavailable, detail: This server has no runner to send the check with., requestId: req_01j9z3q1s3v5w7y9a1c3e5g7j9}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/monitors/{monitorId}/heartbeat-token:
+    parameters:
+      - $ref: '#/components/parameters/MonitorId'
+    post:
+      operationId: rotateHeartbeatToken
+      summary: Rotate a heartbeat's token
+      description: Gives a heartbeat monitor a new token and returns it, once. The old token stops working at once, so update the job that calls it. Owners, admins and editors may.
+      tags: [Monitors]
+      responses:
+        '200':
+          description: The new token.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/HeartbeatToken'}
+              example: {heartbeatToken: sbx_hb_q8Hn2Vt0xYk3L9mWbR5cJ1sFzA7eGdUoP4iTvN6hKyE}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409':
+          description: The monitor isn't a heartbeat (`not-a-heartbeat`).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example: {type: 'https://signalbox.dev/problems/not-a-heartbeat', title: Conflict, status: 409, code: not-a-heartbeat, detail: Only a heartbeat monitor has a token., requestId: req_01j9z3q1s3v5w7y9a1c3e5g7j9}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/heartbeats/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: The heartbeat monitor's token. It's the credential, so keep it out of logs you share.
+        schema: {type: string, maxLength: 64, examples: [sbx_hb_q8Hn2Vt0xYk3L9mWbR5cJ1sFzA7eGdUoP4iTvN6hKyE]}
+    post:
+      operationId: sendHeartbeat
+      summary: Send a heartbeat
+      description: |
+        Tells a heartbeat monitor its job ran: the monitor is up, and the next call is due within its interval and grace. Call it when the job finishes, such as `curl -fsS -X POST https://signalbox.example.com/api/v1/heartbeats/sbx_hb_…`. A paused monitor takes the call and changes nothing.
+
+        It needs no sign-in: the token is the credential. Calls are limited to 10 at once and then 10 a minute per token, and the body is ignored.
+      tags: [Monitors]
+      security: []
+      responses:
+        '204':
+          description: The call was recorded.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        default: {$ref: '#/components/responses/Error'}
+    get:
+      operationId: sendHeartbeatByGet
+      summary: Send a heartbeat with GET
+      description: The same as `POST`, for jobs that can only make a GET request.
+      tags: [Monitors]
+      security: []
+      responses:
+        '204':
+          description: The call was recorded.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
         default: {$ref: '#/components/responses/Error'}
   /api/v1/projects/{projectId}/send:
     parameters:
@@ -4923,6 +4998,10 @@ components:
         folderId: {$ref: '#/components/schemas/ItemId'}
         environmentId: {$ref: '#/components/schemas/EnvironmentId'}
         startedBy: {$ref: '#/components/schemas/UserId'}
+        monitorId:
+          $ref: '#/components/schemas/MonitorId'
+          description: The collection monitor that ran it. A monitor's runs aren't in its collection's list; its checks link to them.
+          examples: [mon_01j9z3w5y7a9c1e3g5j7m9p1r3]
         agentId: {$ref: '#/components/schemas/AgentId'}
         agent: {type: string, description: 'The agent the requests went through, by its name then; absent when the server sent them.', examples: [ada-laptop]}
         name: {type: string, description: The collection's or folder's name when the run started., examples: [Shop API]}
@@ -6078,10 +6157,10 @@ components:
       examples: [mon_01j9z3w5y7a9c1e3g5j7m9p1r3]
     MonitorKind:
       type: string
-      enum: [http, health]
-      description: 'What the check reads: `http` its status and assertions, and `health` a health format in the body too.'
+      enum: [http, health, collection, heartbeat]
+      description: '`http` sends a request and reads its status and assertions, and `health` a health format in the body too. `collection` runs a collection, or a folder of it, and passes when the run passes. `heartbeat` sends nothing: a job calls its URL, and it goes down when no call comes within its interval and grace. A kind changes only between `http` and `health`.'
       examples: [health]
-      x-enum-varnames: [MonitorHTTP, MonitorHealth]
+      x-enum-varnames: [MonitorHTTP, MonitorHealth, MonitorCollection, MonitorHeartbeat]
     MonitorState:
       type: string
       enum: [pending, up, degraded, down, paused]
@@ -6131,8 +6210,8 @@ components:
         detail: {type: string, description: What it said about itself., examples: [connection refused]}
     MonitorCreate:
       type: object
-      description: A new monitor.
-      required: [name, environmentId, request]
+      description: A new monitor. `http` and `health` monitors need `request`, and `collection` monitors `collectionId`. The response to creating a heartbeat has its `heartbeatToken`, which isn't shown again.
+      required: [name, environmentId]
       additionalProperties: false
       properties:
         name: {type: string, minLength: 1, maxLength: 100, description: The monitor's name., examples: [Orders health]}
@@ -6142,14 +6221,20 @@ components:
         request: {$ref: '#/components/schemas/SavedRequest'}
         assertions:
           type: array
-          description: What the response must satisfy. Unless a status is among them, the status must be 2xx.
+          description: What the response must satisfy. Unless a status is among them, the status must be 2xx. Only `http` and `health` monitors have them.
           maxItems: 20
           items: {$ref: '#/components/schemas/Assertion'}
           examples: [[{kind: jsonPath, target: '$.status', op: equals, value: ok}]]
-        intervalSeconds: {type: integer, minimum: 30, maximum: 3600, default: 60, description: How often it's checked., examples: [60]}
-        timeoutSeconds: {type: integer, minimum: 1, maximum: 30, default: 10, description: How long a check may take., examples: [10]}
-        failuresToConfirm: {type: integer, minimum: 1, maximum: 10, default: 2, description: How many failures in a row make it down., examples: [2]}
-        certificateWarningDays: {type: integer, minimum: 0, maximum: 365, default: 14, description: 'How long before a certificate expires it turns degraded; 0 never does.', examples: [14]}
+        collectionId: {$ref: '#/components/schemas/CollectionId'}
+        folderId:
+          $ref: '#/components/schemas/ItemId'
+          description: The one folder of the collection to run. Without it, a collection monitor runs the whole collection.
+          examples: [item_01j9z3q1s3v5w7y9a1c3e5g7j9]
+        intervalSeconds: {type: integer, minimum: 30, maximum: 2592000, description: 'How often it''s checked: 30 to 3,600 seconds, 60 by default. A heartbeat expects a call every 60 seconds to 30 days, every day by default.', examples: [60]}
+        timeoutSeconds: {type: integer, minimum: 0, maximum: 120, description: 'How long a request may take, 1 to 30 seconds, 10 by default. A collection monitor''s whole run may take 1 to 120 seconds, 60 by default. A heartbeat has none, so 0.', examples: [10]}
+        graceSeconds: {type: integer, minimum: 0, maximum: 604800, description: 'How late past its interval a heartbeat''s call may come. As long as its interval by default, up to an hour. Only heartbeats have one.', examples: [3600]}
+        failuresToConfirm: {type: integer, minimum: 1, maximum: 10, description: 'How many failures in a row make it down, 2 by default. A heartbeat goes down at the first call missed, so 1.', examples: [2]}
+        certificateWarningDays: {type: integer, minimum: 0, maximum: 365, description: 'How long before a certificate expires it turns degraded, 14 days by default; 0 never does. Only `http` and `health` monitors read certificates, so 0 for others.', examples: [14]}
         paused: {type: boolean, description: 'Whether it starts paused. It doesn''t by default.', examples: [false]}
     MonitorUpdate:
       type: object
@@ -6171,15 +6256,26 @@ components:
           maxItems: 20
           items: {$ref: '#/components/schemas/Assertion'}
           examples: [[{kind: status, op: equals, value: '200'}]]
-        intervalSeconds: {type: integer, minimum: 30, maximum: 3600, description: How often it's checked., examples: [60]}
-        timeoutSeconds: {type: integer, minimum: 1, maximum: 30, description: How long a check may take., examples: [10]}
+        collectionId:
+          $ref: '#/components/schemas/CollectionId'
+          description: The collection a collection monitor runs. A new collection runs whole, unless `folderId` names one of its folders.
+          examples: [col_01j9z3q1s3v5w7y9a1c3e5g7j9]
+        folderId:
+          description: The one folder of the collection to run, or null for all of it.
+          examples: [item_01j9z3q1s3v5w7y9a1c3e5g7j9]
+          oneOf:
+            - {$ref: '#/components/schemas/ItemId'}
+            - {type: 'null', description: The whole collection.}
+        intervalSeconds: {type: integer, minimum: 30, maximum: 2592000, description: 'How often it''s checked, or a heartbeat expects a call.', examples: [60]}
+        timeoutSeconds: {type: integer, minimum: 0, maximum: 120, description: 'How long a check may take; a collection monitor''s whole run.', examples: [10]}
+        graceSeconds: {type: integer, minimum: 0, maximum: 604800, description: How late past its interval a heartbeat's call may come., examples: [3600]}
         failuresToConfirm: {type: integer, minimum: 1, maximum: 10, description: How many failures in a row make it down., examples: [2]}
         certificateWarningDays: {type: integer, minimum: 0, maximum: 365, description: 'How long before a certificate expires it turns degraded; 0 never does.', examples: [14]}
         paused: {type: boolean, description: Whether its checks are stopped., examples: [true]}
     Monitor:
       type: object
       description: A monitor and its current state.
-      required: [id, projectId, environmentId, name, kind, request, assertions, intervalSeconds, timeoutSeconds, failuresToConfirm, certificateWarningDays, state, consecutiveFailures, nextCheckAt, createdAt, updatedAt]
+      required: [id, projectId, environmentId, name, kind, assertions, intervalSeconds, timeoutSeconds, failuresToConfirm, certificateWarningDays, state, consecutiveFailures, nextCheckAt, createdAt, updatedAt]
       properties:
         id: {$ref: '#/components/schemas/MonitorId'}
         projectId: {$ref: '#/components/schemas/ProjectId'}
@@ -6187,14 +6283,32 @@ components:
         serviceId: {$ref: '#/components/schemas/ServiceId'}
         name: {type: string, description: The monitor's name., examples: [Orders health]}
         kind: {$ref: '#/components/schemas/MonitorKind'}
-        request: {$ref: '#/components/schemas/SavedRequest'}
+        request:
+          $ref: '#/components/schemas/SavedRequest'
+          description: The request an `http` or `health` monitor sends. Others have none.
+          examples: [{method: GET, url: '{{baseUrl}}/health'}]
         assertions:
           type: array
           description: What the response must satisfy.
           items: {$ref: '#/components/schemas/Assertion'}
           examples: [[{kind: jsonPath, target: '$.status', op: equals, value: ok}]]
-        intervalSeconds: {type: integer, description: How often it's checked., examples: [60]}
-        timeoutSeconds: {type: integer, description: How long a check may take., examples: [10]}
+        collectionId:
+          $ref: '#/components/schemas/CollectionId'
+          description: What a collection monitor runs.
+          examples: [col_01j9z3q1s3v5w7y9a1c3e5g7j9]
+        folderId:
+          $ref: '#/components/schemas/ItemId'
+          description: The one folder of its collection a collection monitor runs. Absent when it runs all of it.
+          examples: [item_01j9z3q1s3v5w7y9a1c3e5g7j9]
+        intervalSeconds: {type: integer, description: 'How often it''s checked, or a heartbeat expects a call.', examples: [60]}
+        timeoutSeconds: {type: integer, description: 'How long a check may take: a request, or a collection monitor''s whole run. 0 for a heartbeat.', examples: [10]}
+        graceSeconds: {type: integer, description: How late past its interval a heartbeat's call may come. Only heartbeats have it., examples: [3600]}
+        lastPingAt: {type: string, format: date-time, description: When a heartbeat's job last called., examples: ['2026-11-04T03:00:41Z']}
+        heartbeatToken:
+          type: string
+          description: 'A heartbeat''s token, only in the response to creating it: it''s kept as a hash. The job calls `/api/v1/heartbeats/{token}` with it.'
+          pattern: '^sbx_hb_[A-Za-z0-9_-]{43}$'
+          examples: [sbx_hb_q8Hn2Vt0xYk3L9mWbR5cJ1sFzA7eGdUoP4iTvN6hKyE]
         failuresToConfirm: {type: integer, description: How many failures in a row make it down., examples: [2]}
         certificateWarningDays: {type: integer, description: 'How long before a certificate expires it turns degraded; 0 never does.', examples: [14]}
         state: {$ref: '#/components/schemas/MonitorState'}
@@ -6222,6 +6336,9 @@ components:
           description: The health components it read.
           items: {$ref: '#/components/schemas/HealthComponent'}
           examples: [[{name: 'postgres:responseTime', status: ok}]]
+        runId:
+          $ref: '#/components/schemas/RunId'
+          description: A collection monitor's test run. Its newest 50 passed and 50 failed runs are kept, so an old check's run may be gone.
     Check:
       type: object
       description: What one check found. Secrets are masked.
@@ -6240,7 +6357,20 @@ components:
           items: {$ref: '#/components/schemas/HealthComponent'}
           examples: [[{name: 'postgres:responseTime', status: ok}]]
         certificateExpiresAt: {type: string, format: date-time, description: When the server's certificate expires., examples: ['2027-02-01T00:00:00Z']}
-        traceId: {type: string, description: 'The trace it sent, in hex.', examples: [4bf92f3577b34da6a3ce929d0e0e4736]}
+        traceId: {type: string, description: 'The trace it sent, in hex. A collection monitor''s is the first failing request''s.', examples: [4bf92f3577b34da6a3ce929d0e0e4736]}
+        runId:
+          $ref: '#/components/schemas/RunId'
+          description: A collection monitor's test run. Its newest 50 passed and 50 failed runs are kept, so an old check's run may be gone.
+    HeartbeatToken:
+      type: object
+      description: A heartbeat monitor's new token, shown once.
+      required: [heartbeatToken]
+      properties:
+        heartbeatToken:
+          type: string
+          description: 'The token. The job calls `/api/v1/heartbeats/{token}` with it.'
+          pattern: '^sbx_hb_[A-Za-z0-9_-]{43}$'
+          examples: [sbx_hb_q8Hn2Vt0xYk3L9mWbR5cJ1sFzA7eGdUoP4iTvN6hKyE]
     CheckList:
       type: object
       description: A monitor's results.

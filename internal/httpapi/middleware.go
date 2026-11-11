@@ -115,6 +115,15 @@ func noteActor(ctx context.Context, sess *identity.Session) {
 	}
 }
 
+// loggedPath is a request's path as the access log keeps it: without a
+// heartbeat's token, which is a credential.
+func loggedPath(path string) string {
+	if strings.HasPrefix(path, "/api/v1/heartbeats/") {
+		return "/api/v1/heartbeats/{token}"
+	}
+	return path
+}
+
 func logRequests(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -132,7 +141,7 @@ func logRequests(logger *slog.Logger) func(http.Handler) http.Handler {
 			}
 			attrs := []any{
 				"method", r.Method,
-				"path", r.URL.Path,
+				"path", loggedPath(r.URL.Path),
 				"status", rec.status,
 				"bytes", rec.bytes,
 				"duration_ms", float64(time.Since(start).Microseconds()) / 1000,

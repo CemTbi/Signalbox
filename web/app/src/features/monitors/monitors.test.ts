@@ -2,7 +2,8 @@
 
 import type { Check, Monitor } from "@signalbox/api-client";
 import { describe, expect, it } from "vitest";
-import { assertionRow, chartBars, emptyMonitor, formatInterval, formatUptime, fromMonitor, toCreate, toUpdate, withKind } from "./model";
+import { assertionRow, chartBars, emptyMonitor, formatInterval, formatSeconds, formatUptime, fromMonitor, heartbeatURL, toCreate, toUpdate, withKind, withMonitorKind } from "./model";
+import { keepFreshToken, takeFreshToken } from "./tokens";
 
 const monitor: Monitor = {
   id: "mon_1",
@@ -37,14 +38,14 @@ describe("the monitor form's values", () => {
     d.request.url = "https://example.com/health";
     const body = toCreate(d);
     expect(body).toMatchObject({ name: "Orders", environmentId: "env_1", assertions: [] });
-    expect(body.request.url).toBe("https://example.com/health");
+    expect(body.request?.url).toBe("https://example.com/health");
     expect("serviceId" in body).toBe(false);
   });
 
   it("round-trips a monitor", () => {
     const body = toCreate(fromMonitor(monitor));
     expect(body.assertions).toEqual(monitor.assertions);
-    expect(body.request.headers).toEqual(monitor.request.headers);
+    expect(body.request?.headers).toEqual(monitor.request?.headers);
     expect(body.serviceId).toBe("svc_1");
   });
 
@@ -54,6 +55,43 @@ describe("the monitor form's values", () => {
     const body = toUpdate(d);
     expect(body.serviceId).toBeNull();
     expect("environmentId" in body).toBe(false);
+  });
+
+  it("sends a collection monitor's collection and folder, and nothing of a request", () => {
+    const d = withMonitorKind({ ...emptyMonitor("env_1"), name: "Smoke", collectionId: "col_1", folderId: "item_1" }, "collection");
+    expect(toCreate(d)).toEqual({
+      name: "Smoke",
+      kind: "collection",
+      environmentId: "env_1",
+      collectionId: "col_1",
+      folderId: "item_1",
+      intervalSeconds: 300,
+      timeoutSeconds: 60,
+      failuresToConfirm: 2,
+    });
+    // Running the whole collection again clears the folder.
+    expect(toUpdate({ ...d, folderId: "" })).toMatchObject({ folderId: null, collectionId: "col_1" });
+  });
+
+  it("sends a heartbeat's interval and grace only", () => {
+    const d = withMonitorKind({ ...emptyMonitor("env_1"), name: "Backup" }, "heartbeat");
+    expect(toCreate(d)).toEqual({ name: "Backup", kind: "heartbeat", environmentId: "env_1", intervalSeconds: 86400, graceSeconds: 3600 });
+    const fromAPI = fromMonitor({ ...monitor, kind: "heartbeat", request: undefined, assertions: [], timeoutSeconds: 0, failuresToConfirm: 1, graceSeconds: 300 });
+    expect(toUpdate(fromAPI)).toEqual({ name: "Orders", kind: "heartbeat", serviceId: "svc_1", intervalSeconds: 60, graceSeconds: 300 });
+  });
+
+  it("keeps a request's settings between HTTP and health checks", () => {
+    const d = fromMonitor(monitor);
+    expect(withMonitorKind(d, "http")).toEqual({ ...d, kind: "http" });
+  });
+});
+
+describe("heartbeat tokens", () => {
+  it("are shown once, from memory", () => {
+    keepFreshToken("mon_1", "sbx_hb_a");
+    expect(takeFreshToken("mon_1")).toBe("sbx_hb_a");
+    expect(takeFreshToken("mon_1")).toBeUndefined();
+    expect(heartbeatURL("https://sb.example.com", "sbx_hb_a")).toBe("https://sb.example.com/api/v1/heartbeats/sbx_hb_a");
   });
 });
 
@@ -81,6 +119,10 @@ describe("formats", () => {
     expect(formatInterval(60)).toBe("every minute");
     expect(formatInterval(300)).toBe("every 5 minutes");
     expect(formatInterval(3600)).toBe("every hour");
+    expect(formatInterval(86400)).toBe("every day");
+    expect(formatInterval(7200)).toBe("every 2 hours");
+    expect(formatSeconds(90)).toBe("90 seconds");
+    expect(formatSeconds(0)).toBe("0 seconds");
   });
 
   it("never round uptime up to 100%", () => {
