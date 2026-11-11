@@ -876,6 +876,30 @@ table.traces .row-sub {
   gap: 6px;
 }
 
+.incident-timeline {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.incident-timeline li {
+  display: grid;
+  grid-template-columns: 11em 1fr;
+  gap: 2px 12px;
+  padding-left: 12px;
+  border-left: 2px solid var(--rule-strong);
+}
+
+.incident-timeline time {
+  font-variant-numeric: tabular-nums;
+}
+
+.incident-detail {
+  grid-column: 2;
+}
+
 .inline-confirm {
   display: flex;
   flex-wrap: wrap;

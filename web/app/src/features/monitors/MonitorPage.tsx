@@ -149,6 +149,14 @@ export function MonitorPage() {
           {describeError(actionError)}
         </p>
       ) : null}
+      {m.openIncidentId ? (
+        <p className="monitor-failure monitor-incident" role="alert">
+          This monitor is down, with an open incident.{" "}
+          <Link to="/incidents/$incidentId" params={{ incidentId: m.openIncidentId }}>
+            Open the incident
+          </Link>
+        </p>
+      ) : null}
       {m.kind === "heartbeat" ? <Heartbeat monitorId={m.id} token={token} onToken={setToken} canEdit={canEdit} /> : null}
       <LastCheck monitor={m} uptime={dayStats ? formatUptime(dayStats.uptime) : undefined} p95={dayStats && m.kind !== "heartbeat" ? formatMs(dayStats.p95Ms) : undefined} />
       <section aria-labelledby="results" className="stack-tight">

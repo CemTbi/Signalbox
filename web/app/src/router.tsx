@@ -24,6 +24,8 @@ import { ssoFailureMessages } from "./features/auth/sso";
 import { InvitePage } from "./features/invitations/InvitePage";
 import { WorkspaceMembers } from "./features/members/MembersPage";
 import { IngestKeysPage } from "./features/projects/IngestKeysPage";
+import { IncidentPage } from "./features/incidents/IncidentPage";
+import { IncidentsPage } from "./features/incidents/IncidentsPage";
 import { MonitorPage } from "./features/monitors/MonitorPage";
 import { MonitorsPage } from "./features/monitors/MonitorsPage";
 import { ProjectPage } from "./features/projects/ProjectPage";
@@ -169,6 +171,18 @@ const monitorRoute = createRoute({
   component: MonitorPage,
 });
 
+const incidentsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/projects/$projectId/incidents",
+  component: IncidentsPage,
+});
+
+const incidentRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/incidents/$incidentId",
+  component: IncidentPage,
+});
+
 const tracesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/projects/$projectId/traces",
@@ -255,6 +269,8 @@ const routeTree = rootRoute.addChildren([
     ingestKeysRoute,
     monitorsRoute,
     monitorRoute,
+    incidentsRoute,
+    incidentRoute,
     tracesRoute,
     traceRoute,
     runSetupRoute,

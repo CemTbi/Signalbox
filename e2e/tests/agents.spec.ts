@@ -27,7 +27,7 @@ test("a request sent through an agent", async ({ page, request }) => {
   expect(connected.status()).toBe(200);
   const agent = (await connected.json()) as { id: string };
 
-  await page.getByRole("link", { name: "Agents", exact: true }).click();
+  await page.getByRole("banner").getByRole("link", { name: "Agents", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Agents" })).toBeVisible();
   await expect(page.getByText(name)).toBeVisible();
   await expect(page.getByText("signalbox agent --server")).toBeVisible();
@@ -71,7 +71,7 @@ test("a request sent through an agent", async ({ page, request }) => {
   await expectAccessible(page);
 
   // Deleted, it no longer appears.
-  await page.getByRole("link", { name: "Agents", exact: true }).click();
+  await page.getByRole("banner").getByRole("link", { name: "Agents", exact: true }).click();
   await page.getByRole("button", { name: `Delete ${name}` }).click();
   await expect(page.getByRole("button", { name: `Delete ${name}` })).toHaveCount(0);
 });

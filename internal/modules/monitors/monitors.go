@@ -123,6 +123,9 @@ type Monitor struct {
 	// HeartbeatToken is a heartbeat's token, only just after it was made:
 	// it's stored as a hash.
 	HeartbeatToken string
+	// OpenIncidentID is its open incident, or uuid.Nil; filled in by Get
+	// and List.
+	OpenIncidentID uuid.UUID
 	// FailuresToConfirm is how many failures in a row make it down.
 	FailuresToConfirm int
 	// CertificateWarningDays turns it degraded when its server's certificate
@@ -246,9 +249,10 @@ type Module struct {
 	// observeDelay is told how late each check started, for measuring.
 	observeDelay func(time.Duration)
 
-	checks  *metrics.Counter
-	delay   *metrics.Histogram
-	dropped *metrics.Counter
+	checks          *metrics.Counter
+	delay           *metrics.Histogram
+	dropped         *metrics.Counter
+	incidentsOpened *metrics.Counter
 }
 
 // New returns the module. Run writes results and Schedule starts checks.
@@ -265,6 +269,7 @@ func New(db *pgxpool.Pool, conn clickhouse.Conn, logger *slog.Logger, access Acc
 			"How long after its time a monitor's check started.", metrics.DurationBuckets),
 		dropped: reg.NewCounter("signalbox_monitor_results_dropped_total",
 			"Check results dropped because ClickHouse couldn't take them for too long."),
+		incidentsOpened: reg.NewCounter("signalbox_incidents_opened_total", "Incidents opened by monitors going down."),
 	}
 	reg.NewGaugeFunc("signalbox_monitor_checks_running", "Monitor checks running in this process.",
 		func() float64 { return float64(len(m.slots)) })
@@ -654,10 +659,14 @@ func (m *Module) List(ctx context.Context, userID, projectID uuid.UUID, p worksp
 	if err != nil {
 		return workspaces.Page[Monitor]{}, fmt.Errorf("list monitors: %w", err)
 	}
-	if len(items) > limit {
-		return workspaces.Page[Monitor]{Items: items[:limit], More: true}, nil
+	more := len(items) > limit
+	if more {
+		items = items[:limit]
 	}
-	return workspaces.Page[Monitor]{Items: items}, nil
+	if err := m.openIncidents(ctx, items); err != nil {
+		return workspaces.Page[Monitor]{}, err
+	}
+	return workspaces.Page[Monitor]{Items: items, More: more}, nil
 }
 
 // Get returns a monitor. Every member of the workspace may read it.
@@ -672,7 +681,11 @@ func (m *Module) Get(ctx context.Context, userID, monitorID uuid.UUID) (Monitor,
 	if err := m.authorize(ctx, userID, mon.ProjectID, false); err != nil {
 		return Monitor{}, err
 	}
-	return mon, nil
+	one := []Monitor{mon}
+	if err := m.openIncidents(ctx, one); err != nil {
+		return Monitor{}, err
+	}
+	return one[0], nil
 }
 
 // Update changes a monitor. Owners, admins and editors may. Changing what it
@@ -749,7 +762,13 @@ func (m *Module) Update(ctx context.Context, userID, monitorID uuid.UUID, pre wo
 			monitorID, nullableID(cur.ServiceID), cur.Name, cur.Kind, request, assertions, int(cur.Interval/time.Second), int(cur.Timeout/time.Second),
 			cur.FailuresToConfirm, cur.CertificateWarningDays, cur.State, failures, next,
 			nullableID(cur.CollectionID), nullableID(cur.FolderID), int(cur.Grace/time.Second)))
-		return err
+		if err != nil {
+			return err
+		}
+		if nowPaused := cur.State == StatePaused; nowPaused != wasPaused {
+			return m.pausedStep(ctx, tx, monitorID, userID, nowPaused)
+		}
+		return nil
 	})
 	var fields validate.Errors
 	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrForbidden) || errors.Is(err, ErrVersionMismatch) || errors.As(err, &fields) {
@@ -811,12 +830,37 @@ func (m *Module) Delete(ctx context.Context, userID, monitorID uuid.UUID, pre wo
 	if err := m.authorize(ctx, userID, mon.ProjectID, true); err != nil {
 		return err
 	}
-	tag, err := m.db.Exec(ctx, `DELETE FROM monitors WHERE id = $1 AND ($2::bigint[] IS NULL OR version = ANY($2))`, monitorID, pre.Versions)
+	// Its incidents stay, with its name: an open one is resolved.
+	err = pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `SELECT 1 FROM monitors WHERE id = $1 AND ($2::bigint[] IS NULL OR version = ANY($2)) FOR UPDATE`, monitorID, pre.Versions)
+		if err != nil {
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			return ErrVersionMismatch
+		}
+		open, err := m.openIncident(ctx, tx, monitorID)
+		if err != nil {
+			return err
+		}
+		if open != uuid.Nil {
+			if _, err := tx.Exec(ctx, `
+				UPDATE incidents SET state = 'resolved', resolved_at = $2, resolved_by = $3, resolution = 'deleted', version = version + 1 WHERE id = $1`,
+				open, m.now(), userID); err != nil {
+				return err
+			}
+			if err := m.addEvent(ctx, tx, open, EventResolved, userID, "", "", "The monitor was deleted."); err != nil {
+				return err
+			}
+		}
+		_, err = tx.Exec(ctx, `DELETE FROM monitors WHERE id = $1`, monitorID)
+		return err
+	})
+	if errors.Is(err, ErrVersionMismatch) {
+		return err
+	}
 	if err != nil {
 		return fmt.Errorf("delete a monitor: %w", err)
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrVersionMismatch
 	}
 	m.logger.InfoContext(ctx, "deleted a monitor", id.LogAttr("monitor_id", id.Monitor, monitorID), id.LogAttr("user_id", id.User, userID))
 	return nil

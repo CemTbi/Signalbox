@@ -311,6 +311,10 @@ func NewHandler(d Deps) http.Handler {
 		mux.Handle("/api/v1/monitors/{monitorId}/check", methods{http.MethodPost: a.authenticated(a.checkMonitor)})
 		mux.Handle("/api/v1/monitors/{monitorId}/heartbeat-token", methods{http.MethodPost: a.authenticated(a.rotateHeartbeatToken)})
 		mux.Handle("/api/v1/heartbeats/{token}", methods{http.MethodPost: http.HandlerFunc(a.heartbeat), http.MethodGet: http.HandlerFunc(a.heartbeat)})
+		mux.Handle("/api/v1/projects/{projectId}/incidents", methods{http.MethodGet: a.authenticated(a.listIncidents)})
+		mux.Handle("/api/v1/incidents/{incidentId}", methods{http.MethodGet: a.authenticated(a.getIncident)})
+		mux.Handle("/api/v1/incidents/{incidentId}/acknowledge", methods{http.MethodPost: a.authenticated(a.acknowledgeIncident)})
+		mux.Handle("/api/v1/incidents/{incidentId}/resolve", methods{http.MethodPost: a.authenticated(a.resolveIncident)})
 	}
 	if a.Contracts != nil {
 		mux.Handle("/api/v1/versions/{versionId}/contract-tests", methods{http.MethodPost: a.authenticated(a.generateContractTests)})

@@ -161,3 +161,61 @@ func TestHeartbeatMonitors(t *testing.T) {
 		"name": "x", "kind": "heartbeat", "environmentId": env, "timeoutSeconds": 10,
 	}}).expect(t, http.StatusBadRequest, "validation-failed")
 }
+
+func TestIncidents(t *testing.T) {
+	h, p, env := monitorsHarness(t)
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) }))
+	t.Cleanup(down.Close)
+	var m httpapi.MonitorJSON
+	h.do(call{method: http.MethodPost, path: "/api/v1/projects/" + p.ID + "/monitors", body: map[string]any{
+		"name": "Orders", "environmentId": env, "request": map[string]any{"method": "GET", "url": down.URL},
+	}}).decode(t, &m)
+	monitorPath := "/api/v1/monitors/" + m.ID
+	for range 2 {
+		h.do(call{method: http.MethodPost, path: monitorPath + "/check"}).expect(t, http.StatusOK, "")
+	}
+	h.do(call{method: http.MethodGet, path: monitorPath}).decode(t, &m)
+	if m.State != "down" || !strings.HasPrefix(m.OpenIncidentID, "inc_") {
+		t.Fatalf("monitor = %+v", m)
+	}
+
+	incidentsPath := "/api/v1/projects/" + p.ID + "/incidents"
+	var list struct {
+		Data []httpapi.IncidentJSON `json:"data"`
+	}
+	h.do(call{method: http.MethodGet, path: incidentsPath + "?state=open&monitorId=" + m.ID}).decode(t, &list)
+	if len(list.Data) != 1 || list.Data[0].ID != m.OpenIncidentID || list.Data[0].FirstCheck.Status != 503 || list.Data[0].MonitorName != "Orders" {
+		t.Fatalf("incidents = %+v", list.Data)
+	}
+	h.do(call{method: http.MethodGet, path: incidentsPath + "?state=closed", invalid: true}).expect(t, http.StatusBadRequest, "validation-failed")
+
+	incidentPath := "/api/v1/incidents/" + m.OpenIncidentID
+	var acked httpapi.IncidentJSON
+	h.do(call{method: http.MethodPost, path: incidentPath + "/acknowledge"}).decode(t, &acked)
+	if acked.AcknowledgedBy == nil || acked.AcknowledgedAt == "" || acked.State != "open" {
+		t.Fatalf("acknowledged = %+v", acked)
+	}
+	var resolved httpapi.IncidentJSON
+	h.do(call{method: http.MethodPost, path: incidentPath + "/resolve"}).decode(t, &resolved)
+	if resolved.State != "resolved" || resolved.Resolution != "manual" || resolved.ResolvedBy == nil {
+		t.Fatalf("resolved = %+v", resolved)
+	}
+	h.do(call{method: http.MethodPost, path: incidentPath + "/acknowledge"}).expect(t, http.StatusConflict, "incident-resolved")
+
+	var detail httpapi.IncidentDetailJSON
+	h.do(call{method: http.MethodGet, path: incidentPath}).decode(t, &detail)
+	var kinds []string
+	for _, e := range detail.Timeline {
+		kinds = append(kinds, e.Kind)
+	}
+	if strings.Join(kinds, ",") != "opened,acknowledged,resolved" || detail.Timeline[1].Actor == nil || detail.Timeline[0].Actor != nil {
+		t.Errorf("timeline = %+v", detail.Timeline)
+	}
+	// Still down, but resolved by hand: no new incident.
+	h.do(call{method: http.MethodPost, path: monitorPath + "/check"}).expect(t, http.StatusOK, "")
+	h.do(call{method: http.MethodGet, path: incidentsPath + "?state=open"}).decode(t, &list)
+	if len(list.Data) != 0 {
+		t.Errorf("open incidents = %+v", list.Data)
+	}
+	h.do(call{method: http.MethodGet, path: "/api/v1/incidents/inc_01j9z3w5y7a9c1e3g5j7m9p1r3"}).expect(t, http.StatusNotFound, "not-found")
+}
