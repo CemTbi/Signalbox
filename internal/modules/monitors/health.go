@@ -64,6 +64,10 @@ func (h healthReport) summary(lead string) string {
 // Kubernetes' verbose /readyz. Any other body says nothing about health, and
 // the check rests on its status and assertions.
 func readHealth(r *runner.Response) healthReport {
+	// A health check that large isn't one, and it's parsed on every check.
+	if len(r.Body) > maxAssertedBody {
+		return healthReport{}
+	}
 	if text := strings.TrimSpace(string(r.Body)); strings.HasPrefix(text, "[+]") || strings.HasPrefix(text, "[-]") {
 		return readKubernetes(text)
 	}
@@ -114,11 +118,24 @@ func readHealth(r *runner.Response) healthReport {
 			out.add(name, c.Status, "")
 		}
 	}
-	sort.Slice(out.components, func(i, j int) bool { return out.components[i].Name < out.components[j].Name })
-	if len(out.components) > maxComponents {
-		out.components = out.components[:maxComponents]
-	}
+	out.settle()
 	return out
+}
+
+// settle puts what isn't well first and keeps the most it may, so a
+// component that's down is never the one cut, and always counts.
+func (h *healthReport) settle() {
+	rank := map[string]int{ComponentDown: 0, ComponentWarn: 1, ComponentOK: 2}
+	sort.Slice(h.components, func(i, j int) bool {
+		a, b := h.components[i], h.components[j]
+		if rank[a.Status] != rank[b.Status] {
+			return rank[a.Status] < rank[b.Status]
+		}
+		return a.Name < b.Name
+	})
+	if len(h.components) > maxComponents {
+		h.components = h.components[:maxComponents]
+	}
 }
 
 func (h *healthReport) add(name, status, detail string) {
@@ -165,9 +182,7 @@ func readKubernetes(text string) healthReport {
 			out.add(name, ComponentDown, detail)
 			out.overall = ComponentDown
 		}
-		if len(out.components) >= maxComponents {
-			break
-		}
 	}
+	out.settle()
 	return out
 }

@@ -173,7 +173,7 @@ func (m *Module) checkAndKeep(ctx context.Context, mon Monitor) error {
 		return e
 	}
 	m.record(check)
-	return m.finish(done, mon.ID, check)
+	return m.finish(done, mon.ID, check, true)
 }
 
 // perform sends the monitor's request and judges the response. An error
@@ -195,8 +195,9 @@ func (m *Module) perform(ctx context.Context, mon Monitor) (Check, error) {
 
 // finish moves the monitor's state on from a check's outcome, taking its
 // current state under a lock: someone may have paused or changed it while
-// the check ran.
-func (m *Module) finish(ctx context.Context, monitorID uuid.UUID, c Check) error {
+// the check ran. scheduled says the check is the one running_since marks: a
+// check by hand has no mark, and mustn't clear a scheduled check's.
+func (m *Module) finish(ctx context.Context, monitorID uuid.UUID, c Check, scheduled bool) error {
 	var components []byte
 	if len(c.Components) > 0 {
 		var err error
@@ -230,19 +231,20 @@ func (m *Module) finish(ctx context.Context, monitorID uuid.UUID, c Check) error
 			}
 		}
 		_, err = tx.Exec(ctx, `
-			UPDATE monitors SET state = $2, consecutive_failures = $3, confirm_at = $4, running_since = NULL,
+			UPDATE monitors SET state = $2, consecutive_failures = $3, confirm_at = $4,
+				running_since = CASE WHEN $14::boolean THEN NULL ELSE running_since END,
 				last_check_at = $5, last_outcome = $6, last_status = $7, last_duration_ms = $8, last_failure_code = $9, last_failure_message = $10,
 				last_trace_id = $11, last_components = $12, certificate_expires_at = coalesce($13, certificate_expires_at)
 			WHERE id = $1`,
 			monitorID, after, failures, confirm, c.At, c.Outcome, c.Status, float64(c.Duration)/float64(time.Millisecond), c.FailureCode, c.FailureMessage,
-			c.TraceID, components, certificate)
+			c.TraceID, components, certificate, scheduled)
 		return err
 	})
 	if err != nil {
 		return fmt.Errorf("keep a check's result: %w", err)
 	}
 	if before != after {
-		m.logger.InfoContext(ctx, "a monitor changed state", id.LogAttr("monitor_id", id.Monitor, monitorID), "from", before, "to", after, "failure", c.FailureCode)
+		m.logger.InfoContext(ctx, "a monitor changed state", id.LogAttr("monitor_id", id.Monitor, monitorID), "from", before, "to", after)
 	}
 	return nil
 }
@@ -268,7 +270,7 @@ func (m *Module) CheckNow(ctx context.Context, userID, monitorID uuid.UUID) (Che
 		return Check{}, err
 	}
 	m.record(check)
-	if err := m.finish(ctx, mon.ID, check); err != nil {
+	if err := m.finish(ctx, mon.ID, check, false); err != nil {
 		return Check{}, err
 	}
 	return check, nil

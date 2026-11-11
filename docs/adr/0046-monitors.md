@@ -22,13 +22,14 @@ The RFC decided the shape: a row per monitor with `next_check_at`, claimed with 
 
 **A confirmation is outside the schedule.** A failure sets `confirm_at`, 10 seconds on, and the schedule stays as it was, so a monitor keeps its place in its interval whatever happens to it. Once a monitor is down, it's checked at its interval without confirming again.
 
-**A check still running** is `running_since` on the row. If the next check comes due while it's set, that one is recorded as skipped. A process that stops mid-check leaves it set, so it only counts for the timeout and 30 seconds more.
+**A check still running** is `running_since` on the row. If the next check comes due while it's set, that one is recorded as skipped. A process that stops mid-check leaves it set, so it only counts for the timeout and 30 seconds more. Check now neither sets nor clears it, so a check by hand can run beside a scheduled one, but never makes the next scheduled one overlap.
 
 **What says something about the service, and what doesn't:**
 - **Failed:** no response, an assertion that doesn't hold, or a status other than 2xx unless a status is asserted. A health format saying the whole is down also fails it, even with a 200.
 - **Degraded, at once:** a health format that warns, a component down while the whole is up, or a certificate expiring within the warning.
 - **Skipped, changing nothing:** the check before it was still running, or Signalbox couldn't try, such as when it can't read the environment's secrets. A process stopping mid-check records nothing at all. None of these is the service's fault, and alerts must not say so.
-- **A health body in no format it reads** says nothing, and the check rests on its status and assertions.
+- **A health body in no format it reads,** or over 1 MiB, says nothing, and the check rests on its status and assertions.
+- **At most 50 components are kept,** those that aren't well first, so one that's down is never the one cut.
 
 **Checks go through the client's engine,** as requests and runs do, with the environment's variables and secrets filled in, and a `traceparent`. `client.Probe` does it for no one and keeps no history. It returns the response with secrets masked, and assertions and messages use that copy, so a failure message can't quote a secret. Assertions on a secret's value can't hold, and that's the reason.
 

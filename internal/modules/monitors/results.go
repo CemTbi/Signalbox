@@ -145,7 +145,7 @@ func (m *Module) Checks(ctx context.Context, userID, monitorID uuid.UUID, q Chec
 		ORDER BY time DESC
 		LIMIT {limit:UInt32}`,
 		clickhouse.Named("monitor", monitorID), clickhouse.Named("from", q.From), clickhouse.Named("to", q.To),
-		clickhouse.Named("limit", uint32(limit))) //nolint:gosec // G115: at most MaxCheckLimit
+		clickhouse.Named("limit", limit))
 	if err != nil {
 		return nil, fmt.Errorf("read check results: %w", err)
 	}

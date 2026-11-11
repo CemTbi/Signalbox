@@ -285,6 +285,26 @@ func TestACheckStillRunningIsSkipped(t *testing.T) {
 	}
 }
 
+func TestCheckingByHandLeavesAScheduledCheckRunning(t *testing.T) {
+	f := setup(t)
+	m := f.monitor(t, "Orders")
+	if _, err := f.pool.Exec(f.ctx, `UPDATE monitors SET running_since = now() WHERE id = $1`, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.mod.CheckNow(f.ctx, f.owner, m.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := f.prober.calls.Load(); n != 1 {
+		t.Fatalf("sent %d checks by hand", n)
+	}
+	// The scheduled check is still running, so the next is skipped.
+	f.due(t, m)
+	f.tick(t)
+	if n := f.prober.calls.Load(); n != 1 {
+		t.Errorf("a scheduled check started beside the one running: %d sent", n)
+	}
+}
+
 func TestSignalboxFailingIsNotTheServiceFailing(t *testing.T) {
 	f := setup(t)
 	m := f.monitor(t, "Orders")

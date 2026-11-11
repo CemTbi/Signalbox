@@ -137,7 +137,8 @@ function toAssertion({ kind, op, target, value }: AssertionRow): Assertion {
 
 /** The request a monitor keeps: as the editor's, without scripts, which monitors don't run. */
 function toRequest(d: Draft): SavedRequest {
-  const { contract: _contract, ...saved } = toSaved(d);
+  const saved = toSaved(d);
+  delete saved.contract;
   return saved;
 }
 
@@ -158,8 +159,8 @@ export function toCreate(d: MonitorDraft): MonitorCreate {
 
 /** The fields of an edit. A monitor's environment doesn't change: its results and state belong to it. */
 export function toUpdate(d: MonitorDraft) {
-  const { environmentId: _environmentId, serviceId, ...rest } = toCreate(d);
-  return { ...rest, serviceId: serviceId ?? null };
+  const { name, kind, serviceId, request, assertions, intervalSeconds, timeoutSeconds, failuresToConfirm, certificateWarningDays } = toCreate(d);
+  return { name, kind, serviceId: serviceId ?? null, request, assertions, intervalSeconds, timeoutSeconds, failuresToConfirm, certificateWarningDays };
 }
 
 /** How often, in words. */

@@ -3,6 +3,7 @@
 package monitors
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -133,6 +134,24 @@ func TestReadHealth(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestManyComponentsNeverHideOneThatsDown(t *testing.T) {
+	var lines, checks []string
+	for i := range maxComponents + 10 {
+		lines = append(lines, fmt.Sprintf("[+]check-%d ok", i))
+		checks = append(checks, fmt.Sprintf(`"check-%d":[{"status":"pass"}]`, i))
+	}
+	kubernetes := readHealth(response(503, strings.Join(lines, "\n")+"\n[-]zz-etcd failed: reason withheld\nreadyz check failed\n"))
+	if kubernetes.overall != ComponentDown || !kubernetes.anyDown() || len(kubernetes.components) != maxComponents || kubernetes.components[0].Name != "zz-etcd" {
+		t.Errorf("Kubernetes = %s, %d components, first %+v", kubernetes.overall, len(kubernetes.components), kubernetes.components[0])
+	}
+	// The whole is up, so the one that's down is what makes it degraded.
+	body := `{"status":"pass","checks":{` + strings.Join(checks, ",") + `,"zz-db":[{"status":"fail"}]}}`
+	got := evaluate(&Monitor{Kind: KindHealth}, client.Entry{Result: runner.Result{Response: response(200, body)}}, time.Now())
+	if got.Outcome != OutcomeDegraded || len(got.Components) != maxComponents || got.Components[0].Name != "zz-db" {
+		t.Errorf("health+json = %s, %d components, first %+v", got.Outcome, len(got.Components), got.Components[0])
 	}
 }
 
