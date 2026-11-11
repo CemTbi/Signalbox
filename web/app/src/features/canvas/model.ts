@@ -16,6 +16,8 @@ export type ServiceData = {
   /** A database's system, such as postgresql. */
   system?: string;
   health: Health;
+  /** What isn't healthy, in words. */
+  healthDetail?: string;
   p95Ms?: number;
   errorRate?: number; // 0..1
   rps?: number;

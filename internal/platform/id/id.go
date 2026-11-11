@@ -42,6 +42,7 @@ const (
 	Job         Prefix = "job"
 	IngestKey   Prefix = "ing"
 	Dependency  Prefix = "dep"
+	Monitor     Prefix = "mon"
 )
 
 // ErrInvalid means a string isn't an ID of the expected type.

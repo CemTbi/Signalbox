@@ -219,7 +219,7 @@ func TestNewValidatesConfiguration(t *testing.T) {
 		wantErr string
 	}{
 		{"busy port", func(c *app.Config) { c.HTTPAddr = ln.Addr().String() }, "listen on"},
-		{"unavailable role", func(c *app.Config) { c.Roles = "scheduler" }, "not available"},
+		{"unavailable role", func(c *app.Config) { c.Roles = "mock" }, "not available"},
 		{"no ingest rate", func(c *app.Config) { c.IngestSpansPerSecond = 0 }, "ingest rate"},
 		{"no database", func(c *app.Config) { c.DatabaseURL = "" }, "SIGNALBOX_DATABASE_URL"},
 		{"no ClickHouse", func(c *app.Config) { c.ClickHouseURL = "" }, "SIGNALBOX_CLICKHOUSE_URL"},

@@ -56,6 +56,8 @@ tags:
     description: Development, staging, production and other environments of a project.
   - name: Services
     description: Services are the nodes on a project's canvas.
+  - name: Monitors
+    description: Checks of a project's APIs on a schedule, and what they found.
   - name: Canvas
     description: "What a project's canvas shows: its layout, its live traffic and the dependencies people declare."
   - name: Specs
@@ -1655,7 +1657,7 @@ paths:
               schema: {$ref: '#/components/schemas/CanvasLive'}
               example:
                 services:
-                  - {id: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, name: orders-api, onCanvas: true, rate: 12.4, errorRate: 0.008, p95Ms: 128}
+                  - {id: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, name: orders-api, onCanvas: true, rate: 12.4, errorRate: 0.008, p95Ms: 128, health: ok}
                 lines:
                   - {id: 'svc_01j9z3q1s3v5w7y9a1c3e5g7j9>database:shop-db', from: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, to: 'database:shop-db', fromName: orders-api, toName: shop-db, toKind: database, system: postgresql, rate: 24.8, errorRate: 0}
                 removed: {services: [], lines: []}
@@ -1738,6 +1740,282 @@ paths:
         '401': {$ref: '#/components/responses/Unauthorized'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/projects/{projectId}/monitors:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      operationId: listMonitors
+      summary: List a project's monitors
+      description: Lists the project's monitors with their current state, oldest first. Every member of the workspace may.
+      tags: [Monitors]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: A page of monitors.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MonitorPage'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createMonitor
+      summary: Create a monitor
+      description: |
+        Adds a monitor to the project. Owners, admins and editors may. A project can have 1,000.
+
+        A `http` check passes when its request gets a response and every assertion holds; unless a status is asserted, the status must be 2xx. A `health` check also reads the body, if it's `application/health+json`, Spring Boot Actuator's health or Kubernetes' verbose `/readyz`: a warning, or a component that's down while the whole is up, makes the monitor `degraded`. Any check over HTTPS records when the certificate expires, and turns `degraded` when that's within `certificateWarningDays`.
+
+        Checks are sent by the server through its egress policy, with the environment's variables and secrets filled in. The first comes within one interval; checks are spread across it.
+      tags: [Monitors]
+      requestBody:
+        required: true
+        description: The new monitor.
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MonitorCreate'}
+            example: {name: Orders health, kind: health, environmentId: env_01j9z3p1r3t5v7x9z1b3d5f7h9, serviceId: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, request: {method: GET, url: '{{baseUrl}}/health'}, intervalSeconds: 60}
+      responses:
+        '201':
+          description: The monitor.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            ETag: {$ref: '#/components/headers/ETag'}
+            Location: {$ref: '#/components/headers/Location'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Monitor'}
+              example:
+                id: mon_01j9z3w5y7a9c1e3g5j7m9p1r3
+                projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0
+                environmentId: env_01j9z3p1r3t5v7x9z1b3d5f7h9
+                serviceId: svc_01j9z3q1s3v5w7y9a1c3e5g7j9
+                name: Orders health
+                kind: health
+                request: {method: GET, url: '{{baseUrl}}/health'}
+                assertions: []
+                intervalSeconds: 60
+                timeoutSeconds: 10
+                failuresToConfirm: 2
+                certificateWarningDays: 14
+                state: up
+                consecutiveFailures: 0
+                nextCheckAt: '2026-11-04T12:01:12Z'
+                lastCheck: {at: '2026-11-04T12:00:12Z', outcome: passed, status: 200, durationMs: 41.2, components: [{name: 'postgres:responseTime', status: ok}]}
+                createdAt: '2026-11-04T09:00:00Z'
+                updatedAt: '2026-11-04T09:00:00Z'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/projects/{projectId}/monitor-stats:
+    parameters:
+      - $ref: '#/components/parameters/ProjectId'
+    get:
+      operationId: getMonitorStats
+      summary: Read monitors' uptime
+      description: Returns the uptime and response times of the project's monitors over a time range, the last 24 hours by default. Monitors with no results in it aren't listed. Skipped checks don't count, and degraded ones count as up. Every member of the workspace may.
+      tags: [Monitors]
+      parameters:
+        - name: from
+          in: query
+          description: The start of the time range, RFC 3339. 24 hours before `to` by default.
+          schema: {type: string, format: date-time, examples: ['2026-11-03T12:00:00Z']}
+        - name: to
+          in: query
+          description: The end of the time range, RFC 3339. Now by default.
+          schema: {type: string, format: date-time, examples: ['2026-11-04T12:00:00Z']}
+      responses:
+        '200':
+          description: The statistics.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MonitorStatsList'}
+              example:
+                data:
+                  - {monitorId: mon_01j9z3w5y7a9c1e3g5j7m9p1r3, checks: 1440, failed: 3, uptime: 0.9979, meanMs: 41.2, p95Ms: 128}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/monitors/{monitorId}:
+    parameters:
+      - $ref: '#/components/parameters/MonitorId'
+    get:
+      operationId: getMonitor
+      summary: Get a monitor
+      description: Returns a monitor with its current state and last check. Every member of the workspace may.
+      tags: [Monitors]
+      responses:
+        '200':
+          description: The monitor.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            ETag: {$ref: '#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Monitor'}
+              example:
+                id: mon_01j9z3w5y7a9c1e3g5j7m9p1r3
+                projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0
+                environmentId: env_01j9z3p1r3t5v7x9z1b3d5f7h9
+                serviceId: svc_01j9z3q1s3v5w7y9a1c3e5g7j9
+                name: Orders health
+                kind: health
+                request: {method: GET, url: '{{baseUrl}}/health'}
+                assertions: []
+                intervalSeconds: 60
+                timeoutSeconds: 10
+                failuresToConfirm: 2
+                certificateWarningDays: 14
+                state: up
+                consecutiveFailures: 0
+                nextCheckAt: '2026-11-04T12:01:12Z'
+                lastCheck: {at: '2026-11-04T12:00:12Z', outcome: passed, status: 200, durationMs: 41.2, components: [{name: 'postgres:responseTime', status: ok}]}
+                createdAt: '2026-11-04T09:00:00Z'
+                updatedAt: '2026-11-04T09:00:00Z'
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+    patch:
+      operationId: updateMonitor
+      summary: Update a monitor
+      description: Changes the fields that are sent. `paused` stops its checks, and turning it off starts the monitor again as `pending`. Changing what it checks forgets failures so far. A monitor's ETag changes when people change it, not when it's checked. Owners, admins and editors may.
+      tags: [Monitors]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        description: The fields to change, as a JSON Merge Patch (RFC 7396).
+        content:
+          application/merge-patch+json:
+            schema: {$ref: '#/components/schemas/MonitorUpdate'}
+            example: {paused: true}
+      responses:
+        '200':
+          description: The updated monitor.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+            ETag: {$ref: '#/components/headers/ETag'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Monitor'}
+              example:
+                id: mon_01j9z3w5y7a9c1e3g5j7m9p1r3
+                projectId: prj_01j9z3m2p4r6t8v0x2z4b6d8f0
+                environmentId: env_01j9z3p1r3t5v7x9z1b3d5f7h9
+                serviceId: svc_01j9z3q1s3v5w7y9a1c3e5g7j9
+                name: Orders health
+                kind: health
+                request: {method: GET, url: '{{baseUrl}}/health'}
+                assertions: []
+                intervalSeconds: 60
+                timeoutSeconds: 10
+                failuresToConfirm: 2
+                certificateWarningDays: 14
+                state: up
+                consecutiveFailures: 0
+                nextCheckAt: '2026-11-04T12:01:12Z'
+                lastCheck: {at: '2026-11-04T12:00:12Z', outcome: passed, status: 200, durationMs: 41.2, components: [{name: 'postgres:responseTime', status: ok}]}
+                createdAt: '2026-11-04T09:00:00Z'
+                updatedAt: '2026-11-04T09:00:00Z'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        default: {$ref: '#/components/responses/Error'}
+    delete:
+      operationId: deleteMonitor
+      summary: Delete a monitor
+      description: Deletes the monitor. Its results stay until they expire, after 90 days. Owners, admins and editors may.
+      tags: [Monitors]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204':
+          description: The monitor is gone.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/PreconditionFailed'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/monitors/{monitorId}/checks:
+    parameters:
+      - $ref: '#/components/parameters/MonitorId'
+    get:
+      operationId: listChecks
+      summary: List a monitor's checks
+      description: Returns what its checks found over a time range, the last hour by default, newest first, kept for 90 days. The last second's may not be there yet. Secrets are masked. Every member of the workspace may.
+      tags: [Monitors]
+      parameters:
+        - name: from
+          in: query
+          description: The start of the time range, RFC 3339. An hour before `to` by default.
+          schema: {type: string, format: date-time, examples: ['2026-11-04T11:00:00Z']}
+        - name: to
+          in: query
+          description: The end of the time range, RFC 3339. Now by default.
+          schema: {type: string, format: date-time, examples: ['2026-11-04T12:00:00Z']}
+        - name: limit
+          in: query
+          description: The most results to return.
+          schema: {type: integer, minimum: 1, maximum: 500, default: 100, examples: [100]}
+      responses:
+        '200':
+          description: The results.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CheckList'}
+              example:
+                data:
+                  - {at: '2026-11-04T12:00:12Z', outcome: failed, durationMs: 41.2, status: 503, failureCode: assertion, failureMessage: 'The response''s status is 503, not 2xx.', components: []}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        default: {$ref: '#/components/responses/Error'}
+  /api/v1/monitors/{monitorId}/check:
+    parameters:
+      - $ref: '#/components/parameters/MonitorId'
+    post:
+      operationId: checkMonitor
+      summary: Check a monitor now
+      description: Runs its check at once, waits for it and returns what it found. It counts like a scheduled check, and the schedule stays as it is. A paused monitor stays paused. Owners, admins and editors may.
+      tags: [Monitors]
+      responses:
+        '200':
+          description: What the check found.
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Check'}
+              example: {at: '2026-11-04T12:00:12Z', outcome: passed, durationMs: 41.2, status: 200, components: []}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503':
+          description: This server has no runner to send the check with (`runner-unavailable`).
+          headers:
+            X-Request-Id: {$ref: '#/components/headers/RequestId'}
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+              example: {type: 'https://signalbox.dev/problems/runner-unavailable', title: Service Unavailable, status: 503, code: runner-unavailable, detail: This server has no runner to send the check with., requestId: req_01j9z3q1s3v5w7y9a1c3e5g7j9}
         default: {$ref: '#/components/responses/Error'}
   /api/v1/projects/{projectId}/send:
     parameters:
@@ -3581,6 +3859,12 @@ components:
       required: true
       description: The environment's ID.
       schema: {$ref: '#/components/schemas/EnvironmentId'}
+    MonitorId:
+      name: monitorId
+      in: path
+      required: true
+      description: The monitor's ID.
+      schema: {$ref: '#/components/schemas/MonitorId'}
     ServiceId:
       name: serviceId
       in: path
@@ -5728,7 +6012,7 @@ components:
           type: array
           description: Services with their traffic.
           items: {$ref: '#/components/schemas/LiveService'}
-          examples: [[{id: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, name: orders-api, onCanvas: true, rate: 12.4, errorRate: 0.008, p95Ms: 128}]]
+          examples: [[{id: svc_01j9z3q1s3v5w7y9a1c3e5g7j9, name: orders-api, onCanvas: true, rate: 12.4, errorRate: 0.008, p95Ms: 128, health: ok}]]
         lines:
           type: array
           description: Who calls whom.
@@ -5753,7 +6037,7 @@ components:
     LiveService:
       type: object
       description: A service's traffic over the last 5 minutes, from the requests it handled.
-      required: [id, name, onCanvas, rate, errorRate]
+      required: [id, name, onCanvas, rate, errorRate, health]
       properties:
         id: {type: string, description: 'The node''s ID: the service''s, on the canvas, and otherwise `seen:` and its name.', examples: [svc_01j9z3q1s3v5w7y9a1c3e5g7j9]}
         name: {type: string, description: The `service.name` of its spans., examples: [orders-api]}
@@ -5761,6 +6045,13 @@ components:
         rate: {type: number, minimum: 0, description: 'Requests a second, to 3 significant digits.', examples: [12.4]}
         errorRate: {type: number, minimum: 0, maximum: 1, description: The share of them that failed., examples: [0.008]}
         p95Ms: {type: number, minimum: 0, description: 'The 95th percentile of their durations, within 19%. Missing without requests.', examples: [128]}
+        health:
+          type: string
+          enum: [ok, warn, down, unknown]
+          description: 'The worst state of its monitors in this environment: `ok` is up, `warn` degraded, and `unknown` means none has been checked.'
+          examples: [ok]
+          x-enum-varnames: [LiveHealthOK, LiveHealthWarn, LiveHealthDown, LiveHealthUnknown]
+        healthDetail: {type: string, description: What isn't healthy, in words., examples: ['Orders health degraded: postgres warn']}
     LiveLine:
       type: object
       description: The calls from one node to another over 5 recent minutes, as the caller saw them.
@@ -5780,6 +6071,219 @@ components:
         system: {type: string, description: 'A database''s `db.system`.', examples: [postgresql]}
         rate: {type: number, minimum: 0, description: 'Calls a second, to 3 significant digits.', examples: [24.8]}
         errorRate: {type: number, minimum: 0, maximum: 1, description: The share of them that failed., examples: [0]}
+    MonitorId:
+      type: string
+      description: A monitor's ID.
+      pattern: '^mon_[0-9a-hjkmnp-tv-z]{26}$'
+      examples: [mon_01j9z3w5y7a9c1e3g5j7m9p1r3]
+    MonitorKind:
+      type: string
+      enum: [http, health]
+      description: 'What the check reads: `http` its status and assertions, and `health` a health format in the body too.'
+      examples: [health]
+      x-enum-varnames: [MonitorHTTP, MonitorHealth]
+    MonitorState:
+      type: string
+      enum: [pending, up, degraded, down, paused]
+      description: '`pending` until its first check. A failure only starts a confirmation, 10 seconds later, until `failuresToConfirm` come in a row, which makes it `down`. One success brings it back `up`.'
+      examples: [up]
+      x-enum-varnames: [MonitorPending, MonitorUp, MonitorDegraded, MonitorDown, MonitorPaused]
+    CheckOutcome:
+      type: string
+      enum: [passed, degraded, failed, skipped]
+      description: 'What a check found. `skipped` means it says nothing about the service: the check before it was still running, or Signalbox couldn''t send it.'
+      examples: [passed]
+      x-enum-varnames: [CheckPassed, CheckDegraded, CheckFailed, CheckSkipped]
+    Assertion:
+      type: object
+      description: One thing a check's response must satisfy.
+      required: [kind, op]
+      additionalProperties: false
+      examples: [{kind: jsonPath, target: '$.status', op: equals, value: ok}]
+      properties:
+        kind:
+          type: string
+          enum: [status, header, jsonPath, responseTime]
+          description: What's checked. `responseTime` is in milliseconds.
+          examples: [jsonPath]
+          x-enum-varnames: [AssertStatus, AssertHeader, AssertJSONPath, AssertResponseTime]
+        target: {type: string, maxLength: 1000, description: 'The header''s name, or an RFC 9535 JSONPath, whose first match is compared.', examples: ['$.status']}
+        op:
+          type: string
+          enum: [equals, notEquals, contains, lessThan, greaterThan, exists, notExists]
+          description: 'How it''s compared. A status takes `equals`, `notEquals`, `lessThan` and `greaterThan`; a header all but `lessThan` and `greaterThan`; a response time only `lessThan`.'
+          examples: [equals]
+          x-enum-varnames: [OpEquals, OpNotEquals, OpContains, OpLessThan, OpGreaterThan, OpExists, OpNotExists]
+        value: {type: string, maxLength: 4096, description: 'What it''s compared with. A number for `lessThan`, `greaterThan` and statuses.', examples: [ok]}
+    HealthComponent:
+      type: object
+      description: One part of a service, as its health check reports it.
+      required: [name, status]
+      examples: [{name: 'postgres:responseTime', status: ok}]
+      properties:
+        name: {type: string, description: The component's name., examples: ['postgres:responseTime']}
+        status:
+          type: string
+          enum: [ok, warn, down]
+          description: Its status, whatever words its format uses.
+          examples: [ok]
+          x-enum-varnames: [ComponentOK, ComponentWarn, ComponentDown]
+        detail: {type: string, description: What it said about itself., examples: [connection refused]}
+    MonitorCreate:
+      type: object
+      description: A new monitor.
+      required: [name, environmentId, request]
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100, description: The monitor's name., examples: [Orders health]}
+        kind: {$ref: '#/components/schemas/MonitorKind'}
+        environmentId: {$ref: '#/components/schemas/EnvironmentId'}
+        serviceId: {$ref: '#/components/schemas/ServiceId'}
+        request: {$ref: '#/components/schemas/SavedRequest'}
+        assertions:
+          type: array
+          description: What the response must satisfy. Unless a status is among them, the status must be 2xx.
+          maxItems: 20
+          items: {$ref: '#/components/schemas/Assertion'}
+          examples: [[{kind: jsonPath, target: '$.status', op: equals, value: ok}]]
+        intervalSeconds: {type: integer, minimum: 30, maximum: 3600, default: 60, description: How often it's checked., examples: [60]}
+        timeoutSeconds: {type: integer, minimum: 1, maximum: 30, default: 10, description: How long a check may take., examples: [10]}
+        failuresToConfirm: {type: integer, minimum: 1, maximum: 10, default: 2, description: How many failures in a row make it down., examples: [2]}
+        certificateWarningDays: {type: integer, minimum: 0, maximum: 365, default: 14, description: 'How long before a certificate expires it turns degraded; 0 never does.', examples: [14]}
+        paused: {type: boolean, description: 'Whether it starts paused. It doesn''t by default.', examples: [false]}
+    MonitorUpdate:
+      type: object
+      description: The fields of a monitor to change.
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100, description: The monitor's name., examples: [Orders health]}
+        kind: {$ref: '#/components/schemas/MonitorKind'}
+        serviceId:
+          description: The service whose health it shows on the canvas, or null for none.
+          examples: [svc_01j9z3q1s3v5w7y9a1c3e5g7j9]
+          oneOf:
+            - {$ref: '#/components/schemas/ServiceId'}
+            - {type: 'null', description: No service.}
+        request: {$ref: '#/components/schemas/SavedRequest'}
+        assertions:
+          type: array
+          description: What the response must satisfy. Unless a status is among them, the status must be 2xx.
+          maxItems: 20
+          items: {$ref: '#/components/schemas/Assertion'}
+          examples: [[{kind: status, op: equals, value: '200'}]]
+        intervalSeconds: {type: integer, minimum: 30, maximum: 3600, description: How often it's checked., examples: [60]}
+        timeoutSeconds: {type: integer, minimum: 1, maximum: 30, description: How long a check may take., examples: [10]}
+        failuresToConfirm: {type: integer, minimum: 1, maximum: 10, description: How many failures in a row make it down., examples: [2]}
+        certificateWarningDays: {type: integer, minimum: 0, maximum: 365, description: 'How long before a certificate expires it turns degraded; 0 never does.', examples: [14]}
+        paused: {type: boolean, description: Whether its checks are stopped., examples: [true]}
+    Monitor:
+      type: object
+      description: A monitor and its current state.
+      required: [id, projectId, environmentId, name, kind, request, assertions, intervalSeconds, timeoutSeconds, failuresToConfirm, certificateWarningDays, state, consecutiveFailures, nextCheckAt, createdAt, updatedAt]
+      properties:
+        id: {$ref: '#/components/schemas/MonitorId'}
+        projectId: {$ref: '#/components/schemas/ProjectId'}
+        environmentId: {$ref: '#/components/schemas/EnvironmentId'}
+        serviceId: {$ref: '#/components/schemas/ServiceId'}
+        name: {type: string, description: The monitor's name., examples: [Orders health]}
+        kind: {$ref: '#/components/schemas/MonitorKind'}
+        request: {$ref: '#/components/schemas/SavedRequest'}
+        assertions:
+          type: array
+          description: What the response must satisfy.
+          items: {$ref: '#/components/schemas/Assertion'}
+          examples: [[{kind: jsonPath, target: '$.status', op: equals, value: ok}]]
+        intervalSeconds: {type: integer, description: How often it's checked., examples: [60]}
+        timeoutSeconds: {type: integer, description: How long a check may take., examples: [10]}
+        failuresToConfirm: {type: integer, description: How many failures in a row make it down., examples: [2]}
+        certificateWarningDays: {type: integer, description: 'How long before a certificate expires it turns degraded; 0 never does.', examples: [14]}
+        state: {$ref: '#/components/schemas/MonitorState'}
+        consecutiveFailures: {type: integer, minimum: 0, description: Failed checks in a row., examples: [0]}
+        nextCheckAt: {type: string, format: date-time, description: When its next scheduled check is due., examples: ['2026-11-04T12:01:12Z']}
+        lastCheck: {$ref: '#/components/schemas/LastCheck'}
+        certificateExpiresAt: {type: string, format: date-time, description: 'When its server''s certificate expires, as of the last HTTPS response.', examples: ['2027-02-01T00:00:00Z']}
+        createdAt: {type: string, format: date-time, description: When it was created., examples: ['2026-11-04T09:00:00Z']}
+        updatedAt: {type: string, format: date-time, description: When people last changed it., examples: ['2026-11-04T09:00:00Z']}
+    LastCheck:
+      type: object
+      description: What a monitor's last check found.
+      required: [at, outcome, durationMs, components]
+      examples: [{at: '2026-11-04T12:00:12Z', outcome: passed, status: 200, durationMs: 41.2, components: []}]
+      properties:
+        at: {type: string, format: date-time, description: When it ran., examples: ['2026-11-04T12:00:12Z']}
+        outcome: {$ref: '#/components/schemas/CheckOutcome'}
+        status: {type: integer, description: The response's status. Missing without a response., examples: [200]}
+        durationMs: {type: number, minimum: 0, description: How long it took., examples: [41.2]}
+        failureCode: {type: string, description: 'Why it failed or is degraded: `assertion`, `health`, `certificate`, or how the request failed, such as `dns` or `timeout`.', examples: [assertion]}
+        failureMessage: {type: string, description: The same in words., examples: ['The response''s status is 503, not 2xx.']}
+        traceId: {type: string, description: 'The trace it sent, in hex.', examples: [4bf92f3577b34da6a3ce929d0e0e4736]}
+        components:
+          type: array
+          description: The health components it read.
+          items: {$ref: '#/components/schemas/HealthComponent'}
+          examples: [[{name: 'postgres:responseTime', status: ok}]]
+    Check:
+      type: object
+      description: What one check found. Secrets are masked.
+      required: [at, outcome, durationMs, components]
+      examples: [{at: '2026-11-04T12:00:12Z', outcome: passed, status: 200, durationMs: 41.2, components: []}]
+      properties:
+        at: {type: string, format: date-time, description: When it ran., examples: ['2026-11-04T12:00:12Z']}
+        outcome: {$ref: '#/components/schemas/CheckOutcome'}
+        durationMs: {type: number, minimum: 0, description: How long it took., examples: [41.2]}
+        status: {type: integer, description: The response's status. Missing without a response., examples: [200]}
+        failureCode: {type: string, description: 'Why it failed or is degraded: `assertion`, `health`, `certificate`, or how the request failed, such as `dns` or `timeout`.', examples: [assertion]}
+        failureMessage: {type: string, description: The same in words., examples: ['The response''s status is 503, not 2xx.']}
+        components:
+          type: array
+          description: The health components it read.
+          items: {$ref: '#/components/schemas/HealthComponent'}
+          examples: [[{name: 'postgres:responseTime', status: ok}]]
+        certificateExpiresAt: {type: string, format: date-time, description: When the server's certificate expires., examples: ['2027-02-01T00:00:00Z']}
+        traceId: {type: string, description: 'The trace it sent, in hex.', examples: [4bf92f3577b34da6a3ce929d0e0e4736]}
+    CheckList:
+      type: object
+      description: A monitor's results.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The results, newest first.
+          items: {$ref: '#/components/schemas/Check'}
+          examples: [[{at: '2026-11-04T12:00:12Z', outcome: passed, status: 200, durationMs: 41.2, components: []}]]
+    MonitorPage:
+      type: object
+      description: A page of monitors.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The monitors, oldest first.
+          items: {$ref: '#/components/schemas/Monitor'}
+          examples: [[]]
+        nextCursor: {type: string, description: The cursor of the next page. Missing on the last., examples: [eyJpZCI6Im1vbl8wMSJ9]}
+    MonitorStats:
+      type: object
+      description: A monitor's checks over a time range.
+      required: [monitorId, checks, failed, uptime, meanMs, p95Ms]
+      examples: [{monitorId: mon_01j9z3w5y7a9c1e3g5j7m9p1r3, checks: 1440, failed: 3, uptime: 0.9979, meanMs: 41.2, p95Ms: 128}]
+      properties:
+        monitorId: {$ref: '#/components/schemas/MonitorId'}
+        checks: {type: integer, minimum: 0, description: The checks that ran., examples: [1440]}
+        failed: {type: integer, minimum: 0, description: 'Of them, how many failed.', examples: [3]}
+        uptime: {type: number, minimum: 0, maximum: 1, description: The share that didn't fail., examples: [0.9979]}
+        meanMs: {type: number, minimum: 0, description: Their mean duration., examples: [41.2]}
+        p95Ms: {type: number, minimum: 0, description: The 95th percentile of their durations., examples: [128]}
+    MonitorStatsList:
+      type: object
+      description: A project's monitors' statistics.
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: The statistics of monitors with results in the time range.
+          items: {$ref: '#/components/schemas/MonitorStats'}
+          examples: [[{monitorId: mon_01j9z3w5y7a9c1e3g5j7m9p1r3, checks: 1440, failed: 3, uptime: 0.9979, meanMs: 41.2, p95Ms: 128}]]
     DependencyId:
       type: string
       description: A declared dependency's ID.

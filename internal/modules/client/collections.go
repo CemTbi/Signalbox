@@ -240,6 +240,10 @@ func itemName(errs *validate.Errors, name string) string {
 }
 
 // checkRequest checks a saved request's sizes, which match the send API's.
+// CheckSaved checks and tidies a saved request, reporting problems under
+// /request, for other modules that keep requests in the same model.
+func CheckSaved(errs *validate.Errors, r *SavedRequest) { checkRequest(errs, r) }
+
 func checkRequest(errs *validate.Errors, r *SavedRequest) {
 	r.Method = strings.ToUpper(strings.TrimSpace(r.Method))
 	switch {

@@ -31,6 +31,7 @@ import (
 	"github.com/CemTbi/Signalbox/internal/modules/canvas"
 	"github.com/CemTbi/Signalbox/internal/modules/client"
 	"github.com/CemTbi/Signalbox/internal/modules/identity"
+	"github.com/CemTbi/Signalbox/internal/modules/monitors"
 	"github.com/CemTbi/Signalbox/internal/modules/runner"
 	"github.com/CemTbi/Signalbox/internal/modules/scripts"
 	"github.com/CemTbi/Signalbox/internal/modules/telemetry"
@@ -153,6 +154,7 @@ type Server struct {
 	otlpGRPCLn net.Listener
 	spans      *telemetry.Writer   // nil when the ingest role isn't running
 	graph      *telemetry.GraphJob // nil when the worker role isn't running
+	monitors   *monitors.Module    // nil when the api role isn't running
 }
 
 type endpoint struct {
@@ -267,6 +269,10 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 	}
 	checker.Add(clickhouse.Check(s.ch, logger))
 
+	// Until NATS, the scheduler hands checks to a runner in its own process.
+	if slices.Contains(names, roles.Scheduler) && !slices.Contains(names, roles.Runner) {
+		return nil, s.abort(errors.New("the scheduler role runs with the runner role for now: use --roles=all, or api,runner,scheduler"))
+	}
 	keys := telemetry.NewKeys(db, logger, s.workspaces)
 	for _, n := range names {
 		if n != roles.API {
@@ -289,6 +295,7 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 		} else {
 			logger.InfoContext(ctx, "no secret key is configured, so environments can't keep secret variables; set SIGNALBOX_SECRET_KEY to turn them on")
 		}
+		s.monitors = monitors.New(db, s.ch, logger, s.workspaces, mods, s.client, reg)
 		handler := httpapi.NewHandler(httpapi.Deps{
 			Logger:         logger,
 			Health:         checker,
@@ -309,7 +316,8 @@ func New(ctx context.Context, cfg Config, logger *slog.Logger) (*Server, error) 
 			Agents:         ag,
 			IngestKeys:     keys,
 			Traces:         telemetry.NewTraces(s.ch, s.workspaces),
-			Canvas:         canvas.New(s.ch, s.workspaces, mods),
+			Canvas:         canvas.New(s.ch, s.workspaces, mods, s.monitors),
+			Monitors:       s.monitors,
 			PublicURL:      publicURL,
 			TrustedProxies: trusted,
 			Metrics:        reg,
@@ -497,6 +505,18 @@ func (s *Server) Run(ctx context.Context) error {
 			return nil
 		})
 	}
+	if s.monitors != nil {
+		g.Go(func() error {
+			s.monitors.Run(gctx)
+			return nil
+		})
+		if slices.Contains(s.roles, roles.Scheduler) {
+			g.Go(func() error {
+				s.monitors.Schedule(gctx)
+				return nil
+			})
+		}
+	}
 	s.health.SetStarted()
 	build := buildinfo.Get()
 	s.logger.Info("signalbox-server started",
@@ -621,6 +641,10 @@ func (s *Server) shutdown() error {
 	// Spans already received are written before the process ends.
 	if s.spans != nil {
 		s.spans.Close()
+	}
+	// Checks have stopped; their last results are written.
+	if s.monitors != nil {
+		s.monitors.Close()
 	}
 	// Runs in progress stop, and are marked interrupted.
 	if s.runs != nil {

@@ -57,16 +57,26 @@ func (s *Service) ListEnvironments(ctx context.Context, userID, projectID uuid.U
 // GetEnvironment returns an environment, with the user's role in its
 // project, so other modules can authorize work in it.
 func (s *Service) GetEnvironment(ctx context.Context, userID, environmentID uuid.UUID) (Environment, Role, error) {
-	e, err := readEnvironment(s.db.QueryRow(ctx, `SELECT `+environmentColumns+environmentsFrom+`WHERE e.id = $1`, environmentID))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Environment{}, "", ErrNotFound
-	}
+	e, err := s.Environment(ctx, environmentID)
 	if err != nil {
-		return Environment{}, "", fmt.Errorf("get environment: %w", err)
+		return Environment{}, "", err
 	}
 	role, err := s.ProjectRole(ctx, userID, e.ProjectID)
 	if err != nil {
 		return Environment{}, "", err
 	}
 	return e, role, nil
+}
+
+// Environment reads an environment for work that acts for no one, such as a
+// monitor's scheduled check. It checks no access: the caller has decided.
+func (s *Service) Environment(ctx context.Context, environmentID uuid.UUID) (Environment, error) {
+	e, err := readEnvironment(s.db.QueryRow(ctx, `SELECT `+environmentColumns+environmentsFrom+`WHERE e.id = $1`, environmentID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Environment{}, ErrNotFound
+	}
+	if err != nil {
+		return Environment{}, fmt.Errorf("get environment: %w", err)
+	}
+	return e, nil
 }

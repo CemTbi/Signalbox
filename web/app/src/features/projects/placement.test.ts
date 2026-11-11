@@ -106,18 +106,18 @@ describe("canvasEdges", () => {
 describe("liveValues", () => {
   it("gives a database the calls to it, added up", () => {
     const { nodes, edges } = liveValues(
-      [{ id: "svc_a", rate: 12, errorRate: 0.01, p95Ms: 40 }],
+      [{ id: "svc_a", name: "a", onCanvas: true, rate: 12, errorRate: 0.01, p95Ms: 40, health: "warn", healthDetail: "db warn" }],
       [line("svc_a", "database:db", { rate: 3, errorRate: 0.5 }), line("svc_b", "database:db", { rate: 1, errorRate: 0 })],
     );
-    expect(nodes.get("svc_a")).toEqual({ health: "unknown", rps: 12, errorRate: 0.01, p95Ms: 40 });
+    expect(nodes.get("svc_a")).toEqual({ health: "warn", healthDetail: "db warn", rps: 12, errorRate: 0.01, p95Ms: 40 });
     expect(nodes.get("database:db")).toEqual({ health: "unknown", rps: 4, errorRate: 0.375, p95Ms: undefined });
     expect(edges.get("svc_a>database:db")).toEqual({ rps: 3, errorRate: 0.5 });
   });
 });
 
 describe("applyLive", () => {
-  const a = { id: "a", name: "a", onCanvas: true, rate: 1, errorRate: 0 };
-  const b = { id: "b", name: "b", onCanvas: true, rate: 2, errorRate: 0 };
+  const a = { id: "a", name: "a", onCanvas: true, rate: 1, errorRate: 0, health: "ok" as const };
+  const b = { id: "b", name: "b", onCanvas: true, rate: 2, errorRate: 0, health: "ok" as const };
   const removed = { services: [], lines: [] };
 
   it("takes everything when the answer holds everything", () => {

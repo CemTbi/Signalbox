@@ -382,6 +382,58 @@ export function traceQuery(client: ApiClient, projectId: string, traceId: string
   });
 }
 
+export const monitorsKey = (projectId: string) => ["projects", projectId, "monitors"] as const;
+
+/** How often pages about monitors ask again, so a check's result shows without a reload. */
+const MONITOR_INTERVAL_MS = 10_000;
+
+/** A project's monitors and their state, a page at a time. */
+export function monitorsQuery(client: ApiClient, projectId: string) {
+  return infiniteQueryOptions({
+    queryKey: monitorsKey(projectId),
+    queryFn: ({ pageParam }) =>
+      unwrap(client.GET("/api/v1/projects/{projectId}/monitors", { params: { path: { projectId }, query: { limit: 200, cursor: pageParam } } })),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor,
+    refetchInterval: MONITOR_INTERVAL_MS,
+  });
+}
+
+/** The last day's uptime and response times of a project's monitors. */
+export function monitorStatsQuery(client: ApiClient, projectId: string) {
+  return queryOptions({
+    queryKey: ["projects", projectId, "monitor-stats"],
+    queryFn: () => unwrap(client.GET("/api/v1/projects/{projectId}/monitor-stats", { params: { path: { projectId } } })),
+    refetchInterval: 60_000,
+  });
+}
+
+export const monitorKey = (monitorId: string) => ["monitors", monitorId] as const;
+
+/** A monitor with its ETag, which a change must send back. */
+export function monitorQuery(client: ApiClient, monitorId: string) {
+  return queryOptions({
+    queryKey: monitorKey(monitorId),
+    queryFn: () => unwrapTagged(client.GET("/api/v1/monitors/{monitorId}", { params: { path: { monitorId } } })),
+    refetchInterval: MONITOR_INTERVAL_MS,
+  });
+}
+
+export const checksKey = (monitorId: string) => ["monitors", monitorId, "checks"] as const;
+
+/** A monitor's checks over the last day, newest first. */
+export function checksQuery(client: ApiClient, monitorId: string) {
+  return queryOptions({
+    queryKey: checksKey(monitorId),
+    queryFn: () => {
+      const to = new Date(Date.now() + 60_000);
+      const from = new Date(to.getTime() - 24 * 3600_000);
+      return unwrap(client.GET("/api/v1/monitors/{monitorId}/checks", { params: { path: { monitorId }, query: { from: from.toISOString(), to: to.toISOString(), limit: 100 } } }));
+    },
+    refetchInterval: MONITOR_INTERVAL_MS,
+  });
+}
+
 /** How often an open canvas asks for traffic, as ADR-0018 planned. */
 const LIVE_INTERVAL_MS = 5_000;
 
