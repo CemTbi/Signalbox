@@ -192,7 +192,7 @@ func (m *Module) incidentStep(ctx context.Context, tx pgx.Tx, monitorID uuid.UUI
 		m.incidentsOpened.Inc()
 	case open != uuid.Nil && after == StateUp:
 		if _, err := tx.Exec(ctx, `
-			UPDATE incidents SET state = 'resolved', resolved_at = $2, resolution = 'recovered', version = version + 1 WHERE id = $1`,
+			UPDATE incidents SET state = 'resolved', resolved_at = $2, resolution = 'recovered', version = version + 1 WHERE id = $1 AND state = 'open'`,
 			open, m.now()); err != nil {
 			return err
 		}
@@ -301,10 +301,25 @@ func (m *Module) GetIncident(ctx context.Context, userID, incidentID uuid.UUID) 
 }
 
 // act changes an incident under a lock, for someone who may edit its
-// project.
+// project. Like every writer of incidents, it locks the monitor's row
+// before the incident's, so it can't deadlock with a check that changes
+// the monitor's state.
 func (m *Module) act(ctx context.Context, userID, incidentID uuid.UUID, change func(tx pgx.Tx, in Incident) error) (Incident, error) {
 	var out Incident
 	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var monitorID *uuid.UUID
+		err := tx.QueryRow(ctx, `SELECT monitor_id FROM incidents WHERE id = $1`, incidentID).Scan(&monitorID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if monitorID != nil {
+			if _, err := tx.Exec(ctx, `SELECT 1 FROM monitors WHERE id = $1 FOR UPDATE`, *monitorID); err != nil {
+				return err
+			}
+		}
 		in, err := m.incident(ctx, tx.QueryRow(ctx, `SELECT `+incidentColumns+incidentsFrom+` WHERE i.id = $1 FOR UPDATE OF i`, incidentID))
 		if err != nil {
 			return err
@@ -352,7 +367,7 @@ func (m *Module) Resolve(ctx context.Context, userID, incidentID uuid.UUID) (Inc
 			return nil
 		}
 		if _, err := tx.Exec(ctx, `
-			UPDATE incidents SET state = 'resolved', resolved_at = $2, resolved_by = $3, resolution = 'manual', version = version + 1 WHERE id = $1`,
+			UPDATE incidents SET state = 'resolved', resolved_at = $2, resolved_by = $3, resolution = 'manual', version = version + 1 WHERE id = $1 AND state = 'open'`,
 			in.ID, m.now(), userID); err != nil {
 			return err
 		}

@@ -4,7 +4,11 @@ package monitors
 
 import (
 	"errors"
+	"fmt"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -244,5 +248,46 @@ func TestAMissedHeartbeatOpensAnIncident(t *testing.T) {
 	in, _, err := f.mod.GetIncident(f.ctx, f.owner, got.OpenIncidentID)
 	if err != nil || in.State != IncidentResolved || in.First.FailureCode != FailureNoHeartbeat {
 		t.Errorf("after the call = %+v, %v", in, err)
+	}
+}
+
+// Resolving by hand while a check brings the monitor back up: both lock
+// the monitor first, so neither deadlocks, and the incident is resolved once.
+func TestResolvingWhileTheMonitorRecovers(t *testing.T) {
+	f := setup(t)
+	for round := range 10 {
+		m := f.monitor(t, fmt.Sprintf("Orders %d", round))
+		f.prober.answer = failing
+		f.check(t, m)
+		f.check(t, m)
+		in := f.get(t, m)
+		if in.OpenIncidentID == uuid.Nil {
+			t.Fatal("no incident")
+		}
+		var wg sync.WaitGroup
+		errs := make(chan error, 2)
+		wg.Go(func() {
+			_, err := f.mod.Resolve(f.ctx, f.owner, in.OpenIncidentID)
+			errs <- err
+		})
+		wg.Go(func() {
+			errs <- f.mod.finish(f.ctx, m.ID, Check{MonitorID: m.ID, EnvironmentID: m.EnvironmentID, At: time.Now(), Outcome: OutcomePassed}, false)
+		})
+		wg.Wait()
+		close(errs)
+		for err := range errs {
+			if err != nil {
+				t.Fatalf("round %d: %v", round, err)
+			}
+		}
+		resolved := 0
+		for _, kind := range f.timeline(t, in.OpenIncidentID) {
+			if strings.HasPrefix(kind, EventResolved) {
+				resolved++
+			}
+		}
+		if resolved != 1 {
+			t.Fatalf("round %d: resolved %d times", round, resolved)
+		}
 	}
 }
