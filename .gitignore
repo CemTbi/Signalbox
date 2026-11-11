@@ -29,3 +29,6 @@ Thumbs.db
 /e2e/playwright-report/
 # The server binary CI builds outside Docker for pull requests.
 ci-build/
+
+# TypeScript build caches
+*.tsbuildinfo
