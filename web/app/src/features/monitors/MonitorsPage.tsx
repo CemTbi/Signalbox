@@ -9,7 +9,8 @@ import { environmentsQuery, monitorsKey, monitorsQuery, monitorStatsQuery, proje
 import { formatMs } from "../canvas/ServiceNode";
 import { chooseEnvironment } from "../projects/placement";
 import { MonitorForm } from "./MonitorForm";
-import { emptyMonitor, formatInterval, formatUptime, type MonitorDraft, stateLabels, stateMarks, toCreate } from "./model";
+import { emptyMonitor, formatInterval, formatUptime, kindLabels, type MonitorDraft, stateLabels, stateMarks, toCreate } from "./model";
+import { keepFreshToken } from "./tokens";
 
 const route = getRouteApi("/_app/projects/$projectId/monitors");
 
@@ -37,6 +38,7 @@ export function MonitorsPage() {
   const create = useMutation({
     mutationFn: (d: MonitorDraft) => unwrap(api.POST("/api/v1/projects/{projectId}/monitors", { params: { path: { projectId } }, body: toCreate(d) })),
     onSuccess: async (m) => {
+      if (m.heartbeatToken) keepFreshToken(m.id, m.heartbeatToken);
       await queryClient.invalidateQueries({ queryKey: monitorsKey(projectId) });
       await navigate({ to: "/monitors/$monitorId", params: { monitorId: m.id } });
     },
@@ -66,7 +68,7 @@ export function MonitorsPage() {
       {monitors.isSuccess && list.length === 0 ? (
         <div className="empty-state">
           <p className="empty-title">No monitors yet</p>
-          <p>A monitor sends a request on a schedule, and says when what comes back isn&apos;t right.</p>
+          <p>A monitor sends a request or runs a collection on a schedule, or waits for a job&apos;s heartbeat, and says when something isn&apos;t right.</p>
         </div>
       ) : null}
       {list.length > 0 ? (
@@ -90,7 +92,9 @@ export function MonitorsPage() {
                     <Link to="/monitors/$monitorId" params={{ monitorId: m.id }}>
                       {m.name}
                     </Link>
-                    <span className="row-sub">{formatInterval(m.intervalSeconds)}</span>
+                    <span className="row-sub">
+                      {kindLabels[m.kind]} · {formatInterval(m.intervalSeconds)}
+                    </span>
                   </td>
                   <td>
                     <span className="monitor-state">
@@ -101,7 +105,7 @@ export function MonitorsPage() {
                   <td>{nameOfEnv.get(m.environmentId) ?? ""}</td>
                   <td>{m.lastCheck ? timeFormat.format(new Date(m.lastCheck.at)) : "Not yet"}</td>
                   <td>{s ? formatUptime(s.uptime) : "–"}</td>
-                  <td>{s ? formatMs(s.p95Ms) : "–"}</td>
+                  <td>{s && m.kind !== "heartbeat" ? formatMs(s.p95Ms) : "–"}</td>
                 </tr>
               );
             })}
@@ -122,6 +126,7 @@ export function MonitorsPage() {
             draft={form}
             onChange={setDraft}
             onSubmit={() => create.mutate(form)}
+            projectId={projectId}
             environments={envList}
             services={services}
             pending={create.isPending}

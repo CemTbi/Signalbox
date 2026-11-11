@@ -92,6 +92,14 @@ function RunMeta({ run: r }: { run: Run }) {
         {r.startedAt ? `Started ${timeFormat.format(new Date(r.startedAt))}` : `Queued ${timeFormat.format(new Date(r.createdAt))}`}
         {r.environment ? ` · ${r.environment}` : " · No environment"}
         {r.agent ? ` · on ${r.agent}` : ""} · {r.iterations} iteration{r.iterations === 1 ? "" : "s"}
+        {r.monitorId ? (
+          <>
+            {" · run by "}
+            <Link to="/monitors/$monitorId" params={{ monitorId: r.monitorId }}>
+              a monitor
+            </Link>
+          </>
+        ) : null}
         {r.dataRows ? ` · ${r.dataRows} data row${r.dataRows === 1 ? "" : "s"}` : ""}
         {r.startedAt ? ` · ${formatMs(r.durationMs)}` : ""}
       </p>

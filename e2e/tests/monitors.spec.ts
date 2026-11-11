@@ -77,3 +77,101 @@ test("a monitor checks a URL, and says when it's wrong", async ({ page, request 
   await page.getByRole("button", { name: "Delete" }).click();
   await expect(page.getByText("No monitors yet")).toBeVisible();
 });
+
+test("a collection monitor runs a collection, and a heartbeat waits for its job", async ({ page, request }) => {
+  const run = runID();
+  await openAsAdmin(page, request);
+  await page.getByLabel("Name", { exact: true }).fill(`Runs ${run}`);
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: `Runs ${run}` })).toBeVisible();
+  await page.getByLabel("Name", { exact: true }).fill("Shop");
+  await page.getByRole("button", { name: "Create project" }).click();
+  await expect(page).toHaveURL(/\/projects\/prj_[0-9a-z]+$/);
+  const projectURL = new URL(page.url()).pathname;
+
+  // A collection whose Health folder passes, and whose last request fails its test.
+  const test200 = { listen: "test", script: { exec: ['pm.test("is up", () => pm.response.to.have.status(200));'] } };
+  const postman = {
+    info: { name: "Smoke", schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json" },
+    variable: [{ key: "host", value: "http://signalbox:8080" }],
+    item: [
+      { name: "Health", item: [{ name: "Meta", request: { method: "GET", url: "{{host}}/api/v1/meta" }, event: [test200] }] },
+      { name: "Missing", request: { method: "GET", url: "{{host}}/api/v1/nothing-here" }, event: [test200] },
+    ],
+  };
+  await page.goto(`${projectURL}/requests`);
+  await page.getByRole("tab", { name: "Collections" }).click();
+  await page.getByRole("button", { name: "Import from Postman" }).click();
+  await page.getByLabel("Postman collection", { exact: true }).setInputFiles({ name: "smoke.postman_collection.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(postman)) });
+  await page.getByRole("button", { name: "Import smoke.postman_collection.json" }).click();
+  await expect(page.getByText("Imported Smoke.")).toBeVisible();
+  await page.getByRole("button", { name: "Done" }).click();
+
+  // A monitor of the Health folder.
+  await page.goto(`${projectURL}/monitors`);
+  const form = page.getByRole("form", { name: "New monitor" });
+  await form.getByLabel("Kind", { exact: true }).selectOption({ label: "Collection run" });
+  await form.getByLabel("Name", { exact: true }).fill("Smoke");
+  await form.getByLabel("Collection").selectOption({ label: "Smoke" });
+  await form.getByLabel("Run", { exact: true }).selectOption({ label: "Health" });
+  await expect(form.getByLabel("URL")).toHaveCount(0);
+  await expectAccessible(page);
+  await form.getByRole("button", { name: "Add monitor" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Smoke" })).toBeVisible();
+  await expect(page).toHaveURL(/\/monitors\/mon_[0-9a-z]+$/);
+  const monitorURL = new URL(page.url()).pathname;
+  const state = page.getByRole("status", { name: /^State:/ });
+
+  await page.getByRole("button", { name: "Check now" }).click();
+  await expect(state).toHaveAccessibleName("State: Up");
+  const checks = page.getByRole("table", { name: "Checks" });
+  await expect(checks.getByRole("cell", { name: "Passed" }).first()).toBeVisible({ timeout: 15_000 });
+  await expectAccessible(page);
+  // Its run is kept, and knows whose it is.
+  await checks.getByRole("row").nth(1).getByRole("link", { name: "Open" }).last().click();
+  await expect(page).toHaveURL(/\/runs\/run_[0-9a-z]+$/);
+  await expect(page.getByRole("link", { name: "a monitor" })).toBeVisible();
+  await expectAccessible(page);
+
+  // The whole collection fails its test, confirmed by a second run.
+  await page.goto(monitorURL);
+  const settings = page.getByRole("form", { name: "Monitor settings" });
+  await settings.getByLabel("Run", { exact: true }).selectOption({ label: "The whole collection" });
+  await settings.getByRole("button", { name: "Save settings" }).click();
+  await expect(settings.getByRole("button", { name: "Save settings" })).toBeEnabled();
+  for (const want of ["State: Up", "State: Down"]) {
+    await expect(page.getByRole("button", { name: "Check now" })).toBeEnabled();
+    await page.getByRole("button", { name: "Check now" }).click();
+    await expect(state).toHaveAccessibleName(want);
+  }
+  await expect(page.locator(".monitor-failure")).toContainText('1 of 2 tests failed, first "is up" in Missing');
+  await expect(page.getByRole("link", { name: "Open the run" })).toBeVisible();
+  await expectAccessible(page);
+
+  // A heartbeat: its URL is shown once, and its job's call brings it up.
+  await page.goto(`${projectURL}/monitors`);
+  await form.getByLabel("Kind", { exact: true }).selectOption({ label: "Heartbeat" });
+  await form.getByLabel("Name", { exact: true }).fill("Nightly backup");
+  await expect(form.getByLabel("Expect a call every (minutes)")).toHaveValue("1440");
+  await form.getByRole("button", { name: "Add monitor" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Nightly backup" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Check now" })).toHaveCount(0);
+  const heartbeatURL = page.getByRole("textbox", { name: "Heartbeat URL" });
+  await expect(heartbeatURL).toHaveValue(/\/api\/v1\/heartbeats\/sbx_hb_[A-Za-z0-9_-]{43}$/);
+  const first = await heartbeatURL.inputValue();
+  await expectAccessible(page);
+  expect((await page.request.post(first)).status()).toBe(204);
+  await page.reload();
+  await expect(state).toHaveAccessibleName("State: Up");
+  await expect(page.getByText("Its token was shown once")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Heartbeat URL" })).toHaveCount(0);
+
+  // Rotated, the old URL stops working.
+  await page.getByRole("button", { name: "Rotate token" }).click();
+  await page.getByRole("group", { name: "Rotate the token" }).getByRole("button", { name: "Rotate", exact: true }).click();
+  await expect(heartbeatURL).not.toHaveValue(first);
+  const second = await heartbeatURL.inputValue();
+  expect((await page.request.post(first)).status()).toBe(404);
+  expect((await page.request.get(second)).status()).toBe(204);
+  await expectAccessible(page);
+});

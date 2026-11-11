@@ -126,6 +126,8 @@ type Check struct {
 	// CertificateExpiresAt is zero when the response didn't come over TLS.
 	CertificateExpiresAt time.Time
 	TraceID              string
+	// RunID is a collection monitor's test run; uuid.Nil for others.
+	RunID uuid.UUID
 }
 
 // evaluate decides a check's outcome from what came back.

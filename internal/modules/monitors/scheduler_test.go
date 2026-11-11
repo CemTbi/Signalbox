@@ -58,6 +58,8 @@ type fixture struct {
 	env     uuid.UUID
 	ws      *workspaces.Service
 	apis    *apis.Module
+	client  *client.Module
+	runs    *fakeRuns
 }
 
 func setup(t *testing.T) *fixture {
@@ -72,7 +74,9 @@ func setup(t *testing.T) *fixture {
 	ws := workspaces.New(pool, logger)
 	services := apis.New(pool, logger, ws)
 	f := &fixture{ctx: ctx, pool: pool, conn: conn, prober: &fakeProber{answer: ok}, ws: ws, apis: services}
-	f.mod = New(pool, conn, logger, ws, services, f.prober, nil)
+	f.client = client.New(pool, logger, ws, nil)
+	f.runs = &fakeRuns{}
+	f.mod = New(pool, conn, logger, ws, services, f.prober, f.client, f.runs, nil)
 	f.owner = id.New()
 	if _, err := pool.Exec(ctx, `INSERT INTO users (id, email, name) VALUES ($1, 'ada@example.com', 'Ada')`, f.owner); err != nil {
 		t.Fatal(err)
@@ -329,8 +333,8 @@ func TestSeveralSchedulersNeverStartTheSameCheck(t *testing.T) {
 		f.due(t, m)
 	}
 	// The same database, three schedulers.
-	other := New(f.pool, f.conn, f.mod.logger, f.ws, f.apis, f.prober, nil)
-	third := New(f.pool, f.conn, f.mod.logger, f.ws, f.apis, f.prober, nil)
+	other := New(f.pool, f.conn, f.mod.logger, f.ws, f.apis, f.prober, f.client, f.runs, nil)
+	third := New(f.pool, f.conn, f.mod.logger, f.ws, f.apis, f.prober, f.client, f.runs, nil)
 	var wg sync.WaitGroup
 	for _, s := range []*Module{f.mod, other, third} {
 		wg.Go(func() {

@@ -121,6 +121,13 @@ func (m *Module) claim(ctx context.Context, limit int) ([]claimed, error) {
 }
 
 func (m *Module) startClaimed(ctx context.Context, c claimed) {
+	if c.monitor.Kind == KindHeartbeat {
+		// Nothing to send: a heartbeat that's due was missed.
+		if err := m.expire(ctx, c); err != nil && ctx.Err() == nil {
+			m.logger.WarnContext(ctx, "couldn't record a missed heartbeat", "error", err, id.LogAttr("monitor_id", id.Monitor, c.monitor.ID))
+		}
+		return
+	}
 	now := m.now()
 	if c.busy {
 		check := Check{
@@ -186,6 +193,9 @@ func (m *Module) perform(ctx context.Context, mon Monitor) (Check, error) {
 	if err != nil {
 		return Check{}, fmt.Errorf("read the environment: %w", err)
 	}
+	if mon.Kind == KindCollection {
+		return m.runCollection(ctx, mon, env)
+	}
 	entry, err := m.prober.Probe(ctx, env, mon.Request, mon.Timeout)
 	if err != nil {
 		return Check{}, fmt.Errorf("send the check: %w", err)
@@ -198,55 +208,66 @@ func (m *Module) perform(ctx context.Context, mon Monitor) (Check, error) {
 // the check ran. scheduled says the check is the one running_since marks: a
 // check by hand has no mark, and mustn't clear a scheduled check's.
 func (m *Module) finish(ctx context.Context, monitorID uuid.UUID, c Check, scheduled bool) error {
+	var before, after string
+	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
+		var err error
+		before, after, err = m.keep(ctx, tx, monitorID, c, scheduled)
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("keep a check's result: %w", err)
+	}
+	m.changed(ctx, monitorID, before, after)
+	return nil
+}
+
+func (m *Module) changed(ctx context.Context, monitorID uuid.UUID, before, after string) {
+	if before != after {
+		m.logger.InfoContext(ctx, "a monitor changed state", id.LogAttr("monitor_id", id.Monitor, monitorID), "from", before, "to", after)
+	}
+}
+
+// keep is finish inside a transaction. It says the state before and after;
+// both are "" when the monitor is gone.
+func (m *Module) keep(ctx context.Context, tx pgx.Tx, monitorID uuid.UUID, c Check, scheduled bool) (before, after string, err error) {
 	var components []byte
 	if len(c.Components) > 0 {
-		var err error
 		if components, err = json.Marshal(c.Components); err != nil {
-			return fmt.Errorf("encode components: %w", err)
+			return "", "", fmt.Errorf("encode components: %w", err)
 		}
 	}
 	var certificate *time.Time
 	if !c.CertificateExpiresAt.IsZero() {
 		certificate = &c.CertificateExpiresAt
 	}
-	var before, after string
-	err := pgx.BeginFunc(ctx, m.db, func(tx pgx.Tx) error {
-		var failures, threshold int
-		err := tx.QueryRow(ctx, `SELECT state, consecutive_failures, failures_to_confirm FROM monitors WHERE id = $1 FOR UPDATE`, monitorID).
-			Scan(&before, &failures, &threshold)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil // deleted while it ran
-		}
-		if err != nil {
-			return err
-		}
-		after = before
-		var confirm *time.Time
-		if before != StatePaused {
-			var again bool
-			after, failures, again = transition(before, failures, threshold, c.Outcome)
-			if again {
-				at := m.now().Add(confirmAfter)
-				confirm = &at
-			}
-		}
-		_, err = tx.Exec(ctx, `
-			UPDATE monitors SET state = $2, consecutive_failures = $3, confirm_at = $4,
-				running_since = CASE WHEN $14::boolean THEN NULL ELSE running_since END,
-				last_check_at = $5, last_outcome = $6, last_status = $7, last_duration_ms = $8, last_failure_code = $9, last_failure_message = $10,
-				last_trace_id = $11, last_components = $12, certificate_expires_at = coalesce($13, certificate_expires_at)
-			WHERE id = $1`,
-			monitorID, after, failures, confirm, c.At, c.Outcome, c.Status, float64(c.Duration)/float64(time.Millisecond), c.FailureCode, c.FailureMessage,
-			c.TraceID, components, certificate, scheduled)
-		return err
-	})
+	var failures, threshold int
+	err = tx.QueryRow(ctx, `SELECT state, consecutive_failures, failures_to_confirm FROM monitors WHERE id = $1 FOR UPDATE`, monitorID).
+		Scan(&before, &failures, &threshold)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", nil // deleted while it ran
+	}
 	if err != nil {
-		return fmt.Errorf("keep a check's result: %w", err)
+		return "", "", err
 	}
-	if before != after {
-		m.logger.InfoContext(ctx, "a monitor changed state", id.LogAttr("monitor_id", id.Monitor, monitorID), "from", before, "to", after)
+	after = before
+	var confirm *time.Time
+	if before != StatePaused {
+		var again bool
+		after, failures, again = transition(before, failures, threshold, c.Outcome)
+		if again {
+			at := m.now().Add(confirmAfter)
+			confirm = &at
+		}
 	}
-	return nil
+	_, err = tx.Exec(ctx, `
+		UPDATE monitors SET state = $2, consecutive_failures = $3, confirm_at = $4,
+			running_since = CASE WHEN $14::boolean THEN NULL ELSE running_since END,
+			last_check_at = $5, last_outcome = $6, last_status = $7, last_duration_ms = $8, last_failure_code = $9, last_failure_message = $10,
+			last_trace_id = $11, last_components = $12, certificate_expires_at = coalesce($13, certificate_expires_at), last_run_id = $15
+		WHERE id = $1`,
+		monitorID, after, failures, confirm, c.At, c.Outcome, c.Status, float64(c.Duration)/float64(time.Millisecond), c.FailureCode, c.FailureMessage,
+		c.TraceID, components, certificate, scheduled, nullableID(c.RunID))
+	return before, after, err
 }
 
 // CheckNow runs a monitor's check at once and returns what it found.
@@ -259,6 +280,9 @@ func (m *Module) CheckNow(ctx context.Context, userID, monitorID uuid.UUID) (Che
 	}
 	if err := m.authorize(ctx, userID, mon.ProjectID, true); err != nil {
 		return Check{}, err
+	}
+	if mon.Kind == KindHeartbeat {
+		return Check{}, ErrNotCheckable
 	}
 	check, err := m.perform(ctx, mon)
 	if err != nil {

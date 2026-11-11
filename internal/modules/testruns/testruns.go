@@ -70,6 +70,11 @@ type Client interface {
 	PlanRun(ctx context.Context, userID, collectionID, folderID uuid.UUID) (client.Collection, client.Plan, error)
 	RunEnvironment(ctx context.Context, userID, projectID, environmentID uuid.UUID) (client.RunEnvironment, error)
 	EngineFor(ctx context.Context, userID, agentID uuid.UUID) (*client.Engine, error)
+	// PlanFor, EnvironmentOf and Engine are for runs that act for no one:
+	// a monitor's.
+	PlanFor(ctx context.Context, collectionID, folderID uuid.UUID) (client.Collection, client.Plan, error)
+	EnvironmentOf(ctx context.Context, env workspaces.Environment) (client.RunEnvironment, error)
+	Engine() *client.Engine
 }
 
 // Module starts runs, runs them in the background, and keeps them.
@@ -189,8 +194,10 @@ type Run struct {
 	EnvironmentName string
 	// AgentID and AgentName are the agent the requests went through, or
 	// uuid.Nil and "" for the server.
-	AgentID    uuid.UUID
-	AgentName  string
+	AgentID   uuid.UUID
+	AgentName string
+	// MonitorID is the monitor that ran it, or uuid.Nil for a person's run.
+	MonitorID  uuid.UUID
 	Status     string
 	Stopped    string
 	Iterations int
@@ -299,8 +306,8 @@ func (m *Module) Start(ctx context.Context, userID, collectionID uuid.UUID, opts
 		}
 		// Each collection keeps its newest runs, for a while.
 		_, err := tx.Exec(ctx, `
-			DELETE FROM test_runs WHERE collection_id = $1 AND (created_at < now() - $2 * interval '1 day' OR id IN (
-				SELECT id FROM test_runs WHERE collection_id = $1 ORDER BY id DESC OFFSET $3))`, r.CollectionID, keepDays, keepPerSuite)
+			DELETE FROM test_runs WHERE collection_id = $1 AND monitor_id IS NULL AND (created_at < now() - $2 * interval '1 day' OR id IN (
+				SELECT id FROM test_runs WHERE collection_id = $1 AND monitor_id IS NULL ORDER BY id DESC OFFSET $3))`, r.CollectionID, keepDays, keepPerSuite)
 		return err
 	})
 	if err != nil {
@@ -374,14 +381,29 @@ func (m *Module) execute(runID uuid.UUID, engine *client.Engine, plan client.Pla
 		}
 		return
 	}
-	runCtx, cancel := context.WithTimeout(ctx, maxRunTime)
+	status, stopped, _, err := m.drive(ctx, runID, engine, plan, opts, maxRunTime)
+	if err != nil {
+		log.ErrorContext(ctx, "a test run stopped on an error", "error", err)
+	}
+	m.finish(runID, status, stopped)
+}
+
+// drive sends a run's steps, keeping each as it ends, and says how the run
+// ended, with the first step that failed. err is set when it stopped on an
+// error of Signalbox's, not of a step's.
+func (m *Module) drive(ctx context.Context, runID uuid.UUID, engine *client.Engine, plan client.Plan, opts client.RunOptions, limit time.Duration) (
+	status, stopped string, firstFailed *report.Step, err error,
+) {
+	runCtx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
 	seq := 0
-	failed, canceled := false, false
-	stopped, err := engine.Run(runCtx, plan, opts, func(res client.StepResult) error {
+	canceled := false
+	stopped, err = engine.Run(runCtx, plan, opts, func(res client.StepResult) error {
 		seq++
 		s := report.FromResult(seq, res, plan)
-		failed = failed || s.Failed
+		if s.Failed && firstFailed == nil {
+			firstFailed = &s
+		}
 		cancelRequested, err := m.saveStep(ctx, runID, plan.Steps[res.Index].ItemID, s)
 		if err != nil {
 			return err
@@ -392,23 +414,23 @@ func (m *Module) execute(runID uuid.UUID, engine *client.Engine, plan client.Pla
 		}
 		return nil
 	})
-	status := report.Passed
-	if failed {
+	status = report.Passed
+	if firstFailed != nil {
 		status = report.Failed
 	}
+	// The time running out can end a step without ending the run in an
+	// error: the step fails, and the run ends as if on its own.
 	switch {
 	case canceled:
-		status = report.Canceled
-	case err == nil:
+		return report.Canceled, stopped, firstFailed, nil
 	case ctx.Err() != nil:
-		status, stopped = report.Interrupted, StoppedRestart
+		return report.Interrupted, StoppedRestart, firstFailed, nil
 	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
-		status, stopped = report.Failed, StoppedTime
-	default:
-		log.ErrorContext(ctx, "a test run stopped on an error", "error", err)
-		status, stopped = report.Failed, StoppedError
+		return report.Failed, StoppedTime, firstFailed, nil
+	case err == nil:
+		return status, stopped, firstFailed, nil
 	}
-	m.finish(runID, status, stopped)
+	return report.Failed, StoppedError, firstFailed, err
 }
 
 // saveStep keeps a step and counts it, and reports whether someone asked
@@ -489,7 +511,7 @@ func (m *Module) Cancel(ctx context.Context, userID, runID uuid.UUID) (Run, erro
 const runColumns = `id, project_id, collection_id, coalesce(folder_id, '00000000-0000-0000-0000-000000000000'),
 	coalesce(environment_id, '00000000-0000-0000-0000-000000000000'), coalesce(started_by, '00000000-0000-0000-0000-000000000000'),
 	name, environment_name, status, stopped, options, requests, failed_requests, tests, failed_tests, created_at, started_at, finished_at,
-	coalesce(agent_id, '00000000-0000-0000-0000-000000000000'), agent_name`
+	coalesce(agent_id, '00000000-0000-0000-0000-000000000000'), agent_name, coalesce(monitor_id, '00000000-0000-0000-0000-000000000000')`
 
 func readRun(row pgx.Row) (Run, error) {
 	var (
@@ -499,7 +521,7 @@ func readRun(row pgx.Row) (Run, error) {
 	)
 	err := row.Scan(&r.ID, &r.ProjectID, &r.CollectionID, &r.FolderID, &r.EnvironmentID, &r.StartedBy, &r.Name, &r.EnvironmentName,
 		&r.Status, &r.Stopped, &opts, &r.Totals.Requests, &r.Totals.FailedRequests, &r.Totals.Tests, &r.Totals.FailedTests,
-		&r.CreatedAt, &started, &finished, &r.AgentID, &r.AgentName)
+		&r.CreatedAt, &started, &finished, &r.AgentID, &r.AgentName, &r.MonitorID)
 	if err != nil {
 		return Run{}, err
 	}
@@ -565,7 +587,7 @@ func (m *Module) List(ctx context.Context, userID, collectionID uuid.UUID, p wor
 		after = p.After
 	}
 	rows, err := m.db.Query(ctx, `SELECT `+runColumns+` FROM test_runs
-		WHERE collection_id = $1 AND ($2::uuid IS NULL OR id < $2) ORDER BY id DESC LIMIT $3`, collectionID, after, limit+1)
+		WHERE collection_id = $1 AND monitor_id IS NULL AND ($2::uuid IS NULL OR id < $2) ORDER BY id DESC LIMIT $3`, collectionID, after, limit+1)
 	if err != nil {
 		return Page{}, fmt.Errorf("list runs: %w", err)
 	}

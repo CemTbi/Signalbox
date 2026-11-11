@@ -1,43 +1,81 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { Assertion, Environment, Service } from "@signalbox/api-client";
-import { type FormEvent, useId } from "react";
+import type { Assertion, Environment, Item, Service } from "@signalbox/api-client";
+import { useQuery } from "@tanstack/react-query";
+import { type FormEvent, useId, useMemo } from "react";
+import { api } from "../../api";
 import { Field, FormAlert, fieldError } from "../../components/Form";
+import { collectionsQuery, itemsQuery } from "../../queries";
 import { AuthEditor, HeaderRows } from "../requests/RequestEditor";
 import { methods } from "../requests/model";
-import { type AssertionRow, assertionKinds, assertionRow, type MonitorDraft, opLabels, opsOf, takesTarget, takesValue, withKind } from "./model";
+import {
+  type AssertionRow,
+  assertionKinds,
+  assertionRow,
+  kindLabels,
+  type MonitorDraft,
+  opLabels,
+  opsOf,
+  sendsRequest,
+  takesTarget,
+  takesValue,
+  withKind,
+  withMonitorKind,
+} from "./model";
 
-const FIELDS = ["name", "kind", "environmentId", "serviceId", "request/url", "intervalSeconds", "timeoutSeconds", "failuresToConfirm", "certificateWarningDays"] as const;
+const FIELDS = [
+  "name",
+  "kind",
+  "environmentId",
+  "serviceId",
+  "request",
+  "request/url",
+  "assertions",
+  "collectionId",
+  "folderId",
+  "intervalSeconds",
+  "timeoutSeconds",
+  "graceSeconds",
+  "failuresToConfirm",
+  "certificateWarningDays",
+] as const;
 
-/** A new monitor's settings, or an existing one's. A monitor's environment is chosen once. */
+const allKinds = ["http", "health", "collection", "heartbeat"] as const;
+
+/**
+ * A new monitor's settings, or an existing one's. A monitor's environment is
+ * chosen once, and so is its kind, but for HTTP and health checks, which
+ * change into each other.
+ */
 export function MonitorForm({
   draft,
   onChange,
   onSubmit,
+  projectId,
   environments,
   services,
   pending,
   error,
   submitLabel,
   label,
-  lockEnvironment = false,
+  editing = false,
 }: {
   draft: MonitorDraft;
   onChange: (d: MonitorDraft) => void;
   onSubmit: () => void;
+  projectId: string;
   environments: Environment[];
   services: Service[];
   pending: boolean;
   error: unknown;
   submitLabel: string;
   label: string;
-  lockEnvironment?: boolean;
+  /** An existing monitor's: its environment, and mostly its kind, stay. */
+  editing?: boolean;
 }) {
   const ids = { kind: useId(), env: useId(), service: useId(), method: useId(), url: useId(), body: useId() };
   const set = (change: Partial<MonitorDraft>) => onChange({ ...draft, ...change });
-  const setRequest = (change: Partial<MonitorDraft["request"]>) => set({ request: { ...draft.request, ...change } });
-  const setRow = (id: number, next: (r: AssertionRow) => AssertionRow) => set({ assertions: draft.assertions.map((a) => (a.id === id ? next(a) : a)) });
-  const urlError = fieldError(error, "request/url");
+  const kinds = editing ? allKinds.filter((k) => (sendsRequest(draft.kind) ? sendsRequest(k) : k === draft.kind)) : allKinds;
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -49,12 +87,20 @@ export function MonitorForm({
       <div className="monitor-form-row">
         <div className="field">
           <label htmlFor={ids.kind}>Kind</label>
-          <select id={ids.kind} value={draft.kind} onChange={(e) => set({ kind: e.target.value as MonitorDraft["kind"] })}>
-            <option value="http">HTTP check</option>
-            <option value="health">Health check</option>
+          <select
+            id={ids.kind}
+            value={draft.kind}
+            disabled={kinds.length === 1}
+            onChange={(e) => onChange(withMonitorKind(draft, e.target.value as MonitorDraft["kind"]))}
+          >
+            {kinds.map((k) => (
+              <option key={k} value={k}>
+                {kindLabels[k]}
+              </option>
+            ))}
           </select>
         </div>
-        {lockEnvironment ? null : (
+        {editing ? null : (
           <div className="field">
             <label htmlFor={ids.env}>Environment</label>
             <select id={ids.env} value={draft.environmentId} onChange={(e) => set({ environmentId: e.target.value })}>
@@ -84,7 +130,34 @@ export function MonitorForm({
           degraded.
         </p>
       ) : null}
+      {sendsRequest(draft.kind) ? <RequestFields draft={draft} set={set} error={error} ids={ids} /> : null}
+      {draft.kind === "collection" ? <CollectionFields draft={draft} set={set} error={error} projectId={projectId} /> : null}
+      {draft.kind === "heartbeat" ? (
+        <p className="field-hint">
+          A heartbeat sends nothing. The job it watches calls its URL when it finishes, and it goes down when no call comes within its interval and grace. The URL is shown once
+          it&apos;s created.
+        </p>
+      ) : null}
+      <NumberFields draft={draft} set={set} error={error} />
+      <FormAlert error={error} fields={FIELDS} />
+      <div>
+        <button type="submit" className="button primary" disabled={pending}>
+          {pending ? "Saving…" : submitLabel}
+        </button>
+      </div>
+    </form>
+  );
+}
 
+type Set = (change: Partial<MonitorDraft>) => void;
+
+/** What an HTTP or health check sends, and what it asserts about the response. */
+function RequestFields({ draft, set, error, ids }: { draft: MonitorDraft; set: Set; error: unknown; ids: { method: string; url: string; body: string } }) {
+  const setRequest = (change: Partial<MonitorDraft["request"]>) => set({ request: { ...draft.request, ...change } });
+  const setRow = (id: number, next: (r: AssertionRow) => AssertionRow) => set({ assertions: draft.assertions.map((a) => (a.id === id ? next(a) : a)) });
+  const urlError = fieldError(error, "request/url");
+  return (
+    <>
       <div className="request-line">
         <label htmlFor={ids.method} className="visually-hidden">
           Method
@@ -147,52 +220,165 @@ export function MonitorForm({
           Add assertion
         </button>
       </fieldset>
+    </>
+  );
+}
 
+/** A folder's place in its collection, for choosing it: Orders / Refunds. */
+function folderPaths(items: Item[]): { id: string; path: string }[] {
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const pathOf = (i: Item): string => {
+    const parent = i.parentId ? byId.get(i.parentId) : undefined;
+    return parent ? `${pathOf(parent)} / ${i.name}` : i.name;
+  };
+  return items
+    .filter((i) => i.kind === "folder")
+    .map((i) => ({ id: i.id, path: pathOf(i) }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/** What a collection monitor runs: a collection, or one folder of it. */
+function CollectionFields({ draft, set, error, projectId }: { draft: MonitorDraft; set: Set; error: unknown; projectId: string }) {
+  const ids = { collection: useId(), folder: useId() };
+  const collections = useQuery(collectionsQuery(api, projectId));
+  const items = useQuery({ ...itemsQuery(api, draft.collectionId), enabled: draft.collectionId !== "" });
+  const folders = useMemo(() => folderPaths(items.data?.data ?? []), [items.data]);
+  const list = collections.data?.data ?? [];
+  const collectionError = fieldError(error, "collectionId");
+  const folderError = fieldError(error, "folderId");
+  return (
+    <>
+      <div className="monitor-form-row">
+        <div className="field">
+          <label htmlFor={ids.collection}>Collection</label>
+          <select
+            id={ids.collection}
+            value={draft.collectionId}
+            required
+            aria-invalid={collectionError ? true : undefined}
+            onChange={(e) => set({ collectionId: e.target.value, folderId: "" })}
+          >
+            <option value="" disabled>
+              {collections.isPending ? "Loading…" : list.length === 0 ? "No collections yet" : "Choose a collection"}
+            </option>
+            {list.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          {collectionError ? <p className="field-error">{collectionError}</p> : null}
+        </div>
+        <div className="field">
+          <label htmlFor={ids.folder}>Run</label>
+          <select id={ids.folder} value={draft.folderId} disabled={draft.collectionId === ""} onChange={(e) => set({ folderId: e.target.value })}>
+            <option value="">The whole collection</option>
+            {folders.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.path}
+              </option>
+            ))}
+          </select>
+          {folderError ? <p className="field-error">{folderError}</p> : null}
+        </div>
+      </div>
+      <p className="field-hint">
+        It passes when the run passes: every request gets a response, every test passes and no script fails. The environment&apos;s variables and secrets fill in{" "}
+        {"{{name}}"}. Each run is kept, and the checks link to it.
+      </p>
+    </>
+  );
+}
+
+/** How often, how long, and how sure: each kind has its own. */
+function NumberFields({ draft, set, error }: { draft: MonitorDraft; set: Set; error: unknown }) {
+  const failures = (
+    <Field
+      label="Failures in a row before it's down"
+      type="number"
+      min={1}
+      max={10}
+      value={draft.failuresToConfirm}
+      onChange={(e) => set({ failuresToConfirm: Number(e.target.value) })}
+      error={fieldError(error, "failuresToConfirm")}
+    />
+  );
+  const interval = (
+    <Field
+      label="Check every (seconds)"
+      type="number"
+      min={30}
+      max={3600}
+      value={draft.intervalSeconds}
+      onChange={(e) => set({ intervalSeconds: Number(e.target.value) })}
+      error={fieldError(error, "intervalSeconds")}
+    />
+  );
+  if (draft.kind === "heartbeat") {
+    // Minutes, since jobs run every few minutes to every few weeks.
+    return (
       <div className="monitor-form-row">
         <Field
-          label="Check every (seconds)"
+          label="Expect a call every (minutes)"
           type="number"
-          min={30}
-          max={3600}
-          value={draft.intervalSeconds}
-          onChange={(e) => set({ intervalSeconds: Number(e.target.value) })}
+          min={1}
+          max={43200}
+          value={draft.intervalSeconds / 60}
+          onChange={(e) => set({ intervalSeconds: Math.round(Number(e.target.value) * 60) })}
           error={fieldError(error, "intervalSeconds")}
         />
         <Field
-          label="Timeout (seconds)"
+          label="Grace (minutes)"
+          type="number"
+          min={0}
+          max={10080}
+          value={draft.graceSeconds / 60}
+          onChange={(e) => set({ graceSeconds: Math.round(Number(e.target.value) * 60) })}
+          error={fieldError(error, "graceSeconds")}
+        />
+      </div>
+    );
+  }
+  if (draft.kind === "collection") {
+    return (
+      <div className="monitor-form-row">
+        {interval}
+        <Field
+          label="Run timeout (seconds)"
           type="number"
           min={1}
-          max={30}
+          max={120}
           value={draft.timeoutSeconds}
           onChange={(e) => set({ timeoutSeconds: Number(e.target.value) })}
           error={fieldError(error, "timeoutSeconds")}
         />
-        <Field
-          label="Failures in a row before it's down"
-          type="number"
-          min={1}
-          max={10}
-          value={draft.failuresToConfirm}
-          onChange={(e) => set({ failuresToConfirm: Number(e.target.value) })}
-          error={fieldError(error, "failuresToConfirm")}
-        />
-        <Field
-          label="Warn days before a certificate expires"
-          type="number"
-          min={0}
-          max={365}
-          value={draft.certificateWarningDays}
-          onChange={(e) => set({ certificateWarningDays: Number(e.target.value) })}
-          error={fieldError(error, "certificateWarningDays")}
-        />
+        {failures}
       </div>
-      <FormAlert error={error} fields={FIELDS} />
-      <div>
-        <button type="submit" className="button primary" disabled={pending}>
-          {pending ? "Saving…" : submitLabel}
-        </button>
-      </div>
-    </form>
+    );
+  }
+  return (
+    <div className="monitor-form-row">
+      {interval}
+      <Field
+        label="Timeout (seconds)"
+        type="number"
+        min={1}
+        max={30}
+        value={draft.timeoutSeconds}
+        onChange={(e) => set({ timeoutSeconds: Number(e.target.value) })}
+        error={fieldError(error, "timeoutSeconds")}
+      />
+      {failures}
+      <Field
+        label="Warn days before a certificate expires"
+        type="number"
+        min={0}
+        max={365}
+        value={draft.certificateWarningDays}
+        onChange={(e) => set({ certificateWarningDays: Number(e.target.value) })}
+        error={fieldError(error, "certificateWarningDays")}
+      />
+    </div>
   );
 }
 

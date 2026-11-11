@@ -30,6 +30,7 @@ export type ServiceEdge = Schemas["ServiceEdge"];
 export type CanvasLive = Schemas["CanvasLive"];
 export type Monitor = Schemas["Monitor"];
 export type MonitorCreate = Schemas["MonitorCreate"];
+export type MonitorUpdate = Schemas["MonitorUpdate"];
 export type Check = Schemas["Check"];
 export type Assertion = Schemas["Assertion"];
 export type MonitorStats = Schemas["MonitorStats"];

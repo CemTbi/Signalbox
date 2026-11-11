@@ -139,8 +139,11 @@ type api struct {
 	ssoByIP         *ratelimit.Limiter
 	mocksByIP       *ratelimit.Limiter
 	sendsByUser     *ratelimit.Limiter
-	mockCache       *revisionCache[*mockengine.Mock]
-	referenceCache  *revisionCache[*refdocs.Reference]
+	// A heartbeat's job calls once an interval, a minute at the least.
+	heartbeatsByToken *ratelimit.Limiter
+	heartbeatsByIP    *ratelimit.Limiter
+	mockCache         *revisionCache[*mockengine.Mock]
+	referenceCache    *revisionCache[*refdocs.Reference]
 	// codegenSlots bounds how many code generations run at once.
 	codegenSlots chan struct{}
 }
@@ -155,20 +158,22 @@ func NewHandler(d Deps) http.Handler {
 	}
 	session := newSessionCookie(d.PublicURL)
 	a := &api{
-		Deps:            d,
-		cookie:          session,
-		ssoCookie:       newSSOCookie(session),
-		publicOrigin:    origin(d.PublicURL),
-		setupByIP:       ratelimit.New(5, 12*time.Second),        // 5 at once, then 5 a minute
-		signInByIP:      ratelimit.New(10, 6*time.Second),        // 10 at once, then 10 a minute
-		signInByAccount: ratelimit.New(5, 12*time.Second),        // 5 at once, then 5 a minute
-		invitationsByIP: ratelimit.New(20, 3*time.Second),        // 20 at once, then 20 a minute
-		ssoByIP:         ratelimit.New(20, 3*time.Second),        // 20 at once, then 20 a minute
-		mocksByIP:       ratelimit.New(300, 10*time.Millisecond), // 300 at once, then 100 a second
-		sendsByUser:     ratelimit.New(30, 100*time.Millisecond), // 30 at once, then 10 a second
-		mockCache:       newRevisionCache(64, func(c string) (*mockengine.Mock, error) { return mockengine.New([]byte(c)) }),
-		referenceCache:  newRevisionCache(64, func(c string) (*refdocs.Reference, error) { return refdocs.Build([]byte(c)) }),
-		codegenSlots:    make(chan struct{}, max(2, runtime.GOMAXPROCS(0)/2)),
+		Deps:              d,
+		cookie:            session,
+		ssoCookie:         newSSOCookie(session),
+		publicOrigin:      origin(d.PublicURL),
+		setupByIP:         ratelimit.New(5, 12*time.Second),         // 5 at once, then 5 a minute
+		signInByIP:        ratelimit.New(10, 6*time.Second),         // 10 at once, then 10 a minute
+		signInByAccount:   ratelimit.New(5, 12*time.Second),         // 5 at once, then 5 a minute
+		invitationsByIP:   ratelimit.New(20, 3*time.Second),         // 20 at once, then 20 a minute
+		ssoByIP:           ratelimit.New(20, 3*time.Second),         // 20 at once, then 20 a minute
+		mocksByIP:         ratelimit.New(300, 10*time.Millisecond),  // 300 at once, then 100 a second
+		sendsByUser:       ratelimit.New(30, 100*time.Millisecond),  // 30 at once, then 10 a second
+		heartbeatsByToken: ratelimit.New(10, 6*time.Second),         // 10 at once, then 10 a minute
+		heartbeatsByIP:    ratelimit.New(120, 100*time.Millisecond), // 120 at once, then 10 a second
+		mockCache:         newRevisionCache(64, func(c string) (*mockengine.Mock, error) { return mockengine.New([]byte(c)) }),
+		referenceCache:    newRevisionCache(64, func(c string) (*refdocs.Reference, error) { return refdocs.Build([]byte(c)) }),
+		codegenSlots:      make(chan struct{}, max(2, runtime.GOMAXPROCS(0)/2)),
 	}
 
 	mux := http.NewServeMux()
@@ -304,6 +309,8 @@ func NewHandler(d Deps) http.Handler {
 		})
 		mux.Handle("/api/v1/monitors/{monitorId}/checks", methods{http.MethodGet: a.authenticated(a.listChecks)})
 		mux.Handle("/api/v1/monitors/{monitorId}/check", methods{http.MethodPost: a.authenticated(a.checkMonitor)})
+		mux.Handle("/api/v1/monitors/{monitorId}/heartbeat-token", methods{http.MethodPost: a.authenticated(a.rotateHeartbeatToken)})
+		mux.Handle("/api/v1/heartbeats/{token}", methods{http.MethodPost: http.HandlerFunc(a.heartbeat), http.MethodGet: http.HandlerFunc(a.heartbeat)})
 	}
 	if a.Contracts != nil {
 		mux.Handle("/api/v1/versions/{versionId}/contract-tests", methods{http.MethodPost: a.authenticated(a.generateContractTests)})

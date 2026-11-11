@@ -982,9 +982,61 @@ export interface paths {
         put?: never;
         /**
          * Check a monitor now
-         * @description Runs its check at once, waits for it and returns what it found. It counts like a scheduled check, and the schedule stays as it is. A paused monitor stays paused. Owners, admins and editors may.
+         * @description Runs its check at once, waits for it and returns what it found. It counts like a scheduled check, and the schedule stays as it is. A paused monitor stays paused. A collection monitor's run may take up to its timeout, two minutes at most. A heartbeat can't be checked now. Owners, admins and editors may.
          */
         post: operations["checkMonitor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/monitors/{monitorId}/heartbeat-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The monitor's ID. */
+                monitorId: components["parameters"]["MonitorId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate a heartbeat's token
+         * @description Gives a heartbeat monitor a new token and returns it, once. The old token stops working at once, so update the job that calls it. Owners, admins and editors may.
+         */
+        post: operations["rotateHeartbeatToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/heartbeats/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The heartbeat monitor's token. It's the credential, so keep it out of logs you share. */
+                token: string;
+            };
+            cookie?: never;
+        };
+        /**
+         * Send a heartbeat with GET
+         * @description The same as `POST`, for jobs that can only make a GET request.
+         */
+        get: operations["sendHeartbeatByGet"];
+        put?: never;
+        /**
+         * Send a heartbeat
+         * @description Tells a heartbeat monitor its job ran: the monitor is up, and the next call is due within its interval and grace. Call it when the job finishes, such as `curl -fsS -X POST https://signalbox.example.com/api/v1/heartbeats/sbx_hb_…`. A paused monitor takes the call and changes nothing.
+         *
+         *     It needs no sign-in: the token is the credential. Calls are limited to 10 at once and then 10 a minute per token, and the body is ignored.
+         */
+        post: operations["sendHeartbeat"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3405,6 +3457,11 @@ export interface components {
             folderId?: components["schemas"]["ItemId"];
             environmentId?: components["schemas"]["EnvironmentId"];
             startedBy?: components["schemas"]["UserId"];
+            /**
+             * @description The collection monitor that ran it. A monitor's runs aren't in its collection's list; its checks link to them.
+             * @example mon_01j9z3w5y7a9c1e3g5j7m9p1r3
+             */
+            monitorId?: components["schemas"]["MonitorId"];
             agentId?: components["schemas"]["AgentId"];
             /**
              * @description The agent the requests went through, by its name then; absent when the server sent them.
@@ -4993,11 +5050,11 @@ export interface components {
          */
         MonitorId: string;
         /**
-         * @description What the check reads: `http` its status and assertions, and `health` a health format in the body too.
+         * @description `http` sends a request and reads its status and assertions, and `health` a health format in the body too. `collection` runs a collection, or a folder of it, and passes when the run passes. `heartbeat` sends nothing: a job calls its URL, and it goes down when no call comes within its interval and grace. A kind changes only between `http` and `health`.
          * @example health
          * @enum {string}
          */
-        MonitorKind: "http" | "health";
+        MonitorKind: "http" | "health" | "collection" | "heartbeat";
         /**
          * @description `pending` until its first check. A failure only starts a confirmation, 10 seconds later, until `failuresToConfirm` come in a row, which makes it `down`. One success brings it back `up`.
          * @example up
@@ -5068,7 +5125,7 @@ export interface components {
              */
             detail?: string;
         };
-        /** @description A new monitor. */
+        /** @description A new monitor. `http` and `health` monitors need `request`, and `collection` monitors `collectionId`. The response to creating a heartbeat has its `heartbeatToken`, which isn't shown again. */
         MonitorCreate: {
             /**
              * @description The monitor's name.
@@ -5078,9 +5135,9 @@ export interface components {
             kind?: components["schemas"]["MonitorKind"];
             environmentId: components["schemas"]["EnvironmentId"];
             serviceId?: components["schemas"]["ServiceId"];
-            request: components["schemas"]["SavedRequest"];
+            request?: components["schemas"]["SavedRequest"];
             /**
-             * @description What the response must satisfy. Unless a status is among them, the status must be 2xx.
+             * @description What the response must satisfy. Unless a status is among them, the status must be 2xx. Only `http` and `health` monitors have them.
              * @example [
              *       {
              *         "kind": "jsonPath",
@@ -5091,30 +5148,37 @@ export interface components {
              *     ]
              */
             assertions?: components["schemas"]["Assertion"][];
+            collectionId?: components["schemas"]["CollectionId"];
             /**
-             * @description How often it's checked.
-             * @default 60
+             * @description The one folder of the collection to run. Without it, a collection monitor runs the whole collection.
+             * @example item_01j9z3q1s3v5w7y9a1c3e5g7j9
+             */
+            folderId?: components["schemas"]["ItemId"];
+            /**
+             * @description How often it's checked: 30 to 3,600 seconds, 60 by default. A heartbeat expects a call every 60 seconds to 30 days, every day by default.
              * @example 60
              */
-            intervalSeconds: number;
+            intervalSeconds?: number;
             /**
-             * @description How long a check may take.
-             * @default 10
+             * @description How long a request may take, 1 to 30 seconds, 10 by default. A collection monitor's whole run may take 1 to 120 seconds, 60 by default. A heartbeat has none, so 0.
              * @example 10
              */
-            timeoutSeconds: number;
+            timeoutSeconds?: number;
             /**
-             * @description How many failures in a row make it down.
-             * @default 2
+             * @description How late past its interval a heartbeat's call may come. As long as its interval by default, up to an hour. Only heartbeats have one.
+             * @example 3600
+             */
+            graceSeconds?: number;
+            /**
+             * @description How many failures in a row make it down, 2 by default. A heartbeat goes down at the first call missed, so 1.
              * @example 2
              */
-            failuresToConfirm: number;
+            failuresToConfirm?: number;
             /**
-             * @description How long before a certificate expires it turns degraded; 0 never does.
-             * @default 14
+             * @description How long before a certificate expires it turns degraded, 14 days by default; 0 never does. Only `http` and `health` monitors read certificates, so 0 for others.
              * @example 14
              */
-            certificateWarningDays: number;
+            certificateWarningDays?: number;
             /**
              * @description Whether it starts paused. It doesn't by default.
              * @example false
@@ -5147,15 +5211,30 @@ export interface components {
              */
             assertions?: components["schemas"]["Assertion"][];
             /**
-             * @description How often it's checked.
+             * @description The collection a collection monitor runs. A new collection runs whole, unless `folderId` names one of its folders.
+             * @example col_01j9z3q1s3v5w7y9a1c3e5g7j9
+             */
+            collectionId?: components["schemas"]["CollectionId"];
+            /**
+             * @description The one folder of the collection to run, or null for all of it.
+             * @example item_01j9z3q1s3v5w7y9a1c3e5g7j9
+             */
+            folderId?: components["schemas"]["ItemId"] | null;
+            /**
+             * @description How often it's checked, or a heartbeat expects a call.
              * @example 60
              */
             intervalSeconds?: number;
             /**
-             * @description How long a check may take.
+             * @description How long a check may take; a collection monitor's whole run.
              * @example 10
              */
             timeoutSeconds?: number;
+            /**
+             * @description How late past its interval a heartbeat's call may come.
+             * @example 3600
+             */
+            graceSeconds?: number;
             /**
              * @description How many failures in a row make it down.
              * @example 2
@@ -5184,7 +5263,14 @@ export interface components {
              */
             name: string;
             kind: components["schemas"]["MonitorKind"];
-            request: components["schemas"]["SavedRequest"];
+            /**
+             * @description The request an `http` or `health` monitor sends. Others have none.
+             * @example {
+             *       "method": "GET",
+             *       "url": "{{baseUrl}}/health"
+             *     }
+             */
+            request?: components["schemas"]["SavedRequest"];
             /**
              * @description What the response must satisfy.
              * @example [
@@ -5198,15 +5284,41 @@ export interface components {
              */
             assertions: components["schemas"]["Assertion"][];
             /**
-             * @description How often it's checked.
+             * @description What a collection monitor runs.
+             * @example col_01j9z3q1s3v5w7y9a1c3e5g7j9
+             */
+            collectionId?: components["schemas"]["CollectionId"];
+            /**
+             * @description The one folder of its collection a collection monitor runs. Absent when it runs all of it.
+             * @example item_01j9z3q1s3v5w7y9a1c3e5g7j9
+             */
+            folderId?: components["schemas"]["ItemId"];
+            /**
+             * @description How often it's checked, or a heartbeat expects a call.
              * @example 60
              */
             intervalSeconds: number;
             /**
-             * @description How long a check may take.
+             * @description How long a check may take: a request, or a collection monitor's whole run. 0 for a heartbeat.
              * @example 10
              */
             timeoutSeconds: number;
+            /**
+             * @description How late past its interval a heartbeat's call may come. Only heartbeats have it.
+             * @example 3600
+             */
+            graceSeconds?: number;
+            /**
+             * Format: date-time
+             * @description When a heartbeat's job last called.
+             * @example 2026-11-04T03:00:41Z
+             */
+            lastPingAt?: string;
+            /**
+             * @description A heartbeat's token, only in the response to creating it: it's kept as a hash. The job calls `/api/v1/heartbeats/{token}` with it.
+             * @example sbx_hb_q8Hn2Vt0xYk3L9mWbR5cJ1sFzA7eGdUoP4iTvN6hKyE
+             */
+            heartbeatToken?: string;
             /**
              * @description How many failures in a row make it down.
              * @example 2
@@ -5302,6 +5414,8 @@ export interface components {
              *     ]
              */
             components: components["schemas"]["HealthComponent"][];
+            /** @description A collection monitor's test run. Its newest 50 passed and 50 failed runs are kept, so an old check's run may be gone. */
+            runId?: components["schemas"]["RunId"];
         };
         /**
          * @description What one check found. Secrets are masked.
@@ -5358,10 +5472,20 @@ export interface components {
              */
             certificateExpiresAt?: string;
             /**
-             * @description The trace it sent, in hex.
+             * @description The trace it sent, in hex. A collection monitor's is the first failing request's.
              * @example 4bf92f3577b34da6a3ce929d0e0e4736
              */
             traceId?: string;
+            /** @description A collection monitor's test run. Its newest 50 passed and 50 failed runs are kept, so an old check's run may be gone. */
+            runId?: components["schemas"]["RunId"];
+        };
+        /** @description A heartbeat monitor's new token, shown once. */
+        HeartbeatToken: {
+            /**
+             * @description The token. The job calls `/api/v1/heartbeats/{token}` with it.
+             * @example sbx_hb_q8Hn2Vt0xYk3L9mWbR5cJ1sFzA7eGdUoP4iTvN6hKyE
+             */
+            heartbeatToken: string;
         };
         /** @description A monitor's results. */
         CheckList: {
@@ -9567,6 +9691,26 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            /** @description The monitor is a heartbeat, which its job's calls check (`not-checkable`). */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://signalbox.dev/problems/not-checkable",
+                     *       "title": "Conflict",
+                     *       "status": 409,
+                     *       "code": "not-checkable",
+                     *       "detail": "A heartbeat monitor is checked by the calls its job makes, so it can't be checked now.",
+                     *       "requestId": "req_01j9z3q1s3v5w7y9a1c3e5g7j9"
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             429: components["responses"]["TooManyRequests"];
             /** @description This server has no runner to send the check with (`runner-unavailable`). */
             503: {
@@ -9588,6 +9732,109 @@ export interface operations {
                     "application/problem+json": components["schemas"]["Problem"];
                 };
             };
+            default: components["responses"]["Error"];
+        };
+    };
+    rotateHeartbeatToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The monitor's ID. */
+                monitorId: components["parameters"]["MonitorId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The new token. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "heartbeatToken": "sbx_hb_q8Hn2Vt0xYk3L9mWbR5cJ1sFzA7eGdUoP4iTvN6hKyE"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["HeartbeatToken"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The monitor isn't a heartbeat (`not-a-heartbeat`). */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://signalbox.dev/problems/not-a-heartbeat",
+                     *       "title": "Conflict",
+                     *       "status": 409,
+                     *       "code": "not-a-heartbeat",
+                     *       "detail": "Only a heartbeat monitor has a token.",
+                     *       "requestId": "req_01j9z3q1s3v5w7y9a1c3e5g7j9"
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    sendHeartbeatByGet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The heartbeat monitor's token. It's the credential, so keep it out of logs you share. */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The call was recorded. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            default: components["responses"]["Error"];
+        };
+    };
+    sendHeartbeat: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The heartbeat monitor's token. It's the credential, so keep it out of logs you share. */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The call was recorded. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
             default: components["responses"]["Error"];
         };
     };

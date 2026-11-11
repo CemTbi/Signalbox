@@ -87,7 +87,7 @@ func (m *Module) Flush(ctx context.Context) error {
 
 func writeChecks(ctx context.Context, conn clickhouse.Conn, checks []Check) error {
 	batch, err := conn.PrepareBatch(ctx, `INSERT INTO check_results
-		(environment_id, monitor_id, time, outcome, duration_ns, status_code, failure_code, failure_message, components, certificate_expires_at, trace_id)`)
+		(environment_id, monitor_id, time, outcome, duration_ns, status_code, failure_code, failure_message, components, certificate_expires_at, trace_id, run_id)`)
 	if err != nil {
 		return fmt.Errorf("prepare the results' insert: %w", err)
 	}
@@ -108,7 +108,7 @@ func writeChecks(ctx context.Context, conn clickhouse.Conn, checks []Check) erro
 		status := uint16(min(max(c.Status, 0), 65535)) //nolint:gosec // G115: clamped
 		duration := uint64(max(c.Duration, 0))         //nolint:gosec // G115: not negative
 		if err := batch.Append(c.EnvironmentID, c.MonitorID, c.At, c.Outcome, duration, status,
-			c.FailureCode, c.FailureMessage, components, certificate, c.TraceID); err != nil {
+			c.FailureCode, c.FailureMessage, components, certificate, c.TraceID, nullableID(c.RunID)); err != nil {
 			return fmt.Errorf("add a result to the insert: %w", err)
 		}
 	}
@@ -139,7 +139,7 @@ func (m *Module) Checks(ctx context.Context, userID, monitorID uuid.UUID, q Chec
 	limit = min(limit, MaxCheckLimit)
 	rows, err := m.conn.Query(ctx, `
 		SELECT environment_id, monitor_id, time, toString(outcome), duration_ns, status_code, failure_code, failure_message,
-		       components, certificate_expires_at, trace_id
+		       components, certificate_expires_at, trace_id, run_id
 		FROM check_results
 		WHERE monitor_id = {monitor:UUID} AND time >= {from:DateTime64(3)} AND time < {to:DateTime64(3)}
 		ORDER BY time DESC
@@ -158,8 +158,10 @@ func (m *Module) Checks(ctx context.Context, userID, monitorID uuid.UUID, q Chec
 			status      uint16
 			components  string
 			certificate *time.Time
+			run         *uuid.UUID
 		)
-		if err := rows.Scan(&c.EnvironmentID, &c.MonitorID, &c.At, &c.Outcome, &duration, &status, &c.FailureCode, &c.FailureMessage, &components, &certificate, &c.TraceID); err != nil {
+		if err := rows.Scan(&c.EnvironmentID, &c.MonitorID, &c.At, &c.Outcome, &duration, &status, &c.FailureCode, &c.FailureMessage, &components, &certificate,
+			&c.TraceID, &run); err != nil {
 			return nil, fmt.Errorf("read check results: %w", err)
 		}
 		c.Duration = time.Duration(duration) //nolint:gosec // G115: a check takes seconds
@@ -171,6 +173,9 @@ func (m *Module) Checks(ctx context.Context, userID, monitorID uuid.UUID, q Chec
 		}
 		if certificate != nil {
 			c.CertificateExpiresAt = *certificate
+		}
+		if run != nil {
+			c.RunID = *run
 		}
 		out = append(out, c)
 	}
