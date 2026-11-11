@@ -1,6 +1,6 @@
 module github.com/CemTbi/Signalbox
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.49.0
@@ -11,7 +11,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/grafana/sobek v0.0.0-20260908083152-4698bc773ae7
 	github.com/jackc/pgx/v5 v5.11.0
-	github.com/klauspost/compress v1.20.1
+	github.com/klauspost/compress v1.20.2
 	github.com/oapi-codegen/oapi-codegen/v2 v2.8.0
 	github.com/oasdiff/oasdiff v1.33.0
 	github.com/pb33f/go-yaml v0.1.1
@@ -49,7 +49,7 @@ require (
 	github.com/TwiN/go-color v1.4.1 // indirect
 	github.com/a-h/templ v0.3.1020 // indirect
 	github.com/alecthomas/chroma/v2 v2.27.0 // indirect
-	github.com/andybalholm/brotli v1.2.6 // indirect
+	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/basgys/goxml2json v1.1.1-0.20231018121955-e66ee54ceaad // indirect
 	github.com/buger/jsonparser v1.6.1 // indirect
