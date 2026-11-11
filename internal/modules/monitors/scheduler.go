@@ -267,7 +267,10 @@ func (m *Module) keep(ctx context.Context, tx pgx.Tx, monitorID uuid.UUID, c Che
 		WHERE id = $1`,
 		monitorID, after, failures, confirm, c.At, c.Outcome, c.Status, float64(c.Duration)/float64(time.Millisecond), c.FailureCode, c.FailureMessage,
 		c.TraceID, components, certificate, scheduled, nullableID(c.RunID))
-	return before, after, err
+	if err != nil {
+		return "", "", err
+	}
+	return before, after, m.incidentStep(ctx, tx, monitorID, before, after, c)
 }
 
 // CheckNow runs a monitor's check at once and returns what it found.

@@ -33,6 +33,10 @@ type Monitors interface {
 	CheckNow(ctx context.Context, userID, monitorID uuid.UUID) (monitors.Check, error)
 	Heartbeat(ctx context.Context, secret string) error
 	RotateHeartbeatToken(ctx context.Context, userID, monitorID uuid.UUID) (string, error)
+	ListIncidents(ctx context.Context, userID, projectID uuid.UUID, q monitors.IncidentQuery) (workspaces.Page[monitors.Incident], error)
+	GetIncident(ctx context.Context, userID, incidentID uuid.UUID) (monitors.Incident, []monitors.IncidentEvent, error)
+	Acknowledge(ctx context.Context, userID, incidentID uuid.UUID) (monitors.Incident, error)
+	Resolve(ctx context.Context, userID, incidentID uuid.UUID) (monitors.Incident, error)
 	Checks(ctx context.Context, userID, monitorID uuid.UUID, q monitors.CheckQuery) ([]monitors.Check, error)
 	ProjectStats(ctx context.Context, userID, projectID uuid.UUID, from, to time.Time) ([]monitors.Stats, error)
 }
@@ -88,6 +92,7 @@ type MonitorJSON struct {
 	LastCheck              *LastCheckJSON    `json:"lastCheck,omitempty"`
 	LastPingAt             string            `json:"lastPingAt,omitempty"`
 	HeartbeatToken         string            `json:"heartbeatToken,omitempty"`
+	OpenIncidentID         string            `json:"openIncidentId,omitempty"`
 	CertificateExpiresAt   string            `json:"certificateExpiresAt,omitempty"`
 	CreatedAt              string            `json:"createdAt"`
 	UpdatedAt              string            `json:"updatedAt"`
@@ -139,6 +144,7 @@ func monitorJSON(m monitors.Monitor) MonitorJSON {
 		Assertions: make([]AssertionJSON, len(m.Assertions)), IntervalSeconds: int(m.Interval / time.Second), TimeoutSeconds: int(m.Timeout / time.Second),
 		FailuresToConfirm: m.FailuresToConfirm, CertificateWarningDays: m.CertificateWarningDays, State: m.State, ConsecutiveFailures: m.ConsecutiveFailures,
 		NextCheckAt: timestamp(m.NextCheckAt), HeartbeatToken: m.HeartbeatToken, CreatedAt: timestamp(m.CreatedAt), UpdatedAt: timestamp(m.UpdatedAt),
+		OpenIncidentID: optionalID(id.Incident, m.OpenIncidentID),
 	}
 	if m.ServiceID != uuid.Nil {
 		out.ServiceID = id.Format(id.Service, m.ServiceID)

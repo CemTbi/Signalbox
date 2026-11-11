@@ -968,6 +968,98 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/incidents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List a project's incidents
+         * @description Lists the project's incidents, open ones first, then newest first. A monitor going down opens one. Every member of the workspace may.
+         */
+        get: operations["listIncidents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/incidents/{incidentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The incident's ID. */
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get an incident
+         * @description Returns an incident with its timeline, oldest first, of its newest 500 events. Every member of the workspace may.
+         */
+        get: operations["getIncident"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/incidents/{incidentId}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The incident's ID. */
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acknowledge an incident
+         * @description Says you're on it, and stops repeat notifications. Acknowledging it again changes nothing. Owners, admins and editors may.
+         */
+        post: operations["acknowledgeIncident"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/incidents/{incidentId}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The incident's ID. */
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve an incident
+         * @description Resolves an incident by hand. Its monitor opens no new incident until it has been up once, so one that's still down doesn't open another at its next check. Resolving it again changes nothing. Owners, admins and editors may.
+         */
+        post: operations["resolveIncident"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/monitors/{monitorId}/check": {
         parameters: {
             query?: never;
@@ -5315,6 +5407,11 @@ export interface components {
              */
             lastPingAt?: string;
             /**
+             * @description Its open incident, if it has one.
+             * @example inc_01j9z3w5y7a9c1e3g5j7m9p1r3
+             */
+            openIncidentId?: components["schemas"]["IncidentId"];
+            /**
              * @description A heartbeat's token, only in the response to creating it: it's kept as a hash. The job calls `/api/v1/heartbeats/{token}` with it.
              * @example sbx_hb_q8Hn2Vt0xYk3L9mWbR5cJ1sFzA7eGdUoP4iTvN6hKyE
              */
@@ -5478,6 +5575,157 @@ export interface components {
             traceId?: string;
             /** @description A collection monitor's test run. Its newest 50 passed and 50 failed runs are kept, so an old check's run may be gone. */
             runId?: components["schemas"]["RunId"];
+        };
+        /**
+         * @description An incident's ID.
+         * @example inc_01j9z3w5y7a9c1e3g5j7m9p1r3
+         */
+        IncidentId: string;
+        /** @description Someone who did something. */
+        Person: {
+            id: components["schemas"]["UserId"];
+            /**
+             * @description Their name.
+             * @example Ada Lovelace
+             */
+            name: string;
+        };
+        /** @description A monitor's time down. It opens when the monitor goes down, and resolves when it's up again, someone resolves it, or the monitor is deleted. */
+        Incident: {
+            id: components["schemas"]["IncidentId"];
+            projectId: components["schemas"]["ProjectId"];
+            /**
+             * @description Its monitor; absent once the monitor is deleted.
+             * @example mon_01j9z3w5y7a9c1e3g5j7m9p1r3
+             */
+            monitorId?: components["schemas"]["MonitorId"];
+            environmentId?: components["schemas"]["EnvironmentId"];
+            /**
+             * @description The monitor's name when it opened.
+             * @example Orders health
+             */
+            monitorName: string;
+            /**
+             * @description Whether it's still open.
+             * @example open
+             * @enum {string}
+             */
+            state: "open" | "resolved";
+            /**
+             * Format: date-time
+             * @description When it opened.
+             * @example 2026-11-04T12:00:22Z
+             */
+            openedAt: string;
+            /** @description The check that took the monitor down. */
+            firstCheck: {
+                /**
+                 * Format: date-time
+                 * @description When it ran.
+                 * @example 2026-11-04T12:00:22Z
+                 */
+                at: string;
+                /**
+                 * @description The response's status. Missing without a response.
+                 * @example 503
+                 */
+                status?: number;
+                /**
+                 * @description Why it failed.
+                 * @example assertion
+                 */
+                failureCode?: string;
+                /**
+                 * @description The same in words.
+                 * @example The response's status is 503, not 2xx.
+                 */
+                failureMessage?: string;
+                /**
+                 * @description The trace it sent, in hex.
+                 * @example 4bf92f3577b34da6a3ce929d0e0e4736
+                 */
+                traceId?: string;
+                runId?: components["schemas"]["RunId"];
+            };
+            /**
+             * Format: date-time
+             * @description When someone acknowledged it.
+             * @example 2026-11-04T12:03:10Z
+             */
+            acknowledgedAt?: string;
+            acknowledgedBy?: components["schemas"]["Person"];
+            /**
+             * Format: date-time
+             * @description When it was resolved.
+             * @example 2026-11-04T12:20:41Z
+             */
+            resolvedAt?: string;
+            resolvedBy?: components["schemas"]["Person"];
+            /**
+             * @description How it was resolved: the monitor came back up, someone resolved it, or the monitor was deleted.
+             * @example recovered
+             * @enum {string}
+             */
+            resolution?: "recovered" | "manual" | "deleted";
+        };
+        /** @description One line of an incident's timeline. */
+        IncidentEvent: {
+            /**
+             * Format: date-time
+             * @description When it happened.
+             * @example 2026-11-04T12:00:22Z
+             */
+            at: string;
+            /**
+             * @description What happened: it opened, the monitor's state changed, someone acknowledged it, it was resolved, or the monitor was paused or resumed.
+             * @example opened
+             * @enum {string}
+             */
+            kind: "opened" | "state" | "acknowledged" | "resolved" | "paused" | "resumed";
+            actor?: components["schemas"]["Person"];
+            /**
+             * @description The monitor's state before.
+             * @example degraded
+             */
+            from?: string;
+            /**
+             * @description Its state after.
+             * @example down
+             */
+            to?: string;
+            /**
+             * @description What it said.
+             * @example The response's status is 503, not 2xx.
+             */
+            detail?: string;
+        };
+        /** @description An incident with its timeline. */
+        IncidentDetail: components["schemas"]["Incident"] & {
+            /**
+             * @description What happened, oldest first. Without an actor, Signalbox did it.
+             * @example [
+             *       {
+             *         "at": "2026-11-04T12:00:22Z",
+             *         "kind": "opened",
+             *         "from": "up",
+             *         "to": "down"
+             *       }
+             *     ]
+             */
+            timeline: components["schemas"]["IncidentEvent"][];
+        };
+        /** @description A page of incidents. */
+        IncidentPage: {
+            /**
+             * @description The incidents, open first, then newest first.
+             * @example []
+             */
+            data: components["schemas"]["Incident"][];
+            /**
+             * @description The cursor of the next page. Missing on the last.
+             * @example eyJpZCI6ImluY18wMSJ9
+             */
+            nextCursor?: string;
         };
         /** @description A heartbeat monitor's new token, shown once. */
         HeartbeatToken: {
@@ -6624,6 +6872,8 @@ export interface components {
         EnvironmentId: components["schemas"]["EnvironmentId"];
         /** @description The monitor's ID. */
         MonitorId: components["schemas"]["MonitorId"];
+        /** @description The incident's ID. */
+        IncidentId: components["schemas"]["IncidentId"];
         /** @description The service's ID. */
         ServiceId: components["schemas"]["ServiceId"];
         /** @description The spec's ID. */
@@ -9653,6 +9903,174 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    listIncidents: {
+        parameters: {
+            query?: {
+                /** @description Only open or only resolved incidents. */
+                state?: "open" | "resolved";
+                /** @description Only one monitor's incidents. */
+                monitorId?: components["schemas"]["MonitorId"];
+                /**
+                 * @description Maximum number of items to return.
+                 * @example 50
+                 */
+                limit?: components["parameters"]["Limit"];
+                /**
+                 * @description The `nextCursor` value from the previous page.
+                 * @example eyJpZCI6IndzXzAxajl6M2txNG04cjJ0NnYweDV3N3k5YTFiIn0
+                 */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description The project's ID. */
+                projectId: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of incidents. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IncidentPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    getIncident: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The incident's ID. */
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The incident. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "inc_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "projectId": "prj_01j9z3w5y7a9c1e3g5j7m9p1r3",
+                     *       "monitorName": "Orders health",
+                     *       "state": "open",
+                     *       "openedAt": "2026-11-04T12:00:22Z",
+                     *       "firstCheck": {
+                     *         "at": "2026-11-04T12:00:22Z",
+                     *         "status": 503,
+                     *         "failureCode": "assertion"
+                     *       },
+                     *       "timeline": [
+                     *         {
+                     *           "at": "2026-11-04T12:00:22Z",
+                     *           "kind": "opened",
+                     *           "from": "up",
+                     *           "to": "down"
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["IncidentDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            default: components["responses"]["Error"];
+        };
+    };
+    acknowledgeIncident: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The incident's ID. */
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The incident, acknowledged. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Incident"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description The incident is resolved (`incident-resolved`). */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "type": "https://signalbox.dev/problems/incident-resolved",
+                     *       "title": "Conflict",
+                     *       "status": 409,
+                     *       "code": "incident-resolved",
+                     *       "detail": "This incident is resolved, so there's nothing to acknowledge.",
+                     *       "requestId": "req_01j9z3q1s3v5w7y9a1c3e5g7j9"
+                     *     }
+                     */
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            default: components["responses"]["Error"];
+        };
+    };
+    resolveIncident: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The incident's ID. */
+                incidentId: components["parameters"]["IncidentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The incident, resolved. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Incident"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             default: components["responses"]["Error"];
         };

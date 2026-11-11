@@ -52,7 +52,10 @@ func (m *Module) Heartbeat(ctx context.Context, secret string) error {
 				last_check_at = $3, last_outcome = $5, last_status = NULL, last_duration_ms = 0, last_failure_code = NULL,
 				last_failure_message = NULL, last_trace_id = NULL, last_components = NULL, last_run_id = NULL
 			WHERE id = $1`, mon.ID, after, now, heartbeatDue(mon, now, false), OutcomePassed)
-		return err
+		if err != nil {
+			return err
+		}
+		return m.incidentStep(ctx, tx, mon.ID, before, after, check)
 	})
 	if errors.Is(err, ErrNotFound) {
 		return err

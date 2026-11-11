@@ -419,6 +419,31 @@ export function monitorQuery(client: ApiClient, monitorId: string) {
   });
 }
 
+export const incidentsKey = (projectId: string) => ["projects", projectId, "incidents"] as const;
+
+/** A project's incidents, open first, then newest first, a page at a time. */
+export function incidentsQuery(client: ApiClient, projectId: string) {
+  return infiniteQueryOptions({
+    queryKey: incidentsKey(projectId),
+    queryFn: ({ pageParam }) =>
+      unwrap(client.GET("/api/v1/projects/{projectId}/incidents", { params: { path: { projectId }, query: { limit: 100, cursor: pageParam } } })),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.nextCursor,
+    refetchInterval: MONITOR_INTERVAL_MS,
+  });
+}
+
+export const incidentKey = (incidentId: string) => ["incidents", incidentId] as const;
+
+/** An incident and its timeline. */
+export function incidentQuery(client: ApiClient, incidentId: string) {
+  return queryOptions({
+    queryKey: incidentKey(incidentId),
+    queryFn: () => unwrap(client.GET("/api/v1/incidents/{incidentId}", { params: { path: { incidentId } } })),
+    refetchInterval: MONITOR_INTERVAL_MS,
+  });
+}
+
 export const checksKey = (monitorId: string) => ["monitors", monitorId, "checks"] as const;
 
 /** A monitor's checks over the last day, newest first. */

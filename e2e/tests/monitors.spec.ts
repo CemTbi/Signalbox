@@ -144,7 +144,7 @@ test("a collection monitor runs a collection, and a heartbeat waits for its job"
     await page.getByRole("button", { name: "Check now" }).click();
     await expect(state).toHaveAccessibleName(want);
   }
-  await expect(page.locator(".monitor-failure")).toContainText('1 of 2 tests failed, first "is up" in Missing');
+  await expect(page.locator(".monitor-failure:not(.monitor-incident)")).toContainText('1 of 2 tests failed, first "is up" in Missing');
   await expect(page.getByRole("link", { name: "Open the run" })).toBeVisible();
   await expectAccessible(page);
 
@@ -173,5 +173,57 @@ test("a collection monitor runs a collection, and a heartbeat waits for its job"
   const second = await heartbeatURL.inputValue();
   expect((await page.request.post(first)).status()).toBe(404);
   expect((await page.request.get(second)).status()).toBe(204);
+  await expectAccessible(page);
+});
+
+test("a monitor going down opens an incident, which people acknowledge and resolve", async ({ page, request }) => {
+  const run = runID();
+  await openAsAdmin(page, request);
+  await page.getByLabel("Name", { exact: true }).fill(`Incidents ${run}`);
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: `Incidents ${run}` })).toBeVisible();
+  await page.getByLabel("Name", { exact: true }).fill("Shop");
+  await page.getByRole("button", { name: "Create project" }).click();
+  await expect(page).toHaveURL(/\/projects\/prj_[0-9a-z]+$/);
+  await page.getByRole("link", { name: "Incidents", exact: true }).click();
+  await expect(page.getByText("No incidents")).toBeVisible();
+  await expectAccessible(page);
+
+  // A monitor of a page that isn't there: 404 isn't 2xx.
+  await page.getByRole("link", { name: "monitors" }).click();
+  const form = page.getByRole("form", { name: "New monitor" });
+  await form.getByLabel("Name", { exact: true }).fill("Missing");
+  await form.getByLabel("URL").fill("http://signalbox:8080/api/v1/nothing-here");
+  await form.getByRole("button", { name: "Add monitor" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Missing" })).toBeVisible();
+  const state = page.getByRole("status", { name: /^State:/ });
+  for (const want of ["State: Pending", "State: Down"]) {
+    await expect(page.getByRole("button", { name: "Check now" })).toBeEnabled();
+    await page.getByRole("button", { name: "Check now" }).click();
+    if (want === "State: Pending") await expect(page.getByText("1 of 2 failures in a row")).toBeVisible();
+    else await expect(state).toHaveAccessibleName(want);
+  }
+  await page.getByRole("link", { name: "Open the incident" }).click();
+  await expect(page).toHaveURL(/\/incidents\/inc_[0-9a-z]+$/);
+  const status = page.getByRole("status", { name: /^Incident:/ });
+  await expect(status).toHaveAccessibleName("Incident: Open");
+  await expect(page.locator(".monitor-failure:not(.monitor-incident)")).toContainText("404");
+  await expect(page.getByText("Opened: the monitor went down.")).toBeVisible();
+  await expectAccessible(page);
+
+  await page.getByRole("button", { name: "Acknowledge" }).click();
+  await expect(status).toHaveAccessibleName("Incident: Acknowledged");
+  await expect(page.getByRole("listitem").filter({ hasText: "Acknowledged." })).toContainText("Ada Lovelace");
+  await page.getByRole("button", { name: "Resolve" }).click();
+  await expect(status).toHaveAccessibleName("Incident: Resolved");
+  await expect(page.getByText("Resolved by hand.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Resolve" })).toHaveCount(0);
+  await expectAccessible(page);
+
+  // The project's incidents list it.
+  await page.getByRole("link", { name: "Incidents", exact: true }).click();
+  const list = page.getByRole("table", { name: "Incidents" });
+  await expect(list.getByRole("link", { name: "Missing" })).toBeVisible();
+  await expect(list.getByRole("cell", { name: "Resolved" })).toBeVisible();
   await expectAccessible(page);
 });

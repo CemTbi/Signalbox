@@ -43,6 +43,7 @@ const (
 	IngestKey   Prefix = "ing"
 	Dependency  Prefix = "dep"
 	Monitor     Prefix = "mon"
+	Incident    Prefix = "inc"
 )
 
 // ErrInvalid means a string isn't an ID of the expected type.
